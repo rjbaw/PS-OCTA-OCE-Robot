@@ -15,3 +15,8 @@
 *.aliases
 *.lvlps
 .cache/
+
+data/
+build/
+log/
+install/

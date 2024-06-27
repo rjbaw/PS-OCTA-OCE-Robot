@@ -1,0 +1,16 @@
+<dds>
+  <qos_library name="test">
+    <qos_profile name="UDPv4_properties", is_default_qos="true">
+      <participant_qos>
+        <property>   
+          <value>
+            <element>
+              <name>dds.transport.UDPv4.builtin.parent.allow_interfaces</name>
+              <value>192.168.0.10,192.168.0.5</value>
+            </element>            
+          </value>
+        </property>
+      </participant_qos>
+    </qos_profile>
+  </qos_library>
+</dds>
