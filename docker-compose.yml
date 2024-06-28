@@ -6,6 +6,7 @@ services:
       - QT_GRAPHICSSYSTEM=native
       - QT_X11_NO_MITSHIM=1
       #user: 1000:1000
+    container_name: ros2
     volumes:
       - .:/root/home/
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
