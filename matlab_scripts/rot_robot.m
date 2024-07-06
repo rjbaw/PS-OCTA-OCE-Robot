@@ -8,7 +8,7 @@ intercepts = zeros(n_frames,1);
 
 dep = size(img,1);
     
-if dep > 15
+if dep >15
     
     for islice=1:n_frames
 
