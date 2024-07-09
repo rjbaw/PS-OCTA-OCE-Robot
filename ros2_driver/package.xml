@@ -1,17 +1,16 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>ros2labview_examples</name>
+  <name>octa_ros2_driver</name>
   <version>1.0.0</version>
-  <description>Programs which demostrate communication between ROS2 and Labview</description>
-  <maintainer email="roald.ong@gmail.com">roald</maintainer>
+  <description>OCTA-OCE LabView ROS2 Driver</description>
+  <maintainer email="rjbaw@uw.edu">Ren</maintainer>
   <license>nil</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
-
   
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
