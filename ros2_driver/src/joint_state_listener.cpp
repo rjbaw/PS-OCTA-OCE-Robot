@@ -19,11 +19,11 @@ private:
   {
     double sum_vel = 0.0;
     for (const auto& velocity : msg->velocity) {
-      sum_vel += velocity;
+      sum_vel += abs(velocity);
     }
 
     auto state_msg = std_msgs::msg::Int32();
-    state_msg.data = (sum_vel != 0.0);
+    state_msg.data = (sum_vel >= 0.01);
 
     publisher_->publish(state_msg);
   }
