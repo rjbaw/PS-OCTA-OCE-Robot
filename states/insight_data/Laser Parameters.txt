@@ -1,0 +1,20 @@
+Clock Rate (MHz)	10.0
+Sample Pts	3970
+Total Sweep Pts	4636
+Total Pts Increment	4
+Reversal Index	-1
+Sweep Efficiency (%)	85.63
+Duty Cycle (%)	0
+Repetition Rate (kHz)	86.28
+Sweep Rate (kHz)	86.28
+Min Wavelength (nm)	1041.32
+Max Wavelength (nm)	1066.78
+Power (mW)	22.0
+Power Profile	FLAT
+Edge Roll-off (dB)	0.0
+Sample Clock Delay (nsec)	0.0
+Sweep Start Delay (nsec)	0.0
+Data Valid Delay (nsec)	0.0
+Optical Freq. Step (GHz)	1.74
+Sweep Start Trigger Edge	RISing
+WL Sweep Direction?	Increase
