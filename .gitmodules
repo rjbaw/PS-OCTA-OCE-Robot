@@ -1,3 +1,3 @@
 [submodule "ros2_driver/ur_driver/src/ur_ros2"]
 	path = ros2_driver/ur_driver/src/ur_ros2
-	url = https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver
+	url = https://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@github.com/rjbaw/Universal_Robots_ROS2_Driver.git
