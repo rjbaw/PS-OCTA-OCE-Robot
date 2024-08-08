@@ -43,7 +43,7 @@ help()
   echo
 }
 
-ROBOT_MODEL=UR5
+ROBOT_MODEL=UR3
 ROBOT_SERIES=e-series
 
 validate_model()
