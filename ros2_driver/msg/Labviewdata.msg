@@ -1,0 +1,16 @@
+float64 robot_vel
+float64 robot_acc
+float64 z_tolerance
+float64 angle_tolerance
+float64 radius
+float64 angle_limit
+int32 num_pt
+float64 dz
+float64 drot
+bool autofocus
+bool freedrive
+bool next
+bool previous
+bool home
+bool reset
+

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>octa_ros2_driver</name>
+  <name>octa_ros</name>
   <version>1.0.0</version>
   <description>OCTA-OCE LabView ROS2 Driver</description>
   <maintainer email="rjbaw@uw.edu">Ren</maintainer>
@@ -11,6 +11,8 @@
   
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
   
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
