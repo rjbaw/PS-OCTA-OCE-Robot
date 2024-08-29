@@ -13,4 +13,5 @@ bool next
 bool previous
 bool home
 bool reset
+bool fast_axis
 

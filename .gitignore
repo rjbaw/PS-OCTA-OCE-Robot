@@ -15,6 +15,7 @@
 *.aliases
 *.lvlps
 .cache/
+__pycache__/
 
 data/
 build/
