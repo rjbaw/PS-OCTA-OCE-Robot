@@ -46,86 +46,89 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     publish_robot_description_semantic = LaunchConfiguration("publish_robot_description_semantic")
 
-    # safety_limits = LaunchConfiguration("safety_limits")
-    # safety_pos_margin = LaunchConfiguration("safety_pos_margin")
-    # safety_k_position = LaunchConfiguration("safety_k_position")
-    # description_file = LaunchConfiguration("description_file")
-    # tf_prefix = LaunchConfiguration("tf_prefix")
-    # robot_ip = LaunchConfiguration("robot_ip")
-    # joint_limit = LaunchConfiguration("joint_limit")
-    # kinematics_params = LaunchConfiguration("kinematics_params")
-    # physical_params = LaunchConfiguration("physical_params")
-    # visual_params = LaunchConfiguration("visual_params")
-    # robot_description = Command(
-    #     [
-    #         PathJoinSubstitution([FindExecutable(name="xacro")]),
-    #         " ",
-    #         description_file,
-    #         " ",
-    #         "robot_ip:=",
-    #         robot_ip,
-    #         " ",
-    #         "joint_limit_params:=",
-    #         joint_limit,
-    #         " ",
-    #         "kinematics_params:=",
-    #         kinematics_params,
-    #         " ",
-    #         "physical_params:=",
-    #         physical_params,
-    #         " ",
-    #         "visual_params:=",
-    #         visual_params,
-    #         " ",
-    #         "safety_pos_margin:=",
-    #         safety_pos_margin,
-    #         " ",
-    #         "safety_k_position:=",
-    #         safety_k_position,
-    #         " ",
-    #         "name:=",
-    #         "ur",
-    #         " ",
-    #         "ur_type:=",
-    #         ur_type,
-    #         " ",
-    #         "prefix:=",
-    #         "''",
-    #         " ",
-    #         "tf_prefix:=",
-    #         tf_prefix,
-    #     ]
-    # )
-    # robot_description_semantic = Command(
-    #     [
-    #         PathJoinSubstitution([FindExecutable(name="xacro")]),
-    #         " ",
-    #         PathJoinSubstitution([FindPackageShare("ur_moveit_config"), "srdf", "ur.srdf.xacro"]),
-    #         " ",
-    #         "name:=",
-    #         "ur",
-    #         # Also ur_type parameter could be used but then the planning group names in yaml
-    #         # configs has to be updated!
-    #         " ",
-    #         "prefix:=",
-    #         "''",
-    #         " ",
-    #     ]
-    # )
-    # robot_description = {"robot_description": robot_description}
-    # robot_description_semantic = {
-    #     "robot_description_semantic": robot_description_semantic
-    # }
-    # joint_state_publisher_node = Node(
-    #     package="joint_state_publisher_gui",
-    #     executable="joint_state_publisher_gui",
-    # )
-    # robot_state_publisher_node = Node(
-    #     package="robot_state_publisher",
-    #     executable="robot_state_publisher",
-    #     output="both",
-    #     parameters=[robot_description],
-    # )
+    safety_limits = LaunchConfiguration("safety_limits")
+    safety_pos_margin = LaunchConfiguration("safety_pos_margin")
+    safety_k_position = LaunchConfiguration("safety_k_position")
+    description_file = LaunchConfiguration("description_file")
+    tf_prefix = LaunchConfiguration("tf_prefix")
+    #robot_ip = LaunchConfiguration("robot_ip")
+    joint_limit = LaunchConfiguration("joint_limit")
+    kinematics_params = LaunchConfiguration("kinematics_params")
+    physical_params = LaunchConfiguration("physical_params")
+    visual_params = LaunchConfiguration("visual_params")
+    robot_description = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            description_file,
+            " ",
+            "robot_ip:=",
+            #robot_ip,
+            "192.168.0.10",
+            " ",
+            "joint_limit_params:=",
+            joint_limit,
+            " ",
+            "kinematics_params:=",
+            kinematics_params,
+            " ",
+            "physical_params:=",
+            physical_params,
+            " ",
+            "visual_params:=",
+            visual_params,
+            " ",
+            "safety_pos_margin:=",
+            safety_pos_margin,
+            " ",
+            "safety_k_position:=",
+            safety_k_position,
+            " ",
+            "name:=",
+            #"ur",
+            "ur3e",
+            " ",
+            "ur_type:=",
+            ur_type,
+            " ",
+            "prefix:=",
+            "''",
+            " ",
+            "tf_prefix:=",
+            tf_prefix,
+        ]
+    )
+    robot_description_semantic = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            PathJoinSubstitution([FindPackageShare("ur_moveit_config"), "srdf", "ur.srdf.xacro"]),
+            " ",
+            "name:=",
+            #"ur",
+            "ur3e",
+            # Also ur_type parameter could be used but then the planning group names in yaml
+            # configs has to be updated!
+            " ",
+            "prefix:=",
+            "''",
+            " ",
+        ]
+    )
+    robot_description = {"robot_description": robot_description}
+    robot_description_semantic = {
+        "robot_description_semantic": robot_description_semantic
+    }
+    joint_state_publisher_node = Node(
+        package="joint_state_publisher_gui",
+        executable="joint_state_publisher_gui",
+    )
+    robot_state_publisher_node = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        output="both",
+        parameters=[robot_description],
+    )
     # rviz_node = Node(
     #     package="rviz2",
     #     executable="rviz2",
@@ -336,8 +339,15 @@ def generate_launch_description():
         RegisterEventHandler(
             OnProcessExit(
                 target_action=wait_robot_description,
-                on_exit=[move_group_node, rviz_node, servo_node, robot_state_node],
-            )
+                on_exit=[
+                    move_group_node, 
+                    rviz_node, 
+                    servo_node, 
+                    robot_state_node,
+                    joint_state_publisher_node,    
+                    robot_state_publisher_node,
+                    ],
+                )
         ),
     )
 

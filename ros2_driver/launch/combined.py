@@ -674,7 +674,7 @@ def generate_launch_description():
         initial_joint_controller_spawner_started,
     ] + controller_spawners
 
-    #ld.add_action(LaunchDescription(nodes_to_start))
+    ld.add_action(LaunchDescription(nodes_to_start))
 
     # for node in nodes_to_start:
     #     ld.add_action(node)
