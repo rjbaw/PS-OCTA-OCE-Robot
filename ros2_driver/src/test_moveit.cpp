@@ -4,8 +4,8 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <memory>
-#include <csignal>  // Include for signal handling
-#include <atomic>   // Include for atomic variables
+#include <csignal>
+#include <atomic> 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <rclcpp/rclcpp.hpp>
 
@@ -17,7 +17,7 @@ void signal_handler(int signum) {
     RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Signal %d received, cancelling execution...", signum);
     running = false;
     if (move_group_ptr) {
-        move_group_ptr->stop();  // Cancel the execution of the plan
+        move_group_ptr->stop();  
     }
     rclcpp::shutdown();
 }
@@ -25,10 +25,8 @@ void signal_handler(int signum) {
 double to_radians(double angle) { return (std::numbers::pi/180 * angle); }
 
 int main(int argc, char *argv[]) {
-    // Initialize ROS and create the Node
     rclcpp::init(argc, argv);
 
-    // Register the signal handler for SIGINT and SIGTERM
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
@@ -37,58 +35,71 @@ int main(int argc, char *argv[]) {
         rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(
             true));
 
-    // Create a ROS logger
     auto const logger = rclcpp::get_logger("hello_moveit");
 
-    // Create the MoveIt MoveGroup Interface
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
+    std::thread([&executor]() { executor.spin(); }).detach();
+
+    // rclcpp::spin_some(node);
+
+    // std::string robot_description;
+    // if (!node->get_parameter("robot_description", robot_description)) {
+    //     RCLCPP_ERROR(logger, "Failed to get robot_description parameter. "
+    //                          "Ensure the parameter is set.");
+    //     rclcpp::shutdown();
+    //     return 1;
+    // }
+
     using moveit::planning_interface::MoveGroupInterface;
     auto move_group_interface = MoveGroupInterface(node, "ur_manipulator");
+    move_group_interface.setPlanningTime(10.0);
     move_group_interface.setStartStateToCurrentState();
+    // RCLCPP_INFO(logger, "Waiting for MoveGroupInterface to be ready...");
+    // rclcpp::sleep_for(std::chrono::seconds(2));
 
-    move_group_ptr = &move_group_interface;  // Assign the pointer to the move group
+    move_group_ptr = &move_group_interface;
 
     // std::string reference_frame = "wrist_3_link";
     // move_group_interface.setPoseReferenceFrame(reference_frame);
-    // geometry_msgs::msg::Pose target_pose = move_group_interface.getCurrentPose(reference_frame).pose;
-    // target_pose.orientation.x += 0.0;
-    // target_pose.orientation.y += 0.0;
-    // target_pose.orientation.z += 0.0;
-    // target_pose.orientation.w += 0.0;
-    // target_pose.position.x += 0.1;
-    // target_pose.position.y += 0;
-    // target_pose.position.z += 0;
+    // geometry_msgs::msg::Pose target_pose =
+    //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    // Set a target Pose
-    auto const target_pose = [] {
-        geometry_msgs::msg::Pose msg;
-// x: 0, y: 0, z: -0.00021918399999999995, qx: 0.008000801860057399, qy: 0, qz: 0, qw: 0.9999679930725763
-        msg.orientation.x = -0.4;
-        msg.orientation.y = 0.9;
-        msg.orientation.z = 0.0;
-        msg.orientation.w = 0.03;
-        msg.position.x = 0.36;
-        msg.position.y = -0.13;
-        msg.position.z = 0.18;
-        //
-        // msg.orientation.w = 1.0;
-        // msg.position.x = 0.28;
-        // msg.position.y = -0.2;
-        // msg.position.z = 0.5;
-        return msg;
-    }();
-    // move_group_interface.setPoseTarget(target_pose);
-    move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));
+    // const moveit::core::JointModelGroup *joint_model_group =
+    //     move_group_interface.getCurrentState()->getJointModelGroup(
+    //         "ur_manipulator");
+    geometry_msgs::msg::Pose target_pose =
+        move_group_interface.getCurrentPose().pose;
+    target_pose.orientation.x += 0.0;
+    target_pose.orientation.y += 0.0;
+    target_pose.orientation.z += 0.0;
+    target_pose.orientation.w += 0.0;
+    target_pose.position.x += 0.1;
+    target_pose.position.y += 0;
+    target_pose.position.z += 0;
 
-    // Check if the program should keep running
+    // auto const target_pose = [] {
+    //     geometry_msgs::msg::Pose msg;
+    //     // real environment
+    //     msg.orientation.x = -0.4;
+    //     msg.orientation.y = 0.9;
+    //     msg.orientation.z = 0.0;
+    //     msg.orientation.w = 0.03;
+    //     msg.position.x = 0.36;
+    //     msg.position.y = -0.13;
+    //     msg.position.z = 0.18;
+    //     return msg;
+    // }();
+    move_group_interface.setPoseTarget(target_pose);
+    // move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));
+
     if (running) {
-        // Create a plan to that target pose
         auto const [success, plan] = [&move_group_interface] {
             moveit::planning_interface::MoveGroupInterface::Plan msg;
             auto const ok = static_cast<bool>(move_group_interface.plan(msg));
             return std::make_pair(ok, msg);
         }();
 
-        // Execute the plan if successful
         if (success && running) {
             move_group_interface.execute(plan);
         } else if (!running) {
@@ -98,7 +109,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Shutdown ROS
     rclcpp::shutdown();
     return 0;
 }

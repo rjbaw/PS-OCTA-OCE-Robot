@@ -51,84 +51,81 @@ def generate_launch_description():
     safety_k_position = LaunchConfiguration("safety_k_position")
     description_file = LaunchConfiguration("description_file")
     tf_prefix = LaunchConfiguration("tf_prefix")
-    #robot_ip = LaunchConfiguration("robot_ip")
+    robot_ip = LaunchConfiguration("robot_ip")
     joint_limit = LaunchConfiguration("joint_limit")
     kinematics_params = LaunchConfiguration("kinematics_params")
     physical_params = LaunchConfiguration("physical_params")
     visual_params = LaunchConfiguration("visual_params")
-    robot_description = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            description_file,
-            " ",
-            "robot_ip:=",
-            #robot_ip,
-            "192.168.0.10",
-            " ",
-            "joint_limit_params:=",
-            joint_limit,
-            " ",
-            "kinematics_params:=",
-            kinematics_params,
-            " ",
-            "physical_params:=",
-            physical_params,
-            " ",
-            "visual_params:=",
-            visual_params,
-            " ",
-            "safety_pos_margin:=",
-            safety_pos_margin,
-            " ",
-            "safety_k_position:=",
-            safety_k_position,
-            " ",
-            "name:=",
-            #"ur",
-            "ur3e",
-            " ",
-            "ur_type:=",
-            ur_type,
-            " ",
-            "prefix:=",
-            "''",
-            " ",
-            "tf_prefix:=",
-            tf_prefix,
-        ]
-    )
-    robot_description_semantic = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution([FindPackageShare("ur_moveit_config"), "srdf", "ur.srdf.xacro"]),
-            " ",
-            "name:=",
-            #"ur",
-            "ur3e",
-            # Also ur_type parameter could be used but then the planning group names in yaml
-            # configs has to be updated!
-            " ",
-            "prefix:=",
-            "''",
-            " ",
-        ]
-    )
-    robot_description = {"robot_description": robot_description}
-    robot_description_semantic = {
-        "robot_description_semantic": robot_description_semantic
-    }
-    joint_state_publisher_node = Node(
-        package="joint_state_publisher_gui",
-        executable="joint_state_publisher_gui",
-    )
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        output="both",
-        parameters=[robot_description],
-    )
+    # robot_description = Command(
+    #     [
+    #         PathJoinSubstitution([FindExecutable(name="xacro")]),
+    #         " ",
+    #         description_file,
+    #         " ",
+    #         "robot_ip:=",
+    #         robot_ip,
+    #         " ",
+    #         "joint_limit_params:=",
+    #         joint_limit,
+    #         " ",
+    #         "kinematics_params:=",
+    #         kinematics_params,
+    #         " ",
+    #         "physical_params:=",
+    #         physical_params,
+    #         " ",
+    #         "visual_params:=",
+    #         visual_params,
+    #         " ",
+    #         "safety_pos_margin:=",
+    #         safety_pos_margin,
+    #         " ",
+    #         "safety_k_position:=",
+    #         safety_k_position,
+    #         " ",
+    #         "name:=",
+    #         "ur",
+    #         " ",
+    #         "ur_type:=",
+    #         ur_type,
+    #         " ",
+    #         "prefix:=",
+    #         "''",
+    #         " ",
+    #         "tf_prefix:=",
+    #         tf_prefix,
+    #     ]
+    # )
+
+    # robot_description_semantic = Command(
+    #     [
+    #         PathJoinSubstitution([FindExecutable(name="xacro")]),
+    #         " ",
+    #         PathJoinSubstitution([FindPackageShare("ur_moveit_config"), "srdf", "ur.srdf.xacro"]),
+    #         " ",
+    #         "name:=",
+    #         "ur",
+    #         # Also ur_type parameter could be used but then the planning group names in yaml
+    #         # configs has to be updated!
+    #         " ",
+    #         "prefix:=",
+    #         "''",
+    #         " ",
+    #     ]
+    # )
+    #robot_description_semantic = {"robot_description_semantic": robot_description_semantic}
+
+    # joint_state_publisher_node = Node(
+    #     package="joint_state_publisher_gui",
+    #     executable="joint_state_publisher_gui",
+    # )
+    # robot_state_publisher_node = Node(
+    #     package="robot_state_publisher",
+    #     executable="robot_state_publisher",
+    #     output="both",
+    #     parameters=[{"robot_description": robot_description}],
+    # )
+
     # rviz_node = Node(
     #     package="rviz2",
     #     executable="rviz2",
@@ -136,19 +133,13 @@ def generate_launch_description():
     #     output="log",
     #     arguments=["-d", rviz_config_file],
     # )
-    # nodes_to_start = [
-    #     joint_state_publisher_node,
-    #     robot_state_publisher_node,
-    #     rviz_node,
-    # ]
-    # return LaunchDescription(declared_arguments + nodes_to_start)
 
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="ur_moveit_config")
-        .robot_description(Path("urdf") / "ur.urdf.xacro")
+        #.robot_description(Path("urdf") / "ur.urdf.xacro")
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
         .robot_description_kinematics(Path("config") / "kinematics.yaml")
-        .joint_limits(Path("config") / "joint_limits.yaml")
+        # .joint_limits(Path("config") / "joint_limits.yaml")
         # .planning_pipelines(
         #     pipelines=["ompl", "pilz_industrial_motion_planner"],
         #     default_planning_pipeline="pilz_industrial_motion_planner",
@@ -168,6 +159,11 @@ def generate_launch_description():
                     "launch_rviz",
                     default_value="true",
                     description="Launch RViz?"
+                ),
+                DeclareLaunchArgument(
+                    "robot_ip",
+                    default_value="192.168.56.101",
+                    description="Robot IP address",
                 ),
                 DeclareLaunchArgument(
                     "ur_type",
@@ -291,6 +287,7 @@ def generate_launch_description():
             {
                 "use_sim_time": use_sim_time,
                 "publish_robot_description_semantic": publish_robot_description_semantic,
+                "current_state_monitor_timeout": 2.0,
             },
         ],
     )
@@ -344,11 +341,73 @@ def generate_launch_description():
                     rviz_node, 
                     servo_node, 
                     robot_state_node,
-                    joint_state_publisher_node,    
-                    robot_state_publisher_node,
+                    # joint_state_publisher_node,    
+                    # robot_state_publisher_node,
                     ],
                 )
         ),
     )
 
     return ld
+
+                # DeclareLaunchArgument(
+                #     "joint_limit",
+                #     default_value=PathJoinSubstitution(
+                #         [FindPackageShare("ur_description"),
+                #         "config", "ur3e", "joint_limits.yaml"]
+                #     ),
+                #     description="joint",
+                # ),
+                # DeclareLaunchArgument(
+                #     "kinematics_params",
+                #     default_value=PathJoinSubstitution(
+                #         [FindPackageShare("ur_description"),
+                #          "config", "ur3e", "default_kinematics.yaml"]
+                #     ),
+                #     description="joint",
+                # ),
+                # DeclareLaunchArgument(
+                #     "physical_params",
+                #     default_value=PathJoinSubstitution(
+                #         [FindPackageShare("ur_description"),
+                #          "config", "ur3e", "physical_parameters.yaml"]
+                #     ),
+                #     description="joint",
+                # ),
+                # DeclareLaunchArgument(
+                #     "visual_params",
+                #     default_value=PathJoinSubstitution(
+                #         [FindPackageShare("ur_description"),
+                #          "config", "ur3e", "visual_parameters.yaml"]
+                #     ),
+                #     description="joint",
+                # ),
+                # DeclareLaunchArgument(
+                #     "tf_prefix",
+                #     default_value="''",
+                #     description="Prefix of the joint names, useful for "
+                #     "multi-robot setup. If changed than also joint names in the controllers' configuration "
+                #     "have to be updated.",
+                # ),
+                # DeclareLaunchArgument(
+                #     "safety_limits",
+                #     default_value="true",
+                #     description="Enables the safety limits controller if true.",
+                # ),
+                # DeclareLaunchArgument(
+                #     "safety_pos_margin",
+                #     default_value="0.15",
+                #     description="The margin to lower and upper limits in the safety controller.",
+                # ),
+                # DeclareLaunchArgument(
+                #     "safety_k_position",
+                #     default_value="20",
+                #     description="k-position factor in the safety controller.",
+                # ),
+                # DeclareLaunchArgument(
+                #     "description_file",
+                #     default_value=PathJoinSubstitution(
+                #         [FindPackageShare("ur_description"), "urdf", "ur.urdf.xacro"]
+                #     ),
+                #     description="URDF/XACRO description file (absolute path) with the robot.",
+                # ),

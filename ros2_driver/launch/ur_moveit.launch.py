@@ -112,14 +112,8 @@ def generate_launch_description():
 
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="ur_moveit_config")
-        .robot_description(file_path="urdf/ur.urdf.xacro")
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-        .robot_description_kinematics(file_path="config/kinematics.yaml")
-        # .planning_pipelines(
-        #     pipelines=["ompl", "pilz_industrial_motion_planner"],
-        #     default_planning_pipeline="pilz_industrial_motion_planner",
-        # )
-        .joint_limits(file_path="config/joint_limits.yaml")
+        .robot_description()
         .to_moveit_configs()
     )
 
