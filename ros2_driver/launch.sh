@@ -1,7 +1,34 @@
 #!/bin/bash
-#tmux new -d "bash ur_driver/driver.sh"
+help()
+{
+   # Display Help
+   echo "Launch octa/oce ROS program"
+   echo
+   echo "Syntax: [-s|h]"
+   echo "options:"
+   echo "h     Print this Help."
+   echo "s     Simulation"
+   echo
+}
+
+while getopts ":hs" option; do
+   case $option in
+      h) # display Help
+         help
+         exit;;
+      h) # display Help
+         sim="true"
+         exit;;
+     \?) # Invalid option
+         echo "Error: Invalid option"
+         exit;;
+   esac
+done
+
 source install/setup.bash
-#ros2 launch octa_ros launch.py ur_type:=ur3e kinematic_params:=config/kinematics.yaml
-#ros2 launch octa_ros combined.py ur_type:=ur3e robot_ip:=192.168.56.101 launch_rviz:=true robot_controller:=scaled_joint_trajectory_controller kinematics_params_files:="config/ur_calibration.yaml" headless_mode:=true
-ros2 launch octa_ros combined.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true
-#kinematics_params_file:=config/ur_calibration.yaml
+if  [[ $sim == "true" ]]; then
+	ros2 launch octa_ros combined.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true
+else
+	ros2 launch octa_ros combined.py ur_type:=ur3e robot_ip:=192.168.0.10 headless_mode:=true reverse_ip:=192.168.0.5
+
+fi

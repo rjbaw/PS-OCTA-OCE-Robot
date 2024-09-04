@@ -457,6 +457,13 @@ def launch_setup():
         output="screen",
     )
 
+    octa_node = Node(
+        package="octa_ros",
+        executable="octa_ctrl",
+        name="octa_ctrl",
+        output="screen",
+    )
+
     nodes_after_driver = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=wait_robot_description,
@@ -465,6 +472,7 @@ def launch_setup():
                 move_group_node, 
                 servo_node, 
                 robot_state_node,
+                octa_node,
             ]
         )
     )

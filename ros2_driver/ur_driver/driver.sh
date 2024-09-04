@@ -1,10 +1,39 @@
 #!/bin/bash
+help()
+{
+   # Display Help
+   echo "Launch octa/oce ROS program"
+   echo
+   echo "Syntax: [-s|h]"
+   echo "options:"
+   echo "h     Print this Help."
+   echo "s     Simulation"
+   echo
+}
+
+while getopts ":hs" option; do
+   case $option in
+      h) # display Help
+         help
+         exit;;
+      h) # display Help
+         sim="true"
+         exit;;
+     \?) # Invalid option
+         echo "Error: Invalid option"
+         exit;;
+   esac
+done
+
 source install/setup.bash
-ROBOT_IP=192.168.0.10
-ROBOT_IP=192.168.56.101
-HOST_IP=192.168.0.5
 RVIZ=true
 
-#ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur3e robot_ip:=${ROBOT_IP} launch_rviz:=${RVIZ} robot_controller:=scaled_joint_trajectory_controller kinematics_params_files:="config/ur_calibration.yaml" reverse_ip:=${HOST_IP} headless_mode:=true
-#ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur3e robot_ip:=192.168.0.10 launch_rviz:=false robot_controller:=scaled_joint_trajectory_controller kinematics_params_files:="./ur_calibration.yaml" reverse_ip:=192.168.0.5 headless_mode:=true
-ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur3e robot_ip:=192.168.56.101 launch_rviz:=false robot_controller:=scaled_joint_trajectory_controller kinematics_params_files:="./ur_calibration.yaml" headless_mode:=true
+source install/setup.bash
+if  [[ $sim == "true" ]]; then
+	ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur3e robot_ip:=192.168.56.101 launch_rviz:=false robot_controller:=scaled_joint_trajectory_controller kinematics_params_files:="./ur_calibration.yaml" headless_mode:=true
+else
+	ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur3e robot_ip:=192.168.0.10 launch_rviz:=$RVIZ robot_controller:=scaled_joint_trajectory_controller reverse_ip:=192.168.0.5 kinematics_params_files:="./ur_calibration.yaml" headless_mode:=true
+fi
+
+
+

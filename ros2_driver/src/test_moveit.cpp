@@ -1,13 +1,12 @@
 #include <memory>
-
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <rclcpp/rclcpp.hpp>
-
-#include <memory>
 #include <csignal>
 #include <atomic> 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <rclcpp/rclcpp.hpp>
+
+#include <tf2/LinearMath/Quaternion.h>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 std::atomic<bool> running(true);  // Atomic flag to control the shutdown
 moveit::planning_interface::MoveGroupInterface* move_group_ptr = nullptr;  // Pointer to control the move group
@@ -65,31 +64,35 @@ int main(int argc, char *argv[]) {
     // geometry_msgs::msg::Pose target_pose =
     //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    // const moveit::core::JointModelGroup *joint_model_group =
-    //     move_group_interface.getCurrentState()->getJointModelGroup(
-    //         "ur_manipulator");
     geometry_msgs::msg::Pose target_pose =
         move_group_interface.getCurrentPose().pose;
-    target_pose.orientation.x += 0.0;
-    target_pose.orientation.y += 0.0;
-    target_pose.orientation.z += 0.0;
-    target_pose.orientation.w += 0.0;
-    target_pose.position.x += 0.1;
-    target_pose.position.y += 0;
-    target_pose.position.z += 0;
+    // target_pose.orientation.x += 0.0;
+    // target_pose.orientation.y += 0.0;
+    // target_pose.orientation.z += 0.0;
+    // target_pose.orientation.w += 0.0;
+    // target_pose.position.x += 0.1;
+    // target_pose.position.y += 0;
+    // target_pose.position.z += 0;
+    
+    tf2::Quaternion q;
+    tf2::Quaternion target_q;
+    q.setRPY(to_radians(0),to_radians(20),to_radians(0));
+    q.normalize();
+    tf2::fromMsg(target_pose.orientation, target_q);
+    // target_q = target_q * q;
+    target_q = q * target_q;
+    target_pose.orientation = tf2::toMsg(target_q);
 
-    // auto const target_pose = [] {
-    //     geometry_msgs::msg::Pose msg;
-    //     // real environment
-    //     msg.orientation.x = -0.4;
-    //     msg.orientation.y = 0.9;
-    //     msg.orientation.z = 0.0;
-    //     msg.orientation.w = 0.03;
-    //     msg.position.x = 0.36;
-    //     msg.position.y = -0.13;
-    //     msg.position.z = 0.18;
-    //     return msg;
-    // }();
+    // q.setRPY(to_radians(30),to_radians(90),to_radians(0));
+    // target_pose.orientation = tf2::toMsg(q);
+    target_pose.orientation.x = -0.4;
+    target_pose.orientation.y = 0.9;
+    target_pose.orientation.z = 0.0;
+    target_pose.orientation.w = 0.0;
+    target_pose.position.x = 0.3;
+    target_pose.position.y = 0.0;
+    target_pose.position.z = 0.2;
+
     move_group_interface.setPoseTarget(target_pose);
     // move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));
 

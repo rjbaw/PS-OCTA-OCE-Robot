@@ -7,6 +7,15 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
+// #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/convert.h>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
+
+#include <moveit/planning_interface/planning_interface.h>
+
 // #include <moveit/move_group_interface/move_group_interface.h>
 // #include <moveit/planning_scene_interface/planning_scene_interface.h>
 
@@ -246,10 +255,6 @@ int main(int argc, char *argv[]) {
         reset = subscriber_node->reset();
         fast_axis = subscriber_node->fast_axis();
 
-        if (reset) {
-            msg = "", angle = 0.0, circle_state = 1;
-        }
-
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
@@ -272,14 +277,37 @@ int main(int argc, char *argv[]) {
             yaw = to_radian(-angle);
         }
         if (fast_axis) {
-            roll = -drot;
+            roll += 0.77 * drot;
         } else {
-            yaw = -drot;
+            pitch += 0.77 * -drot;
         }
         q.setRPY(roll, pitch, yaw);
         q.normalize();
 
-	target_pose.orientation = target_pose.orientation * q;
+	// geometry_msgs::msg::Quaternion q_msg;
+	// tf2::convert(q_msg, q);
+	// tf2::Quaternion target_q;
+	// tf2::convert(target_pose.orientation, target_q);
+	// target_q = target_q * q;
+	// tf2::convert(target_q, target_pose.orientation);
+	
+	geometry_msgs::msg::Quaternion q_msg;
+	tf2::Quaternion target_q;
+	q_msg.x = target_pose.orientation.x;
+	q_msg.y = target_pose.orientation.y;
+	q_msg.z = target_pose.orientation.z;
+	q_msg.w = target_pose.orientation.w;
+	tf2::fromMsg(q_msg, target_q);
+	target_q = q * target_q;
+	q_msg = tf2::toMsg(target_q);
+	//target_pose.orientation = q_msg;
+	
+        target_pose.orientation.x = q_msg.x;
+        target_pose.orientation.y = q_msg.y;
+        target_pose.orientation.z = q_msg.z;
+        target_pose.orientation.w = q_msg.w;
+
+	// target_pose.orientation = target_pose.orientation * q;
         // target_pose.orientation.x = q.x();
         // target_pose.orientation.y = q.y();
         // target_pose.orientation.z = q.z();
@@ -289,17 +317,40 @@ int main(int argc, char *argv[]) {
         target_pose.position.y += radius * std::sin(to_radian(angle));
         target_pose.position.z += dz;
 
+	if (reset) {
+		msg = "", angle = 0.0, circle_state = 1;
+		target_pose.orientation.x = -0.4;
+		target_pose.orientation.y = 0.9;
+		target_pose.orientation.z = 0.0;
+		target_pose.orientation.w = 0.03;
+		target_pose.position.x = 0.36;
+		target_pose.position.y = -0.13;
+		target_pose.position.z = 0.18;
+	}
+
         move_group_interface.setPoseTarget(target_pose);
-        auto const [success, plan] = [&move_group_interface] {
-            moveit::planning_interface::MoveGroupInterface::Plan msg;
-            auto const ok = static_cast<bool>(move_group_interface.plan(msg));
-            return std::make_pair(ok, msg);
-        }();
-        if (success) {
-            move_group_interface.execute(plan);
-        } else {
-            RCLCPP_ERROR(logger, "Planning failed!");
-        }
+        // auto const [success, plan] = [&move_group_interface] {
+        //     moveit::planning_interface::MoveGroupInterface::Plan msg;
+        //     auto const ok = static_cast<bool>(move_group_interface.plan(msg));
+        //     return std::make_pair(ok, msg);
+        // }();
+        // if (success) {
+        //     move_group_interface.execute(plan);
+        // } else {
+        //     RCLCPP_ERROR(logger, "Planning failed!");
+        // }
+        move_group_interface.move();
+	rclcpp::sleep_for(std::chrono::seconds(5));
+	
+	// bool success = (move_group.move() == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+	// if (success)
+	// {
+	//     RCLCPP_INFO(rclcpp::get_logger("move_group"), "Motion executed successfully.");
+	// }
+	// else
+	// {
+	//     RCLCPP_WARN(rclcpp::get_logger("move_group"), "Motion execution failed.");
+	// }
 
         if ((std::abs(drot) < angle_tolerance) &&
             (std::abs(dz) && z_tolerance)) {
