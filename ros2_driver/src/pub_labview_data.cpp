@@ -1,4 +1,3 @@
-// common stl includes
 #include "octa_ros/msg/labviewdata.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include <chrono>
@@ -11,8 +10,6 @@ class MinimalPublisher : public rclcpp::Node {
     MinimalPublisher() : Node("pub_labview_data") {
         publisher_ = this->create_publisher<octa_ros::msg::Labviewdata>(
             "labview_data", 10);
-
-        // init the timer ptr with a wall timer object.
 
         timer_ = this->create_wall_timer(500ms, [this]() {
             auto message = octa_ros::msg::Labviewdata();
@@ -32,21 +29,12 @@ class MinimalPublisher : public rclcpp::Node {
             message.home = this->home;
             message.reset = this->reset;
             message.fast_axis = this->fast_axis;
-            // RCLCPP_INFO(this->get_logger(),
-            //             std::format("Publishing: {} and {}", message.msg,
-            //                         (double)message.angle)
-            //                 .c_str());
-            // publish message
             publisher_->publish(message);
-            // this->dz++;
-            // this->count++;
-            // this->drot += count / 180 * std::numbers::pi;
         });
     }
 
   private:
     double count = 0;
-    // shared ptr of a timer
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<octa_ros::msg::Labviewdata>::SharedPtr publisher_;
     double robot_vel = 0.1;
@@ -58,12 +46,12 @@ class MinimalPublisher : public rclcpp::Node {
     int num_pt = 18;
     double dz = 1;
     double drot = std::numbers::pi / 2;
-    bool autofocus = false;
+    bool autofocus = true;
     bool freedrive = false;
     bool previous = false;
     bool next = false;
     bool home = false;
-    bool reset = false;
+    bool reset = true;
     bool fast_axis = false;
 };
 

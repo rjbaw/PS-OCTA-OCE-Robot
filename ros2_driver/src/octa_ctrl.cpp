@@ -1,40 +1,25 @@
 #include "octa_ros/msg/labviewdata.hpp"
 #include "octa_ros/msg/robotdata.hpp"
 #include <chrono>
+#include <csignal>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
 #include <memory>
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/planning_interface/planning_interface.h>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Quaternion.h>
-
-// #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <tf2/LinearMath/Quaternion.h>
-#include <tf2/convert.h>
-#include <geometry_msgs/msg/quaternion.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
-
-#include <moveit/planning_interface/planning_interface.h>
-
-// #include <moveit/move_group_interface/move_group_interface.h>
-// #include <moveit/planning_scene_interface/planning_scene_interface.h>
-
-// #include <moveit_msgs/msg/display_robot_state.hpp>
-// #include <moveit_msgs/msg/display_trajectory.hpp>
-
-// #include <moveit_msgs/msg/attached_collision_object.hpp>
-// #include <moveit_msgs/msg/collision_object.hpp>
-
-// #include <moveit_visual_tools/moveit_visual_tools.h>
 
 #define be RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
 
 using namespace std::chrono_literals;
+std::atomic<bool> running(true);
 
-#include <csignal>  // Add this include for signal handling
-std::atomic<bool> running(true);  // Add this global variable to control the loop
 void signal_handler(int signum) {
-    RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Signal %d received, shutting down...", signum);
+    RCLCPP_INFO(rclcpp::get_logger("signal_handler"),
+                "Signal %d received, shutting down...", signum);
     running = false;
     rclcpp::shutdown();
 }
@@ -53,7 +38,6 @@ class dds_publisher : public rclcpp::Node {
             this->create_publisher<octa_ros::msg::Robotdata>("robot_data", 10);
 
         timer_ = this->create_wall_timer(10ms, [this]() {
-            // create string obj.
             auto message = octa_ros::msg::Robotdata();
             message.msg = this->msg;
             message.angle = this->angle;
@@ -61,17 +45,21 @@ class dds_publisher : public rclcpp::Node {
             message.fast_axis = this->fast_axis;
             message.apply_config = this->apply_config;
             message.end_state = this->end_state;
-            // RCLCPP_INFO(this->get_logger(),
-            //             std::format("Publishing: \n"
-            //                         " msg: {} \n"
-            //                         " angle: {}\n"
-            //                         " circle_state: {}\n"
-            //                         " apply_config: {}\n",
-            //                         " end_state: {}\n", this->msg,
-            //                         this->angle, this->circle_state,
-            //                         this->apply_config, this->end_state)
-            //                 .c_str());
-            publisher_->publish(message);
+            if (old_message != message) {
+                RCLCPP_INFO(this->get_logger(),
+                            std::format("Publishing: "
+                                        " msg: {} ,"
+                                        " angle: {},"
+                                        " circle_state: {},"
+                                        " apply_config: {},"
+                                        " end_state: {},",
+                                        this->msg, this->angle,
+                                        this->circle_state, this->apply_config,
+                                        this->end_state)
+                                .c_str());
+                publisher_->publish(message);
+            }
+            old_message = message;
         });
     };
 
@@ -93,6 +81,7 @@ class dds_publisher : public rclcpp::Node {
     double angle;
     int circle_state;
     bool fast_axis, apply_config, end_state;
+    octa_ros::msg::Robotdata old_message = octa_ros::msg::Robotdata();
 };
 
 class dds_subscriber : public rclcpp::Node {
@@ -120,30 +109,33 @@ class dds_subscriber : public rclcpp::Node {
                 home_ = msg->home;
                 reset_ = msg->reset;
                 fast_axis_ = msg->fast_axis;
-                // RCLCPP_INFO(this->get_logger(),
-                //             std::format("Subscribing: \n"
-                //                         " robot_vel: {}\n"
-                //                         " robot_acc: {}\n"
-                //                         " z_tolerance: {}\n"
-                //                         " angle_tolerance: {}\n"
-                //                         " radius: {}\n"
-                //                         " angle_limit: {}\n"
-                //                         " num_pt: {}\n"
-                //                         " dz: {}\n"
-                //                         " drot: {}\n"
-                //                         " autofocus: {}\n"
-                //                         " freedrive: {}\n"
-                //                         " previous: {}\n"
-                //                         " next: {}\n"
-                //                         " home: {}\n"
-                //                         " reset: {}\n"
-                //                         " fast_axis: {}\n",
-                //                         robot_vel_, robot_acc_, z_tolerance_,
-                //                         angle_tolerance_, radius_,
-                //                         angle_limit_, num_pt_, dz_, drot_,
-                //                         autofocus_, freedrive_, previous_,
-                //                         next_, home_, reset_, fast_axis_)
-                //                 .c_str());
+                if (old_msg != *msg) {
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        std::format("Subscribing: "
+                                    " robot_vel: {},"
+                                    " robot_acc: {},"
+                                    " z_tolerance: {},"
+                                    " angle_tolerance: {},"
+                                    " radius: {},"
+                                    " angle_limit: {},"
+                                    " num_pt: {},"
+                                    " dz: {},"
+                                    " drot: {},"
+                                    " autofocus: {},"
+                                    " freedrive: {},"
+                                    " previous: {},"
+                                    " next: {},"
+                                    " home: {},"
+                                    " reset: {},"
+                                    " fast_axis: {},",
+                                    robot_vel_, robot_acc_, z_tolerance_,
+                                    angle_tolerance_, radius_, angle_limit_,
+                                    num_pt_, dz_, drot_, autofocus_, freedrive_,
+                                    previous_, next_, home_, reset_, fast_axis_)
+                            .c_str());
+                }
+                old_msg = *msg;
             });
     };
     double robot_vel() { return robot_vel_; };
@@ -172,33 +164,98 @@ class dds_subscriber : public rclcpp::Node {
     int num_pt_ = 0;
     bool autofocus_ = false, freedrive_ = false, previous_ = false,
          next_ = false, home_ = false, reset_ = false, fast_axis_ = false;
+    octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
 };
 
 double to_radian(double degree) { return (std::numbers::pi / 180 * degree); }
 
+void add_collision_obj(auto &move_group_interface) {
+
+    auto const collision_floor = [frame_id =
+                                      move_group_interface.getPlanningFrame()] {
+        moveit_msgs::msg::CollisionObject collision_floor;
+        collision_floor.header.frame_id = frame_id;
+        collision_floor.id = "floor";
+        shape_msgs::msg::SolidPrimitive primitive;
+
+        primitive.type = primitive.BOX;
+        primitive.dimensions.resize(3);
+        primitive.dimensions[primitive.BOX_X] = 10.0;
+        primitive.dimensions[primitive.BOX_Y] = 10.0;
+        primitive.dimensions[primitive.BOX_Z] = 0.01;
+
+        geometry_msgs::msg::Pose box_pose;
+        box_pose.orientation.w = 1.0;
+        box_pose.position.x = 0.0;
+        box_pose.position.y = 0.0;
+        box_pose.position.z = -0.1055;
+
+        collision_floor.primitives.push_back(primitive);
+        collision_floor.primitive_poses.push_back(box_pose);
+        collision_floor.operation = collision_floor.ADD;
+
+        return collision_floor;
+    }();
+
+    auto const collision_base = [frame_id =
+                                     move_group_interface.getPlanningFrame()] {
+        moveit_msgs::msg::CollisionObject collision_base;
+        collision_base.header.frame_id = frame_id;
+        collision_base.id = "robot_base";
+        shape_msgs::msg::SolidPrimitive primitive;
+
+        primitive.type = primitive.BOX;
+        primitive.dimensions.resize(3);
+        primitive.dimensions[primitive.BOX_X] = 0.2;
+        primitive.dimensions[primitive.BOX_Y] = 0.2;
+        primitive.dimensions[primitive.BOX_Z] = 0.1;
+
+        geometry_msgs::msg::Pose box_pose;
+        box_pose.orientation.w = 1.0;
+        box_pose.position.x = 0.0;
+        box_pose.position.y = 0.0;
+        box_pose.position.z = -0.055;
+
+        collision_base.primitives.push_back(primitive);
+        collision_base.primitive_poses.push_back(box_pose);
+        collision_base.operation = collision_base.ADD;
+
+        return collision_base;
+    }();
+
+    moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
+    planning_scene_interface.applyCollisionObject(collision_floor);
+    planning_scene_interface.applyCollisionObject(collision_base);
+}
+
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
+    using moveit::planning_interface::MoveGroupInterface;
+
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
+
     auto const move_group_node =
         std::make_shared<rclcpp::Node>("node_moveit", node_options);
-
-    auto const logger = rclcpp::get_logger("logger_planning");
+    auto move_group_interface =
+        MoveGroupInterface(move_group_node, "ur_manipulator");
+    auto subscriber_node = std::make_shared<dds_subscriber>();
 
     rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(move_group_node);
+    executor.add_node(subscriber_node);
     std::thread([&executor]() { executor.spin(); }).detach();
-    using moveit::planning_interface::MoveGroupInterface;
-    auto move_group_interface = MoveGroupInterface(move_group_node, "ur_manipulator");
 
-    rclcpp::executors::SingleThreadedExecutor exec;
-    auto subscriber_node = std::make_shared<dds_subscriber>();
-    exec.add_node(subscriber_node);
-    std::thread([&exec]() { exec.spin(); }).detach();
+    auto const logger = rclcpp::get_logger("logger_planning");
+
+    std::string msg;
+    double angle = 0.0;
+    int circle_state = 1;
+    bool apply_config = false;
+    bool end_state = false;
 
     double robot_vel = subscriber_node->robot_vel();
     double robot_acc = subscriber_node->robot_acc();
@@ -217,12 +274,6 @@ int main(int argc, char *argv[]) {
     bool reset = subscriber_node->reset();
     bool fast_axis = subscriber_node->fast_axis();
 
-    std::string msg;
-    double angle = 0.0;
-    int circle_state = 1;
-    bool apply_config = false;
-    bool end_state = false;
-
     rclcpp::executors::SingleThreadedExecutor exec_pub;
     auto publisher_node = std::make_shared<dds_publisher>(
         msg = msg, angle = angle, circle_state = circle_state,
@@ -231,12 +282,31 @@ int main(int argc, char *argv[]) {
     exec_pub.add_node(publisher_node);
     std::thread([&exec_pub]() { exec_pub.spin(); }).detach();
 
+    add_collision_obj(move_group_interface);
+
     while (rclcpp::ok() && running) {
+
+        if (reset) {
+            geometry_msgs::msg::Pose target_pose;
+            msg = "", angle = 0.0, circle_state = 1;
+            target_pose.orientation.x = -0.4;
+            target_pose.orientation.y = 0.9;
+            target_pose.orientation.z = 0.0;
+            target_pose.orientation.w = 0.03;
+            target_pose.position.x = 0.36;
+            target_pose.position.y = -0.13;
+            target_pose.position.z = 0.18;
+            move_group_interface.setPoseTarget(target_pose);
+            move_group_interface.move();
+            continue;
+        }
+
         autofocus = subscriber_node->autofocus();
         freedrive = subscriber_node->freedrive();
         if (freedrive || !autofocus) {
             continue;
         }
+
         apply_config = false;
         end_state = false;
 
@@ -262,98 +332,67 @@ int main(int argc, char *argv[]) {
         double angle_increment = angle_limit / num_pt;
         double roll = 0, pitch = 0, yaw = 0;
         tf2::Quaternion q;
-	geometry_msgs::msg::Pose target_pose =
-	    move_group_interface.getCurrentPose().pose;
+        geometry_msgs::msg::Pose target_pose =
+            move_group_interface.getCurrentPose().pose;
 
         if (next) {
             angle += angle_increment;
-            yaw = to_radian(angle_increment);
+            yaw += to_radian(angle_increment);
         }
         if (previous) {
             angle -= angle_increment;
-            yaw = to_radian(-angle_increment);
+            yaw += to_radian(-angle_increment);
         }
         if (home) {
-            yaw = to_radian(-angle);
+            yaw += to_radian(-angle);
         }
+
         if (fast_axis) {
             roll += 0.77 * drot;
         } else {
             pitch += 0.77 * -drot;
         }
+
         q.setRPY(roll, pitch, yaw);
         q.normalize();
 
-	// geometry_msgs::msg::Quaternion q_msg;
-	// tf2::convert(q_msg, q);
-	// tf2::Quaternion target_q;
-	// tf2::convert(target_pose.orientation, target_q);
-	// target_q = target_q * q;
-	// tf2::convert(target_q, target_pose.orientation);
-	
-	geometry_msgs::msg::Quaternion q_msg;
-	tf2::Quaternion target_q;
-	q_msg.x = target_pose.orientation.x;
-	q_msg.y = target_pose.orientation.y;
-	q_msg.z = target_pose.orientation.z;
-	q_msg.w = target_pose.orientation.w;
-	tf2::fromMsg(q_msg, target_q);
-	target_q = q * target_q;
-	q_msg = tf2::toMsg(target_q);
-	//target_pose.orientation = q_msg;
-	
-        target_pose.orientation.x = q_msg.x;
-        target_pose.orientation.y = q_msg.y;
-        target_pose.orientation.z = q_msg.z;
-        target_pose.orientation.w = q_msg.w;
-
-	// target_pose.orientation = target_pose.orientation * q;
-        // target_pose.orientation.x = q.x();
-        // target_pose.orientation.y = q.y();
-        // target_pose.orientation.z = q.z();
-        // target_pose.orientation.w = q.w();
+        tf2::Quaternion target_q;
+        tf2::fromMsg(target_pose.orientation, target_q);
+        target_q = q * target_q;
+        target_pose.orientation = tf2::toMsg(target_q);
 
         target_pose.position.x += radius * std::cos(to_radian(angle));
         target_pose.position.y += radius * std::sin(to_radian(angle));
         target_pose.position.z += dz;
 
-	if (reset) {
-		msg = "", angle = 0.0, circle_state = 1;
-		target_pose.orientation.x = -0.4;
-		target_pose.orientation.y = 0.9;
-		target_pose.orientation.z = 0.0;
-		target_pose.orientation.w = 0.03;
-		target_pose.position.x = 0.36;
-		target_pose.position.y = -0.13;
-		target_pose.position.z = 0.18;
-	}
+        RCLCPP_INFO(
+            logger,
+            std::format("Target Pose: "
+                        " x: {}, y: {}, z: {},"
+                        " qx: {}, qy: {}, qz: {}, qw: {},",
+                        target_pose.position.x, target_pose.position.y,
+                        target_pose.position.z, target_pose.orientation.x,
+                        target_pose.orientation.y, target_pose.orientation.z,
+                        target_pose.orientation.w)
+                .c_str());
 
         move_group_interface.setPoseTarget(target_pose);
-        // auto const [success, plan] = [&move_group_interface] {
-        //     moveit::planning_interface::MoveGroupInterface::Plan msg;
-        //     auto const ok = static_cast<bool>(move_group_interface.plan(msg));
-        //     return std::make_pair(ok, msg);
-        // }();
-        // if (success) {
-        //     move_group_interface.execute(plan);
-        // } else {
-        //     RCLCPP_ERROR(logger, "Planning failed!");
-        // }
-        move_group_interface.move();
-	rclcpp::sleep_for(std::chrono::seconds(5));
-	
-	// bool success = (move_group.move() == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-	// if (success)
-	// {
-	//     RCLCPP_INFO(rclcpp::get_logger("move_group"), "Motion executed successfully.");
-	// }
-	// else
-	// {
-	//     RCLCPP_WARN(rclcpp::get_logger("move_group"), "Motion execution failed.");
-	// }
+        auto const [success, plan] = [&move_group_interface] {
+            moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
+            auto const ok =
+                static_cast<bool>(move_group_interface.plan(plan_feedback));
+            return std::make_pair(ok, plan_feedback);
+        }();
+        if (success) {
+            move_group_interface.execute(plan);
+        } else {
+            RCLCPP_ERROR(logger, "Planning failed!");
+        }
+
+        rclcpp::sleep_for(std::chrono::seconds(1));
 
         if ((std::abs(drot) < angle_tolerance) &&
-            (std::abs(dz) && z_tolerance)) {
+            (std::abs(dz) < z_tolerance)) {
             if (!fast_axis) {
                 fast_axis = true;
                 apply_config = true;
@@ -370,14 +409,8 @@ int main(int argc, char *argv[]) {
         publisher_node->set_fast_axis(fast_axis);
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
-
-        // rclcpp::spin_some(std::make_shared<dds_publisher>(
-        //     msg = msg, angle = angle, circle_state = circle_state,
-        //     fast_axis = fast_axis, apply_config = apply_config,
-        //     end_state = end_state));
     }
 
     rclcpp::shutdown();
     return 0;
 }
-

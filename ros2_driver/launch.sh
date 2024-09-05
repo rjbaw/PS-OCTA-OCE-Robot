@@ -11,14 +11,13 @@ help()
    echo
 }
 
+sim="false"
 while getopts ":hs" option; do
    case $option in
       h) # display Help
          help
          exit;;
-      h) # display Help
-         sim="true"
-         exit;;
+      s) sim="true";;
      \?) # Invalid option
          echo "Error: Invalid option"
          exit;;

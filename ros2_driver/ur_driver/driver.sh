@@ -16,9 +16,7 @@ while getopts ":hs" option; do
       h) # display Help
          help
          exit;;
-      h) # display Help
-         sim="true"
-         exit;;
+      s) sim="true";;
      \?) # Invalid option
          echo "Error: Invalid option"
          exit;;

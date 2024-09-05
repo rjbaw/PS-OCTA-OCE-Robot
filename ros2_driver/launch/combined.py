@@ -696,7 +696,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "rviz_config_file",
             default_value=PathJoinSubstitution(
-                [FindPackageShare("ur_moveit_config"), "config", "moveit.rviz"]
+                [FindPackageShare("octa_ros"), "config", "moveit.rviz"]
             ),
             description="RViz config file (absolute path) to use when launching rviz.",
         )
