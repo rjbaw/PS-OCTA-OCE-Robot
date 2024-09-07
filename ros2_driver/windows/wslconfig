@@ -1,0 +1,7 @@
+[wsl2]
+networkingMode=mirrored
+#kernelCommandLine=ipv6.disable=1
+#firewall=false
+#localhostForwarding = true
+#[experimental]
+#hostAddressLoopback=true

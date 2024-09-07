@@ -8,6 +8,8 @@
   <!-- ros2 control include -->
   <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro" />
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
+  <!-- end_effector include -->
+  <xacro:include filename="$(find octa_ros)/urdf/end_effector.xacro" />
 
   <!-- possible 'ur_type' values: ur3, ur3e, ur5, ur5e, ur10, ur10e, ur16e, ur20 -->
   <!-- the default value should raise an error in case this was called without defining the type -->
@@ -103,5 +105,9 @@
     script_sender_port="$(arg script_sender_port)"
     trajectory_port="$(arg trajectory_port)"
   />
+
+  <xacro:end_effector prefix="" parent="wrist_3_link">
+    <origin xyz="0 0 0.04" rpy="0 0 0"/>
+  </xacro:end_effector>
 
 </robot>

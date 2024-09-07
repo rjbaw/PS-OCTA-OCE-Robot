@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="end_effector" params="prefix parent *origin">
+    
+    <!-- Joint connecting to parent link -->
+    <joint name="${prefix}end_effector_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}end_effector_link"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <!-- End effector link -->
+    <link name="${prefix}end_effector_link">
+      <visual>
+        <geometry>
+          <sphere radius="0.05"/>
+        </geometry>
+        <material name="blue">
+          <color rgba="0 0 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <sphere radius="0.03"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="0.000016667" ixy="0" ixz="0" iyy="0.000016667" iyz="0" izz="0.000016667"/>
+      </inertial>
+    </link>
+
+  </xacro:macro>
+
+</robot>
