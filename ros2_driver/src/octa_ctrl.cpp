@@ -223,31 +223,31 @@ void add_collision_obj(auto &move_group_interface) {
         return collision_base;
     }();
 
-    auto const collision_monitor = [frame_id =
-                                     move_group_interface.getPlanningFrame()] {
-        moveit_msgs::msg::CollisionObject collision_monitor;
-        collision_monitor.header.frame_id = frame_id;
-        collision_monitor.id = "monitor";
-        shape_msgs::msg::SolidPrimitive primitive;
+    auto const collision_monitor =
+        [frame_id = move_group_interface.getPlanningFrame()] {
+            moveit_msgs::msg::CollisionObject collision_monitor;
+            collision_monitor.header.frame_id = frame_id;
+            collision_monitor.id = "monitor";
+            shape_msgs::msg::SolidPrimitive primitive;
 
-        primitive.type = primitive.BOX;
-        primitive.dimensions.resize(3);
-        primitive.dimensions[primitive.BOX_X] = 0.5;
-        primitive.dimensions[primitive.BOX_Y] = 0.8;
-        primitive.dimensions[primitive.BOX_Z] = 0.8;
+            primitive.type = primitive.BOX;
+            primitive.dimensions.resize(3);
+            primitive.dimensions[primitive.BOX_X] = 0.5;
+            primitive.dimensions[primitive.BOX_Y] = 0.8;
+            primitive.dimensions[primitive.BOX_Z] = 0.8;
 
-        geometry_msgs::msg::Pose box_pose;
-        box_pose.orientation.w = 1.0;
-        box_pose.position.x = -0.1;
-        box_pose.position.y = 0.6;
-        box_pose.position.z = 0.0;
+            geometry_msgs::msg::Pose box_pose;
+            box_pose.orientation.w = 1.0;
+            box_pose.position.x = -0.1;
+            box_pose.position.y = 0.6;
+            box_pose.position.z = 0.0;
 
-        collision_monitor.primitives.push_back(primitive);
-        collision_monitor.primitive_poses.push_back(box_pose);
-        collision_monitor.operation = collision_monitor.ADD;
+            collision_monitor.primitives.push_back(primitive);
+            collision_monitor.primitive_poses.push_back(box_pose);
+            collision_monitor.operation = collision_monitor.ADD;
 
-        return collision_monitor;
-    }();
+            return collision_monitor;
+        }();
 
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
     planning_scene_interface.applyCollisionObject(collision_floor);
@@ -285,8 +285,8 @@ int main(int argc, char *argv[]) {
     bool end_state = false;
 
     bool changed = false;
-    double old_dz = 0.0;
-    double old_drot = 0.0;
+    // double old_dz = 0.0;
+    // double old_drot = 0.0;
 
     double robot_vel = subscriber_node->robot_vel();
     double robot_acc = subscriber_node->robot_acc();
@@ -303,7 +303,7 @@ int main(int argc, char *argv[]) {
     bool next = subscriber_node->next();
     bool home = subscriber_node->home();
     bool reset = subscriber_node->reset();
-    //bool fast_axis = subscriber_node->fast_axis();
+    // bool fast_axis = subscriber_node->fast_axis();
     bool fast_axis = true;
 
     rclcpp::executors::SingleThreadedExecutor exec_pub;
@@ -352,11 +352,11 @@ int main(int argc, char *argv[]) {
             move_group_interface.getCurrentPose().pose;
 
         if (next) {
-	    if (!changed) {
+            if (!changed) {
                 angle += angle_increment;
                 yaw += to_radian(angle_increment);
-	        changed = true;
-	    }
+                changed = true;
+            }
         }
         if (previous) {
             angle -= angle_increment;
@@ -364,28 +364,27 @@ int main(int argc, char *argv[]) {
         }
         if (home) {
             yaw += to_radian(-angle);
-	    angle = 0.0;
+            angle = 0.0;
         }
-	if (changed && !next && !previous && !home) {
-	    changed = false;
-	}
+        if (changed && !next && !previous && !home) {
+            changed = false;
+        }
 
-	if (autofocus
-	//if (autofocus && 
-	//    (std::abs(old_dz - dz) > z_tolerance) &&
-	//    (std::abs(old_drot - drot) > to_radian(angle_tolerance)) 
-	   ) {
+        if (autofocus
+            // if (autofocus && (std::abs(dz) > z_tolerance) &&
+            //     (std::abs(drot) > to_radian(angle_tolerance))
+        ) {
             if (fast_axis) {
-                roll += 0.3 * drot;
+                roll += 0.75 * drot;
             } else {
-                pitch += 0.3 * -drot;
+                pitch += 0.75 * -drot;
             }
             target_pose.position.x += radius * std::cos(to_radian(angle));
             target_pose.position.y += radius * std::sin(to_radian(angle));
             target_pose.position.z += -dz;
-	    old_dz = dz;
-	    old_drot = drot;
-	}
+            // old_dz = dz;
+            // old_drot = drot;
+        }
 
         q.setRPY(roll, pitch, yaw);
         q.normalize();
@@ -410,45 +409,46 @@ int main(int argc, char *argv[]) {
             // continue;
         }
 
-	if (autofocus || reset || next || previous || home) {
-        RCLCPP_INFO(
-            logger,
-            std::format("Target Pose: "
-                        " x: {}, y: {}, z: {},"
-                        " qx: {}, qy: {}, qz: {}, qw: {},",
-                        target_pose.position.x, target_pose.position.y,
-                        target_pose.position.z, target_pose.orientation.x,
-                        target_pose.orientation.y, target_pose.orientation.z,
-                        target_pose.orientation.w)
-                .c_str());
+        if (autofocus || reset || next || previous || home) {
+            RCLCPP_INFO(logger, std::format("Target Pose: "
+                                            " x: {}, y: {}, z: {},"
+                                            " qx: {}, qy: {}, qz: {}, qw: {},",
+                                            target_pose.position.x,
+                                            target_pose.position.y,
+                                            target_pose.position.z,
+                                            target_pose.orientation.x,
+                                            target_pose.orientation.y,
+                                            target_pose.orientation.z,
+                                            target_pose.orientation.w)
+                                    .c_str());
 
-        move_group_interface.setPoseTarget(target_pose);
-        auto const [success, plan] = [&move_group_interface] {
-            moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
-            auto const ok =
-                static_cast<bool>(move_group_interface.plan(plan_feedback));
-            return std::make_pair(ok, plan_feedback);
-        }();
-        if (success) {
-            move_group_interface.execute(plan);
-        } else {
-            RCLCPP_ERROR(logger, "Planning failed!");
-        }
-
-        if (autofocus && 
-	    (std::abs(drot) < to_radian(angle_tolerance)) &&
-            (std::abs(dz) < z_tolerance)) {
-            if (fast_axis) {
-                fast_axis = false;
-                apply_config = true;
+            move_group_interface.setPoseTarget(target_pose, "end_effector");
+            auto const [success, plan] = [&move_group_interface] {
+                moveit::planning_interface::MoveGroupInterface::Plan
+                    plan_feedback;
+                auto const ok =
+                    static_cast<bool>(move_group_interface.plan(plan_feedback));
+                return std::make_pair(ok, plan_feedback);
+            }();
+            if (success) {
+                move_group_interface.execute(plan);
             } else {
-                fast_axis = true;
-                apply_config = true;
-                end_state = true;
+                RCLCPP_ERROR(logger, "Planning failed!");
             }
+
+            if (autofocus && (std::abs(drot) < to_radian(angle_tolerance)) &&
+                (std::abs(dz) < z_tolerance)) {
+                if (fast_axis) {
+                    fast_axis = false;
+                    apply_config = true;
+                } else {
+                    fast_axis = true;
+                    apply_config = true;
+                    end_state = true;
+                }
+            }
+            rclcpp::sleep_for(std::chrono::seconds(2));
         }
-        rclcpp::sleep_for(std::chrono::seconds(5));
-	}
 
         publisher_node->set_msg(msg);
         publisher_node->set_angle(angle);
