@@ -107,7 +107,7 @@
   />
 
   <xacro:end_effector prefix="" parent="wrist_3_link">
-    <origin xyz="0 0.014 0.1328" rpy="0 0 0"/>
+    <origin xyz="0.00015 0.014 0.1328" rpy="0 0 0"/>
   </xacro:end_effector>
 
 </robot>

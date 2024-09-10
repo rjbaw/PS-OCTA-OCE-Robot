@@ -604,7 +604,8 @@ def generate_launch_description():
             "description_file",
             default_value=PathJoinSubstitution(
                 #[FindPackageShare("ur_robot_driver"), "urdf", "ur.urdf.xacro"]
-                [FindPackageShare("octa_ros"), "urdf", "ur_end_effector.xacro"]
+                #[FindPackageShare("octa_ros"), "urdf", "ur_end_effector.xacro"]
+                [FindPackageShare("octa_ros"), "urdf", "ur.urdf.xacro"]
             ),
             description="URDF/XACRO description file with the robot.",
         )

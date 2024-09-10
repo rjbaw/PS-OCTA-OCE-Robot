@@ -59,13 +59,14 @@ int main(int argc, char *argv[]) {
 
     move_group_ptr = &move_group_interface;
 
-    // std::string reference_frame = "wrist_3_link";
-    // move_group_interface.setPoseReferenceFrame(reference_frame);
-    // geometry_msgs::msg::Pose target_pose =
-    //     move_group_interface.getCurrentPose(reference_frame).pose;
-
+    std::string reference_frame = "tool0";
+    move_group_interface.setPoseReferenceFrame(reference_frame);
     geometry_msgs::msg::Pose target_pose =
-        move_group_interface.getCurrentPose().pose;
+        move_group_interface.getCurrentPose(reference_frame).pose;
+
+    // geometry_msgs::msg::Pose target_pose =
+    //     move_group_interface.getCurrentPose().pose;
+    //
     // target_pose.orientation.x += 0.0;
     // target_pose.orientation.y += 0.0;
     // target_pose.orientation.z += 0.0;
@@ -76,7 +77,7 @@ int main(int argc, char *argv[]) {
     
     tf2::Quaternion q;
     tf2::Quaternion target_q;
-    q.setRPY(to_radians(0),to_radians(20),to_radians(0));
+    q.setRPY(to_radians(0),to_radians(0),to_radians(20));
     q.normalize();
     tf2::fromMsg(target_pose.orientation, target_q);
     // target_q = target_q * q;
@@ -85,13 +86,14 @@ int main(int argc, char *argv[]) {
 
     // q.setRPY(to_radians(30),to_radians(90),to_radians(0));
     // target_pose.orientation = tf2::toMsg(q);
-    target_pose.orientation.x = -0.4;
-    target_pose.orientation.y = 0.9;
-    target_pose.orientation.z = 0.0;
-    target_pose.orientation.w = 0.0;
-    target_pose.position.x = 0.3;
-    target_pose.position.y = 0.0;
-    target_pose.position.z = 0.2;
+    //
+    // target_pose.orientation.x = -0.4;
+    // target_pose.orientation.y = 0.9;
+    // target_pose.orientation.z = 0.0;
+    // target_pose.orientation.w = 0.0;
+    // target_pose.position.x = 0.3;
+    // target_pose.position.y = 0.0;
+    // target_pose.position.z = 0.2;
 
     move_group_interface.setPoseTarget(target_pose);
     // move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));

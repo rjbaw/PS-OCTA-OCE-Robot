@@ -4,7 +4,7 @@
   <xacro:arg name="name" default="ur"/>
 
   <!-- ur_description -->
-  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find octa_ros)/urdf/ur_macro.xacro"/>
   <!-- ros2 control include -->
   <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro" />
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />

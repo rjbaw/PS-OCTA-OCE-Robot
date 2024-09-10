@@ -250,7 +250,7 @@ void add_collision_obj(auto &move_group_interface) {
         }();
 
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
-    planning_scene_interface.applyCollisionObject(collision_floor);
+    //planning_scene_interface.applyCollisionObject(collision_floor);
     planning_scene_interface.applyCollisionObject(collision_base);
     planning_scene_interface.applyCollisionObject(collision_monitor);
 }
@@ -344,6 +344,13 @@ int main(int argc, char *argv[]) {
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
+        // move_group_interface.setPoseReferenceFrame("end_effector_link");
+        // move_group_interface.setPoseReferenceFrame("tool0");
+
+	// std::vector<std::string> link_names = move_group_interface.getLinkNames();
+	// for (const auto& link : link_names) {
+	//     RCLCPP_INFO(logger, link.c_str());
+	// }
 
         double angle_increment = angle_limit / num_pt;
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
@@ -422,7 +429,9 @@ int main(int argc, char *argv[]) {
                                             target_pose.orientation.w)
                                     .c_str());
 
-            move_group_interface.setPoseTarget(target_pose, "end_effector");
+            // move_group_interface.setPoseTarget(target_pose);
+            // move_group_interface.setPoseTarget(target_pose, "end_effector_link");
+            // move_group_interface.setPoseTarget(target_pose, "tool0");
             auto const [success, plan] = [&move_group_interface] {
                 moveit::planning_interface::MoveGroupInterface::Plan
                     plan_feedback;
