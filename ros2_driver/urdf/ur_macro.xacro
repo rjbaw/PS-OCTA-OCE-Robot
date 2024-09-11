@@ -325,7 +325,7 @@
       <!-- default toolframe - X+ left, Y+ up, Z+ front -->
       <!-- origin xyz="0 0 0" rpy="${pi/2.0} 0 ${pi/2.0}"/ -->
       <!-- origin xyz="0.000015 0.014 0.1328" rpy="${pi/2.0} 0 ${pi/2.0}"/ -->
-      <origin xyz="0.1328 -0.000015 -0.014" rpy="${pi/2.0} 0 ${pi/2.0}"/>
+      <origin xyz="0.1328 -0.001985 0.011968" rpy="${pi/2.0} 0 ${pi/2.0}"/>
       <parent link="${tf_prefix}flange"/>
       <child link="${tf_prefix}tool0"/>
     </joint>
