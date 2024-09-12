@@ -25,6 +25,7 @@ while getopts ":hs" option; do
 done
 
 pkill ros
+rm -f core*
 source ur_driver/install/setup.bash
 source install/setup.bash
 if  [[ $sim == "true" ]]; then
