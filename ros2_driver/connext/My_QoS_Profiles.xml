@@ -1,0 +1,143 @@
+<!-- 被2013 sp1 () 使用XMLSpy v编辑的 (http://www.altova.com) by -->
+<!-- RTI DDS Toolkit for LabVIEW Default QoS Profiles
+
+This file is provided for reference only and should not be modified. The
+profiles in this file are built-in into the RTI DDS Toolkit for LabVIEW and
+can be referred to in the APIs by their library names and profile names. You
+can also use the Builtin QoS profiles documented under Modules/Infrastructure/
+Builtin QoS Profiles in the online html documentation.
+
+If you wish to modify any of the values in this file, the recommendation is to
+create a profile of your own and inherit from this one and define the environment
+variable NDDS_QOS_PROFILES to point to it.
+
+For Example:
+<qos_library name="MyLibrary">
+  <qos_profile name="MyProfile" base_name="LabVIEWLibrary::DefaultProfile">
+    ... Change/add Qos settings here ...
+  </qos_profile>
+</qos_library>
+
+This file contains:
+Libraries
+* LabVIEWLibrary contains all default profiles embedded in the RTI DDS Toolkit for
+  LabVIEW.
+
+Profiles
+* DefaultProfile represents the QoS defaults for the RTI DDS Toolkit for LabVIEW. If
+  no profile is provided, this is the profile used.
+
+* BurstReadingProfile should be use when using Shared Readers and 'read' function.
+  This profile enables a queue so old values are not overwritten while processed.
+
+* MonitoringProfile enables RTI Monitoring libraries. The monitoring library path
+  should be in the PATH environment variable so they can be loaded. See the shipped
+  examples for more details.
+
+* ReliableProfile should be use when Shared Readers and read are used. This profile
+  allows some reliability even when the Readers are reading instead of taking. When
+  using exclusive Readers, the usage of the BuiltinQosLibExp::Generic.StrictReliable
+  profile is recommended.
+
+* NoTypeCodeProfile avoids sending the TypeCode and TypeObject of your DDS data types.
+  This is needed for compatibility with some data types such as strings. Use it
+  only if you are sure your types are compatible.
+-->
+<dds xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="file:///C:/Program%20Files%20(x86)/National%20Instruments/LabVIEW%202021/vi.lib/RTI%20DDS%20Toolkit/XML%20Schemas/rti_dds_qos_profiles.xsd">
+	<!-- QoS Library -->
+	<qos_library name="MyLibrary">
+			<qos_profile name="DefaultProfile">
+			<participant_qos>
+				<property>
+					<value>
+						<element>
+							<!-- This property enables bounded/unbounded string communication -->
+							<name>dds.type_consistency.ignore_sequence_bounds</name>
+							<value> 1 </value>
+							<propagate>true</propagate>
+						</element>
+					</value>
+				</property>
+			</participant_qos>
+			<datareader_qos>
+				<history>
+					<kind>KEEP_LAST_HISTORY_QOS</kind> <!-- Default value -->
+					<depth>1</depth>
+				</history>
+				<property>
+					<value>
+						<element>
+							<!-- This property improves large data performance -->
+							<name>dds.data_reader.history.memory_manager.fast_pool.pool_buffer_max_size</name>
+							<value> 1024 </value>
+						</element>
+					</value>
+				</property>
+			</datareader_qos>
+			<datawriter_qos>
+				<property>
+					<value>
+						<element>
+							<!-- This property improves large data performance -->
+							<name>dds.data_writer.history.memory_manager.fast_pool.pool_buffer_max_size</name>
+							<value> 1024 </value>
+						</element>
+					</value>
+				</property>
+			</datawriter_qos>
+		</qos_profile>
+	
+		<!-- Use this profile if you want your data reader to keep a queue with
+		the last 10 values. Using this profile REQUIRES that you set the flag
+		only_new_samples to 'true' when using the Read subVIEW. It is on you
+		to keep up with the reading ratio so old values are not overwritten -->
+		<qos_profile name="ReliableProfile" base_name="DefaultProfile">
+			<datareader_qos>
+				<reliability>
+					<kind>RELIABLE_RELIABILITY_QOS</kind>
+					<max_blocking_time>
+						<sec>DURATION_ZERO_SEC</sec>
+						<nanosec>100000000</nanosec>
+					</max_blocking_time>
+				</reliability>
+				<durability>
+					<kind>TRANSIENT_LOCAL_DURABILITY_QOS</kind>
+				</durability>
+				<history>
+					<kind>KEEP_LAST_HISTORY_QOS</kind>
+					<depth>10</depth>
+				</history>
+			</datareader_qos>
+			<datawriter_qos>
+				<reliability>
+					<kind>RELIABLE_RELIABILITY_QOS</kind>
+					<max_blocking_time>
+						<sec>DURATION_ZERO_SEC</sec>
+						<nanosec>100000000</nanosec>
+					</max_blocking_time>
+				</reliability>
+				<history>
+					<kind>KEEP_LAST_HISTORY_QOS</kind>
+					<depth>10</depth>
+					<!-- You will need to set the only_new_samples flag to 'true' -->
+				</history>
+				<durability>
+					<kind>TRANSIENT_LOCAL_DURABILITY_QOS</kind>
+				</durability>
+			</datawriter_qos>
+		</qos_profile>
+		<qos_profile name="NoTypeCodeProfile" base_name="DefaultProfile" is_default_qos="true">
+			<!-- This profile avoids sending the TypeCode and TypeObject of your DDS data types.
+			This is needed for compatibility with some data types such as strings. In the RTI
+			DDS Toolkit for LabVIEW, strings are fixed to a length of 1024. This may make it
+			incompatible with other DDS data types. Make sure your data types are
+			compatible before using this profile. -->
+			<participant_qos>
+				<resource_limits>
+					<type_code_max_serialized_length> 0 </type_code_max_serialized_length>
+					<type_object_max_serialized_length> 0 </type_object_max_serialized_length>
+				</resource_limits>
+			</participant_qos>
+		</qos_profile>
+	</qos_library>
+</dds>
