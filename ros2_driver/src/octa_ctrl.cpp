@@ -1,5 +1,3 @@
-#include "octa_ros/msg/labviewdata.hpp"
-#include "octa_ros/msg/robotdata.hpp"
 #include <chrono>
 #include <csignal>
 #include <geometry_msgs/msg/pose.hpp>
@@ -8,7 +6,10 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_interface/planning_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <octa_ros/msg/labviewdata.hpp>
+#include <octa_ros/msg/robotdata.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -87,7 +88,7 @@ class dds_publisher : public rclcpp::Node {
 class dds_subscriber : public rclcpp::Node {
   public:
     dds_subscriber()
-        : Node("sub_labview"), best_effort(rclcpp::KeepLast(10))
+        : Node("sub_labview"), best_effort(rclcpp::KeepLast(1))
 
     {
         subscription_ = this->create_subscription<octa_ros::msg::Labviewdata>(
@@ -134,6 +135,9 @@ class dds_subscriber : public rclcpp::Node {
                                     num_pt_, dz_, drot_, autofocus_, freedrive_,
                                     previous_, next_, home_, reset_, fast_axis_)
                             .c_str());
+                    changed_ = true;
+                } else {
+                    changed_ = false;
                 }
                 old_msg = *msg;
             });
@@ -154,6 +158,7 @@ class dds_subscriber : public rclcpp::Node {
     bool home() { return home_; };
     bool reset() { return reset_; };
     bool fast_axis() { return fast_axis_; };
+    bool changed() { return changed_; };
 
   private:
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
@@ -163,7 +168,8 @@ class dds_subscriber : public rclcpp::Node {
            drot_ = 0;
     int num_pt_ = 0;
     bool autofocus_ = false, freedrive_ = false, previous_ = false,
-         next_ = false, home_ = false, reset_ = false, fast_axis_ = false;
+         next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
+         changed_ = false;
     octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
 };
 
@@ -262,6 +268,14 @@ void add_collision_obj(auto &move_group_interface) {
     planning_scene_interface.applyCollisionObject(collision_monitor);
 }
 
+bool image_changed(auto &subscriber_node, double drot, double dz,
+                   double angle_tolerance, double z_tolerance) {
+    return ((std::pow(std::abs(subscriber_node->dz()) - std::abs(dz), 2) <
+             (z_tolerance * 0.01)) &&
+            (std::pow(std::abs(subscriber_node->drot()) - std::abs(drot), 2) <
+             to_radian(angle_tolerance * 0.01)));
+}
+
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     std::signal(SIGINT, signal_handler);
@@ -279,7 +293,6 @@ int main(int argc, char *argv[]) {
     auto subscriber_node = std::make_shared<dds_subscriber>();
 
     rclcpp::executors::MultiThreadedExecutor executor;
-    //rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(move_group_node);
     executor.add_node(subscriber_node);
     std::thread([&executor]() { executor.spin(); }).detach();
@@ -292,9 +305,6 @@ int main(int argc, char *argv[]) {
     bool apply_config = false;
     bool end_state = false;
 
-    bool changed = false;
-    // double old_dz = 0.0;
-    // double old_drot = 0.0;
     int counter = 0;
     bool fast_focused = false;
     bool slow_focused = false;
@@ -308,6 +318,7 @@ int main(int argc, char *argv[]) {
     int num_pt = subscriber_node->num_pt();
     double dz = subscriber_node->dz();
     double drot = subscriber_node->drot();
+    drot *= 0.1;
     bool autofocus = subscriber_node->autofocus();
     bool freedrive = subscriber_node->freedrive();
     bool previous = subscriber_node->previous();
@@ -315,7 +326,6 @@ int main(int argc, char *argv[]) {
     bool home = subscriber_node->home();
     bool reset = subscriber_node->reset();
     bool fast_axis = subscriber_node->fast_axis();
-    drot *= 0.1;
 
     rclcpp::executors::SingleThreadedExecutor exec_pub;
     auto publisher_node = std::make_shared<dds_publisher>(
@@ -349,8 +359,27 @@ int main(int argc, char *argv[]) {
         fast_axis = subscriber_node->fast_axis();
 
         if (freedrive) {
-            continue;
-	    //ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger;
+            while (subscriber_node->freedrive()) {
+                continue;
+            }
+            // ros2 service call /io_and_status_controller/resend_robot_program
+            // std_srvs/srv/Trigger;
+            auto trigger_client =
+                move_group_node->create_client<std_srvs::srv::Trigger>(
+                    "/io_and_status_controller/resend_robot_program");
+            while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
+                RCLCPP_INFO(logger, "Waiting for service...");
+            }
+            auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+            auto future = trigger_client->async_send_request(request);
+            if (rclcpp::spin_until_future_complete(move_group_node, future) ==
+                rclcpp::FutureReturnCode::SUCCESS) {
+                auto response = future.get();
+                RCLCPP_INFO(logger, "Service call succeeded: %s",
+                            response->message.c_str());
+            } else {
+                RCLCPP_ERROR(logger, "Service call failed.");
+            }
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
@@ -360,63 +389,11 @@ int main(int argc, char *argv[]) {
 
         double angle_increment = angle_limit / num_pt;
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
-        tf2::Quaternion q;
         geometry_msgs::msg::Pose target_pose =
             move_group_interface.getCurrentPose().pose;
 
-        if (autofocus
-            // if (autofocus &&
-            //     (std::abs(std::abs(old_dz) - std::abs(dz)) >
-            //     (z_tolerance*0.01)) && (std::abs(std::abs(old_drot) -
-            //     std::abs(drot)) > to_radian(angle_tolerance*0.01))
-        ) {
-            if (fast_axis) {
-                // roll += drot;
-                pitch += -drot;
-            } else {
-                // pitch += -drot;
-                roll += drot;
-            }
-            target_pose.position.x += radius * std::cos(to_radian(angle));
-            target_pose.position.y += radius * std::sin(to_radian(angle));
-            target_pose.position.z += -dz;
-            // old_dz = dz;
-            // old_drot = drot;
-        } else {
-
-            counter = 0;
-            if (next) {
-                //if (!changed) {
-                //    angle += angle_increment;
-                //    yaw += to_radian(angle_increment);
-                //    changed = true;
-                //}
-                angle += angle_increment;
-                yaw += to_radian(angle_increment);
-            }
-            if (previous) {
-                angle -= angle_increment;
-                yaw += to_radian(-angle_increment);
-            }
-            if (home) {
-                yaw += to_radian(-angle);
-                angle = 0.0;
-            }
-            if (changed && !next && !previous && !home) {
-                changed = false;
-            }
-        }
-
-        q.setRPY(roll, pitch, yaw);
-        q.normalize();
-
-        tf2::Quaternion target_q;
-        tf2::fromMsg(target_pose.orientation, target_q);
-        target_q = target_q * q;
-        target_pose.orientation = tf2::toMsg(target_q);
-
         if (reset) {
-            msg = "", angle = 0.0, circle_state = 1;
+            msg = "Reset to default position", angle = 0.0, circle_state = 1;
             target_pose.orientation.x = -0.7071068;
             target_pose.orientation.y = 0.7071068;
             target_pose.orientation.z = 0.0;
@@ -424,76 +401,100 @@ int main(int argc, char *argv[]) {
             target_pose.position.x = 0.4;
             target_pose.position.y = 0.0;
             target_pose.position.z = 0.0;
+        } else {
+            if (autofocus) {
+                if (fast_axis) {
+                    pitch += -drot;
+                } else {
+                    roll += drot;
+                }
+                target_pose.position.x += radius * std::cos(to_radian(angle));
+                target_pose.position.y += radius * std::sin(to_radian(angle));
+                target_pose.position.z += -dz;
+            } else {
+                counter = 0;
+                fast_focused = false;
+                slow_focused = false;
+                if (next) {
+                    angle += angle_increment;
+                    yaw += to_radian(angle_increment);
+                }
+                if (previous) {
+                    angle -= angle_increment;
+                    yaw += to_radian(-angle_increment);
+                }
+                if (home) {
+                    yaw += to_radian(-angle);
+                    angle = 0.0;
+                }
+            }
+
+            tf2::Quaternion q;
+            q.setRPY(roll, pitch, yaw);
+            q.normalize();
+
+            tf2::Quaternion target_q;
+            tf2::fromMsg(target_pose.orientation, target_q);
+            target_q = target_q * q;
+            target_pose.orientation = tf2::toMsg(target_q);
         }
 
-        if (autofocus || reset || next || previous || home) {
-            if (autofocus &&
-                tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
+        if (reset || autofocus || next || previous || home) {
+            RCLCPP_INFO(logger, std::format("Target Pose: "
+                                            " x: {}, y: {}, z: {},"
+                                            " qx: {}, qy: {}, qz: {}, qw: {}",
+                                            target_pose.position.x,
+                                            target_pose.position.y,
+                                            target_pose.position.z,
+                                            target_pose.orientation.x,
+                                            target_pose.orientation.y,
+                                            target_pose.orientation.z,
+                                            target_pose.orientation.w)
+                                    .c_str());
+
+            move_group_interface.setPoseTarget(target_pose);
+            auto const [success, plan] = [&move_group_interface] {
+                moveit::planning_interface::MoveGroupInterface::Plan
+                    plan_feedback;
+                auto const ok =
+                    static_cast<bool>(move_group_interface.plan(plan_feedback));
+                return std::make_pair(ok, plan_feedback);
+            }();
+            if (success) {
+                move_group_interface.execute(plan);
+                msg = "Planning Success!";
+            } else {
+                RCLCPP_ERROR(logger, "Planning failed!");
+                msg = "Planning failed!";
+            }
+        }
+
+        if (autofocus) {
+            while (
+                // image_changed(subscriber_node, drot, dz)
+                (!subscriber_node->changed()) ||
+                !tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
+                if (!subscriber_node->autofocus()) {
+                    break;
+                }
+            }
+            // rclcpp::sleep_for(std::chrono::seconds(1));
+
+            if (tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
                 if (fast_axis) {
                     fast_axis = false;
                     apply_config = true;
                     counter += 1;
-		    fast_focused = true;
-		    //if (counter <= 3) {
-	            //    slow_focused = false;
-		    //}
+                    fast_focused = true;
                 } else {
                     fast_axis = true;
                     apply_config = true;
                     counter += 1;
-		    slow_focused = true;
-		    //if (counter <= 3) {
-	            //    fast_focused = false;
-		    //}
+                    slow_focused = true;
                 }
                 if ((counter > 3) && fast_focused && slow_focused) {
                     end_state = true;
-                    counter = 0;
-                }
-            } else {
-                RCLCPP_INFO(
-                    logger,
-                    std::format(
-                        "Target Pose: "
-                        " x: {}, y: {}, z: {},"
-                        " qx: {}, qy: {}, qz: {}, qw: {},",
-                        target_pose.position.x, target_pose.position.y,
-                        target_pose.position.z, target_pose.orientation.x,
-                        target_pose.orientation.y, target_pose.orientation.z,
-                        target_pose.orientation.w)
-                        .c_str());
-
-                move_group_interface.setPoseTarget(target_pose);
-                // move_group_interface.setPoseTarget(target_pose,
-                // "end_effector_link");
-                // move_group_interface.setPoseTarget(target_pose, "tool0");
-                auto const [success, plan] = [&move_group_interface] {
-                    moveit::planning_interface::MoveGroupInterface::Plan
-                        plan_feedback;
-                    auto const ok = static_cast<bool>(
-                        move_group_interface.plan(plan_feedback));
-                    return std::make_pair(ok, plan_feedback);
-                }();
-                if (success) {
-                    move_group_interface.execute(plan);
-		    msg = "Planning Success!";
-                } else {
-                    RCLCPP_ERROR(logger, "Planning failed!");
-		    msg = "Planning failed!";
-                }
-
-                // rclcpp::sleep_for(std::chrono::seconds(1));
-                while (
-                    (autofocus &&
-                     (std::pow(std::abs(subscriber_node->dz()) - std::abs(dz),
-                               2) < (z_tolerance * 0.01)) &&
-                     (std::pow(std::abs(subscriber_node->drot()) -
-                                   std::abs(drot),
-                               2) < to_radian(angle_tolerance * 0.01))) ||
-                    tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
-                    if (!subscriber_node->autofocus()) {
-                        break;
-                    }
+                    msg = "Autofocus complete";
                 }
             }
         }
