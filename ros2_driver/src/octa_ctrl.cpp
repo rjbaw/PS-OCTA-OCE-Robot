@@ -88,7 +88,7 @@ class dds_publisher : public rclcpp::Node {
 class dds_subscriber : public rclcpp::Node {
   public:
     dds_subscriber()
-        : Node("sub_labview"), best_effort(rclcpp::KeepLast(1))
+        : Node("sub_labview"), best_effort(rclcpp::KeepLast(10))
 
     {
         subscription_ = this->create_subscription<octa_ros::msg::Labviewdata>(
@@ -178,7 +178,7 @@ double to_radian(const double degree) {
 }
 bool tol_measure(double &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance) {
-    return ((std::abs((1 / 0.6 * drot)) < to_radian(angle_tolerance)) &&
+    return ((std::abs((1 / 0.8 * drot)) < to_radian(angle_tolerance)) &&
             (std::abs(dz) < z_tolerance));
 }
 
@@ -268,10 +268,10 @@ void add_collision_obj(auto &move_group_interface) {
     planning_scene_interface.applyCollisionObject(collision_monitor);
 }
 
-bool image_changed(auto &subscriber_node, double drot, double dz,
-                   double angle_tolerance, double z_tolerance) {
+bool image_changed(auto &subscriber_node, double &drot, double &dz,
+                   double &angle_tolerance, double &z_tolerance) {
     return ((std::pow(std::abs(subscriber_node->dz()) - std::abs(dz), 2) <
-             (z_tolerance * 0.01)) &&
+             (z_tolerance)) &&
             (std::pow(std::abs(subscriber_node->drot()) - std::abs(drot), 2) <
              to_radian(angle_tolerance * 0.01)));
 }
@@ -371,6 +371,7 @@ int main(int argc, char *argv[]) {
                 RCLCPP_INFO(logger, "Waiting for service...");
             }
             auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+	    rclcpp::sleep_for(std::chrono::seconds(3));
             auto future = trigger_client->async_send_request(request);
             if (rclcpp::spin_until_future_complete(move_group_node, future) ==
                 rclcpp::FutureReturnCode::SUCCESS) {
@@ -403,10 +404,18 @@ int main(int argc, char *argv[]) {
             target_pose.position.z = 0.0;
         } else {
             if (autofocus) {
+                //while (
+                //    !image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance) ||
+                //    !tol_measure(drot, dz, angle_tolerance, z_tolerance)
+	        //    ) {
+                //    if (!subscriber_node->autofocus()) {
+                //        break;
+                //    }
+                //}
                 if (fast_axis) {
                     pitch += -drot;
                 } else {
-                    roll += drot;
+                    roll += -drot;
                 }
                 target_pose.position.x += radius * std::cos(to_radian(angle));
                 target_pose.position.y += radius * std::sin(to_radian(angle));
@@ -471,9 +480,9 @@ int main(int argc, char *argv[]) {
 
         if (autofocus) {
             while (
-                // image_changed(subscriber_node, drot, dz)
-                (!subscriber_node->changed()) ||
-                !tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
+                !image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance) ||
+                !tol_measure(drot, dz, angle_tolerance, z_tolerance)
+		) {
                 if (!subscriber_node->autofocus()) {
                     break;
                 }

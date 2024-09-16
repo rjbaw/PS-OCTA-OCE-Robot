@@ -14,15 +14,15 @@
     <link name="${prefix}end_effector_link">
       <visual>
         <geometry>
-          <sphere radius="0.0625"/>
+          <sphere radius="0.05"/>
         </geometry>
-        <material name="blue">
+	<material name="green">
           <color rgba="0 0 1 1"/>
         </material>
       </visual>
       <collision>
         <geometry>
-          <sphere radius="0.0625"/>
+          <sphere radius="0.05"/>
         </geometry>
       </collision>
       <inertial>
