@@ -9,11 +9,10 @@
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
-#define be RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
 
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
@@ -35,8 +34,9 @@ class dds_publisher : public rclcpp::Node {
         : Node("pub_robot_data"), msg(msg), angle(angle),
           circle_state(circle_state), fast_axis(fast_axis),
           apply_config(apply_config), end_state(end_state) {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         publisher_ =
-            this->create_publisher<octa_ros::msg::Robotdata>("robot_data", 10);
+            this->create_publisher<octa_ros::msg::Robotdata>("robot_data", qos);
 
         timer_ = this->create_wall_timer(10ms, [this]() {
             auto message = octa_ros::msg::Robotdata();
@@ -88,11 +88,12 @@ class dds_publisher : public rclcpp::Node {
 class dds_subscriber : public rclcpp::Node {
   public:
     dds_subscriber()
-        : Node("sub_labview"), best_effort(rclcpp::KeepLast(10))
+        : Node("sub_labview")
 
     {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         subscription_ = this->create_subscription<octa_ros::msg::Labviewdata>(
-            "labview_data", best_effort.reliability(be),
+            "labview_data", qos,
             [this](const octa_ros::msg::Labviewdata::SharedPtr msg) {
                 robot_vel_ = msg->robot_vel;
                 robot_acc_ = msg->robot_acc;
@@ -162,7 +163,6 @@ class dds_subscriber : public rclcpp::Node {
 
   private:
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
-    rclcpp::QoS best_effort;
     double robot_vel_ = 0, robot_acc_ = 0, z_tolerance_ = 0,
            angle_tolerance_ = 0, radius_ = 0, angle_limit_ = 0, dz_ = 0,
            drot_ = 0;
@@ -171,6 +171,42 @@ class dds_subscriber : public rclcpp::Node {
          next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
          changed_ = false;
     octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
+};
+
+class urscript_publisher : public rclcpp::Node {
+  public:
+    urscript_publisher() : urscript_publisher(false) {}
+    urscript_publisher(bool freedrive)
+        : Node("urscript_publisher"), freedrive(freedrive) {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        publisher_ = this->create_publisher<std_msgs::msg::String>(
+            "/urscript_interface/script_command", qos);
+
+        auto message = std_msgs::msg::String();
+        if (freedrive) {
+            message.data = R"(
+              def program():
+                  global check = "Made it"
+                  while(True):
+                      freedrive_mode()
+                  end
+              end
+          )";
+        } else {
+            message.data = R"(
+              def program():
+                  end_freedrive_mode()
+              end
+          )";
+        }
+        publisher_->publish(message);
+        RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
+                    message.data.c_str());
+    }
+
+  private:
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    bool freedrive;
 };
 
 double to_radian(const double degree) {
@@ -359,9 +395,11 @@ int main(int argc, char *argv[]) {
         fast_axis = subscriber_node->fast_axis();
 
         if (freedrive) {
+            rclcpp::spin_some(std::make_shared<urscript_publisher>(true));
             while (subscriber_node->freedrive()) {
                 continue;
             }
+            rclcpp::spin_some(std::make_shared<urscript_publisher>());
             // ros2 service call /io_and_status_controller/resend_robot_program
             // std_srvs/srv/Trigger;
             auto trigger_client =
@@ -371,7 +409,7 @@ int main(int argc, char *argv[]) {
                 RCLCPP_INFO(logger, "Waiting for service...");
             }
             auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-	    rclcpp::sleep_for(std::chrono::seconds(3));
+            // rclcpp::sleep_for(std::chrono::seconds(3));
             auto future = trigger_client->async_send_request(request);
             if (rclcpp::spin_until_future_complete(move_group_node, future) ==
                 rclcpp::FutureReturnCode::SUCCESS) {
@@ -404,14 +442,14 @@ int main(int argc, char *argv[]) {
             target_pose.position.z = 0.0;
         } else {
             if (autofocus) {
-                //while (
-                //    !image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance) ||
-                //    !tol_measure(drot, dz, angle_tolerance, z_tolerance)
-	        //    ) {
-                //    if (!subscriber_node->autofocus()) {
-                //        break;
-                //    }
-                //}
+                // while (
+                //     !image_changed(subscriber_node, drot, dz,
+                //     angle_tolerance, z_tolerance) || !tol_measure(drot, dz,
+                //     angle_tolerance, z_tolerance) ) { if
+                //     (!subscriber_node->autofocus()) {
+                //         break;
+                //     }
+                // }
                 if (fast_axis) {
                     pitch += -drot;
                 } else {
@@ -479,10 +517,9 @@ int main(int argc, char *argv[]) {
         }
 
         if (autofocus) {
-            while (
-                !image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance) ||
-                !tol_measure(drot, dz, angle_tolerance, z_tolerance)
-		) {
+            while (!image_changed(subscriber_node, drot, dz, angle_tolerance,
+                                  z_tolerance) ||
+                   !tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
                 if (!subscriber_node->autofocus()) {
                     break;
                 }
