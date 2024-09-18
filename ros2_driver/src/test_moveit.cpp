@@ -66,6 +66,9 @@ int main(int argc, char *argv[]) {
 
     geometry_msgs::msg::Pose target_pose =
          move_group_interface.getCurrentPose().pose;
+    RCLCPP_INFO(logger, std::format("[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
+			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
     
     // target_pose.orientation.x += 0.0;
     // target_pose.orientation.y += 0.0;
@@ -99,8 +102,19 @@ int main(int argc, char *argv[]) {
     target_pose.position.x = 0.4;
     target_pose.position.y = 0.0;
     target_pose.position.z = -0.07;
+// x: 0.3620214707249748, y:-0.023742859454576246, z:0.08142861186258149, qx:-0.418118484973287, qy:0.9079678799854171, qz:0.006362452358784344, qw:0.0270329546741135
+    target_pose.orientation.x = -0.42;
+    target_pose.orientation.y = 0.9;
+    target_pose.orientation.z = 0.006;
+    target_pose.orientation.w = 0.027;
+    target_pose.position.x = 0.4;
+    target_pose.position.y = 0.0;
+    target_pose.position.z = -0.07;
     
     move_group_interface.setPoseTarget(target_pose);
+    RCLCPP_INFO(logger, std::format("[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
+			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
     //move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));
 
     if (running) {
