@@ -197,7 +197,6 @@ class urscript_publisher : public rclcpp::Node {
     bool freedrive, executed;
     void publish_to_robot() {
 	if (!executed) {
-
             auto message = std_msgs::msg::String();
             if (freedrive) {
                 message.data = R"(
@@ -229,86 +228,21 @@ end
                 auto response = future.get();
                 if (response->success) {
                     RCLCPP_INFO(this->get_logger(), "Service call succeeded: %s", response->message.c_str());
+                    executed = true;
                 } else {
                     RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", response->message.c_str());
                 }
             }
-            executed = true;
         }
     }
 };
-
-// class urscript_publisher : public rclcpp::Node {
-//   public:
-//     urscript_publisher()
-//         : Node("urscript_publisher") {
-// 	if (!executed) {
-// 
-//             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-//             publisher_ = this->create_publisher<std_msgs::msg::String>(
-//                 "/urscript_interface/script_command", qos);
-// 
-//             auto message = std_msgs::msg::String();
-//             if (freedrive) {
-//                 message.data = R"(
-// def program():
-//  global check = "Made it"
-//  while(True):
-//   freedrive_mode()
-//  end
-// end
-//             )";
-//             } else {
-//                 message.data = R"(
-// def program():
-//  end_freedrive_mode()
-// end
-//             )";
-//             }
-//             publisher_->publish(message);
-//             RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
-//                         message.data.c_str());
-//             if (!freedrive) {
-//                 // ros2 service call /io_and_status_controller/resend_robot_program
-//                 // std_srvs/srv/Trigger;
-//                 auto trigger_client =
-//                     this->create_client<std_srvs::srv::Trigger>(
-//                         "/io_and_status_controller/resend_robot_program");
-//                 while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
-//                     RCLCPP_INFO(this->get_logger(), "Waiting for service...");
-//                 }
-//                 auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-//                 auto future = trigger_client->async_send_request(request);
-//                 auto response = future.get();
-//                 if (response->success) {
-//                     RCLCPP_INFO(this->get_logger(), "Service call succeeded: %s", response->message.c_str());
-//                 } else {
-//                     RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", response->message.c_str());
-//                 }
-//             }
-//             executed = true;
-//             }
-//         }
-//     void activate_freedrive() {
-//         freedrive = true;
-// 	executed = false;
-//     }
-//     void deactivate_freedrive() {
-//         freedrive = false;
-// 	executed = false;
-//     }
-//   private:
-//     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
-//     bool freedrive = false, executed = true;
-// };
-
 
 double to_radian(const double degree) {
     return (std::numbers::pi / 180 * degree);
 }
 bool tol_measure(double &drot, double &dz, double &angle_tolerance,
-                 double &z_tolerance) {
-    return ((std::abs((1 / 0.1 * drot)) < to_radian(angle_tolerance)) &&
+                 double &z_tolerance, double &scale_factor) {
+    return ((std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
             (std::abs(dz) < z_tolerance));
 }
 
@@ -413,10 +347,10 @@ int main(int argc, char *argv[]) {
 
     using moveit::planning_interface::MoveGroupInterface;
 
-    //while (rclcpp::ok() && running) {
-
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
+
+    //while (rclcpp::ok() && running) {
 
     std::string msg;
     double angle = 0.0;
@@ -427,59 +361,20 @@ int main(int argc, char *argv[]) {
     int counter = 0;
     bool fast_focused = false;
     bool slow_focused = false;
+    double scale_factor = 0.2;
 
-    double robot_vel;
-    double robot_acc;
-    double z_tolerance;
-    double angle_tolerance;
-    double radius;
-    double angle_limit;
-    double dz;
-    double drot;
+    double robot_vel, robot_acc, z_tolerance, angle_tolerance, radius, angle_limit, dz, drot;
     int num_pt;
-    bool autofocus;
-    bool freedrive;
-    bool previous;
-    bool next;
-    bool home;
-    bool reset;
-    bool fast_axis = false;
+    bool autofocus, freedrive, previous, next, home, reset, fast_axis;
 
-    auto const move_group_node =
-        std::make_shared<rclcpp::Node>("node_moveit", node_options);
-    auto move_group_interface =
-        MoveGroupInterface(move_group_node, "ur_manipulator");
+    auto const move_group_node = std::make_shared<rclcpp::Node>("node_moveit", node_options);
+    auto move_group_interface = MoveGroupInterface(move_group_node, "ur_manipulator");
     auto subscriber_node = std::make_shared<dds_subscriber>();
     auto urscript_node = std::make_shared<urscript_publisher>();
-    //auto activate_freedrive_node = std::make_shared<urscript_publisher>(true);
-    //auto deactivate_freedrive_node = std::make_shared<urscript_publisher>(false);
+    //auto publisher_node = std::make_shared<dds_publisher>();
+    auto publisher_node = std::make_shared<dds_publisher>(msg, angle, circle_state, fast_axis, apply_config, end_state);
 
     auto const logger = rclcpp::get_logger("logger_planning");
-
-    // double robot_vel = subscriber_node->robot_vel();
-    // double robot_acc = subscriber_node->robot_acc();
-    // double z_tolerance = subscriber_node->z_tolerance();
-    // double angle_tolerance = subscriber_node->angle_tolerance();
-    // double radius = subscriber_node->radius();
-    // double angle_limit = subscriber_node->angle_limit();
-    // int num_pt = subscriber_node->num_pt();
-    // double dz = subscriber_node->dz();
-    // double drot = subscriber_node->drot();
-    // bool autofocus = subscriber_node->autofocus();
-    // bool freedrive = subscriber_node->freedrive();
-    // bool previous = subscriber_node->previous();
-    // bool next = subscriber_node->next();
-    // bool home = subscriber_node->home();
-    // bool reset = subscriber_node->reset();
-    // bool fast_axis = subscriber_node->fast_axis();
-
-    // rclcpp::executors::SingleThreadedExecutor exec_pub;
-    auto publisher_node = std::make_shared<dds_publisher>(
-        msg = msg, angle = angle, circle_state = circle_state,
-        fast_axis = fast_axis, apply_config = apply_config,
-        end_state = end_state);
-    // exec_pub.add_node(publisher_node);
-    // std::thread([&exec_pub]() { exec_pub.spin(); }).detach();
 
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(move_group_node);
@@ -505,7 +400,7 @@ int main(int argc, char *argv[]) {
         num_pt = subscriber_node->num_pt();
         dz = subscriber_node->dz();
         drot = subscriber_node->drot();
-        drot *= 0.2;
+        drot *= scale_factor;
         previous = subscriber_node->previous();
         next = subscriber_node->next();
         home = subscriber_node->home();
@@ -515,15 +410,14 @@ int main(int argc, char *argv[]) {
         if (freedrive) {
             urscript_node->activate_freedrive();
             while (subscriber_node->freedrive()) {
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
             urscript_node->deactivate_freedrive();
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
-        // move_group_interface.setStartStateToCurrentState();
-        move_group_interface.setPoseReferenceFrame("tool0");
+        move_group_interface.setStartStateToCurrentState();
 
         double angle_increment = angle_limit / num_pt;
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
@@ -585,7 +479,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (reset || autofocus || next || previous || home) {
-            if (tol_measure(drot, dz, angle_tolerance, z_tolerance) && autofocus) {
+            if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor) && autofocus) {
                 if (fast_axis) {
                     fast_axis = false;
                     apply_config = true;
@@ -635,7 +529,7 @@ int main(int argc, char *argv[]) {
         if (autofocus) {
             //while (!image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance)) {
             while (!subscriber_node->changed()) {
-		if (tol_measure(drot, dz, angle_tolerance, z_tolerance)) {
+		if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor)) {
 		    break;
 		}
                 if (!subscriber_node->autofocus()) {
@@ -644,7 +538,7 @@ int main(int argc, char *argv[]) {
             }
             // rclcpp::sleep_for(std::chrono::seconds(1));
 	
-            if (tol_measure(drot, dz, angle_tolerance, z_tolerance) && autofocus) {
+            if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor) && autofocus) {
                 if (fast_axis) {
                     fast_axis = false;
                     apply_config = true;

@@ -1,0 +1,13 @@
+services:
+  ros2:
+    image: osrf/ros:jazzy-desktop-full
+    environment:
+      - DISPLAY=$DISPLAY
+      - QT_GRAPHICSSYSTEM=native
+      - QT_X11_NO_MITSHIM=1
+    volumes:
+      - $HOME/:/root/home/
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - $HOME/.Xauthority:/root/.Xauthority:ro
+    network_mode: host
+    tty: true

@@ -11,7 +11,6 @@
 std::atomic<bool> running(true);  // Atomic flag to control the shutdown
 moveit::planning_interface::MoveGroupInterface* move_group_ptr = nullptr;  // Pointer to control the move group
 
-// Signal handler function
 void signal_handler(int signum) {
     RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Signal %d received, cancelling execution...", signum);
     running = false;
@@ -40,82 +39,51 @@ int main(int argc, char *argv[]) {
     executor.add_node(node);
     std::thread([&executor]() { executor.spin(); }).detach();
 
-    // rclcpp::spin_some(node);
-
-    // std::string robot_description;
-    // if (!node->get_parameter("robot_description", robot_description)) {
-    //     RCLCPP_ERROR(logger, "Failed to get robot_description parameter. "
-    //                          "Ensure the parameter is set.");
-    //     rclcpp::shutdown();
-    //     return 1;
-    // }
-
     using moveit::planning_interface::MoveGroupInterface;
     auto move_group_interface = MoveGroupInterface(node, "ur_manipulator");
     move_group_interface.setPlanningTime(10.0);
     move_group_interface.setStartStateToCurrentState();
-    // RCLCPP_INFO(logger, "Waiting for MoveGroupInterface to be ready...");
-    // rclcpp::sleep_for(std::chrono::seconds(2));
+    RCLCPP_INFO(logger, "Waiting for MoveGroupInterface to be ready...");
+    rclcpp::sleep_for(std::chrono::milliseconds(100));
 
     move_group_ptr = &move_group_interface;
 
-    // std::string reference_frame = "tool0";
-    // move_group_interface.setPoseReferenceFrame(reference_frame);
-    // geometry_msgs::msg::Pose target_pose =
-    //     move_group_interface.getCurrentPose(reference_frame).pose;
-
+    //std::string reference_frame = "tool0";
+    //move_group_interface.setPoseReferenceFrame(reference_frame);
+    //geometry_msgs::msg::Pose target_pose =
+    //    move_group_interface.getCurrentPose(reference_frame).pose;
     geometry_msgs::msg::Pose target_pose =
          move_group_interface.getCurrentPose().pose;
+
     RCLCPP_INFO(logger, std::format("[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
 			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
 			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
     
-    // target_pose.orientation.x += 0.0;
-    // target_pose.orientation.y += 0.0;
-    // target_pose.orientation.z += 0.0;
-    // target_pose.orientation.w += 0.0;
     // target_pose.position.x += 0.1;
     // target_pose.position.y += 0;
     // target_pose.position.z += 0;
     
     tf2::Quaternion q;
     tf2::Quaternion target_q;
-    q.setRPY(to_radians(0),to_radians(0),to_radians(0));
+    q.setRPY(to_radians(0),to_radians(0),to_radians(-20));
     q.normalize();
     tf2::fromMsg(target_pose.orientation, target_q);
-    // target_q = target_q * q;
-    target_q = q * target_q;
+    target_q = target_q * q;
     target_pose.orientation = tf2::toMsg(target_q);
-
-    // q.setRPY(to_radians(30),to_radians(90),to_radians(0));
-    // target_pose.orientation = tf2::toMsg(q);
-    //
-    //target_pose.orientation.x = -0.4;
-    //target_pose.orientation.y = 0.9;
+    
+    //target_pose.orientation.x = -0.7071068;
+    //target_pose.orientation.y = 0.7071068;
     //target_pose.orientation.z = 0.0;
     //target_pose.orientation.w = 0.0;
-    //
-    target_pose.orientation.x = -0.7071068;
-    target_pose.orientation.y = 0.7071068;
-    target_pose.orientation.z = 0.0;
-    target_pose.orientation.w = 0.0;
-    target_pose.position.x = 0.4;
-    target_pose.position.y = 0.0;
-    target_pose.position.z = -0.07;
-// x: 0.3620214707249748, y:-0.023742859454576246, z:0.08142861186258149, qx:-0.418118484973287, qy:0.9079678799854171, qz:0.006362452358784344, qw:0.0270329546741135
-    target_pose.orientation.x = -0.42;
-    target_pose.orientation.y = 0.9;
-    target_pose.orientation.z = 0.006;
-    target_pose.orientation.w = 0.027;
-    target_pose.position.x = 0.4;
-    target_pose.position.y = 0.0;
-    target_pose.position.z = -0.07;
-    
+    //target_pose.position.x = 0.4;
+    //target_pose.position.y = 0.0;
+    //target_pose.position.z = -0.07;
+
     move_group_interface.setPoseTarget(target_pose);
+    //move_group_interface.setPoseTarget(target_pose, reference_frame);
     RCLCPP_INFO(logger, std::format("[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
 			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
 			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
-    //move_group_interface.setRPYTarget(to_radians(0),to_radians(0),to_radians(0));
 
     if (running) {
         auto const [success, plan] = [&move_group_interface] {
