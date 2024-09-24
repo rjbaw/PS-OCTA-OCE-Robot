@@ -26,10 +26,10 @@ void signal_handler(int signum) {
 
 class dds_publisher : public rclcpp::Node {
   public:
-    dds_publisher() : dds_publisher("", 0.0, 0, false, false, false) {}
+    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false) {}
 
     dds_publisher(std::string msg = "", double angle = 0.0,
-                  int circle_state = 0, bool fast_axis = false,
+                  int circle_state = 1, bool fast_axis = false,
                   bool apply_config = false, bool end_state = false)
         : Node("pub_robot_data"), msg(msg), angle(angle),
           circle_state(circle_state), fast_axis(fast_axis),
@@ -220,19 +220,12 @@ end
             RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
                         message.data.c_str());
             if (!freedrive) {
-                // ros2 service call /io_and_status_controller/resend_robot_program
-                // std_srvs/srv/Trigger;
+                // ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger;
                 while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
                     RCLCPP_INFO(this->get_logger(), "Waiting for service...");
                 }
                 auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
                 auto future = trigger_client->async_send_request(request);
-                // auto response = future.get();
-                // if (response->success) {
-                //     RCLCPP_INFO(this->get_logger(), "Service call succeeded: %s", response->message.c_str());
-                // } else {
-                //     RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", response->message.c_str());
-                // }
             }
         }
     }
@@ -387,6 +380,7 @@ int main(int argc, char *argv[]) {
     while (rclcpp::ok() && running) {
 
         end_state = false;
+        apply_config = false;
         autofocus = subscriber_node->autofocus();
         freedrive = subscriber_node->freedrive();
         robot_vel = subscriber_node->robot_vel();
@@ -403,16 +397,10 @@ int main(int argc, char *argv[]) {
         next = subscriber_node->next();
         home = subscriber_node->home();
         reset = subscriber_node->reset();
-        if (apply_config) {
-	    if (fast_axis == subscriber_node->fast_axis()) {
-                apply_config = false;
-	    }
-	} else { 
-            fast_axis = subscriber_node->fast_axis();
-	}
+        fast_axis = subscriber_node->fast_axis();
 
         if (freedrive) {
-	    circle_state = 0;
+	    circle_state = 1;
 	    angle = 0.0;
             urscript_node->activate_freedrive();
             while (subscriber_node->freedrive()) {
@@ -530,37 +518,6 @@ int main(int argc, char *argv[]) {
                msg = "Planning failed!";
            }
         }
-
-        //if (autofocus) {
-	//    //!image_changed(subscriber_node, drot, dz, angle_tolerance, z_tolerance)
-        //    while (!subscriber_node->changed()) {
-	//	if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor)) {
-	//	    break;
-	//	}
-        //        if (!subscriber_node->autofocus()) {
-        //            break;
-        //        }
-        //    }
-        //    // rclcpp::sleep_for(std::chrono::seconds(1));
-	//
-        //    if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor) && autofocus) {
-        //        if (fast_axis) {
-        //            fast_axis = false;
-        //            apply_config = true;
-        //            counter += 1;
-        //            fast_focused = true;
-        //        } else {
-        //            fast_axis = true;
-        //            apply_config = true;
-        //            counter += 1;
-        //            slow_focused = true;
-        //        }
-        //        if ((counter > 3) && fast_focused && slow_focused) {
-        //            end_state = true;
-        //            msg = "Autofocus complete";
-        //        }
-	//    }
-        //}
 	
         publisher_node->set_msg(msg);
         publisher_node->set_angle(angle);
@@ -569,13 +526,18 @@ int main(int argc, char *argv[]) {
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
 
-	if (apply_config) {
-            rclcpp::sleep_for(std::chrono::seconds(1));
+	if (planning) {
+            planning = false;
+            while (!subscriber_node->changed()) {
+	        if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor)) {
+	            break;
+	        }
+                if (!subscriber_node->autofocus()) {
+                    break;
+                }
+                //rclcpp::sleep_for(std::chrono::milliseconds(200));
+	    }
 	}
-        while (!subscriber_node->changed()) {
-            rclcpp::sleep_for(std::chrono::milliseconds(200));
-	}
-
     }
 
     rclcpp::shutdown();
