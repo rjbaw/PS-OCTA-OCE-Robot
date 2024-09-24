@@ -380,7 +380,7 @@ def launch_setup():
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
         .robot_description_kinematics(file_path="config/kinematics.yaml")
-        .joint_limits(Path("config") / "joint_limits.yaml")
+        #.joint_limits(Path("config") / "joint_limits.yaml")
         .planning_pipelines()
         .trajectory_execution(file_path="config/moveit_controllers.yaml")
         .planning_scene_monitor(
@@ -545,9 +545,12 @@ def generate_launch_description():
             "joint_limit_params_file",
             default_value=PathJoinSubstitution(
                 [
-                    FindPackageShare("ur_description"),
+                    #FindPackageShare("ur_description"),
+                    #"config",
+                    #ur_type,
+                    #"joint_limits.yaml",
+                    FindPackageShare("octa_ros"),
                     "config",
-                    ur_type,
                     "joint_limits.yaml",
                 ]
             ),
