@@ -355,6 +355,8 @@ int main(int argc, char *argv[]) {
     bool slow_focused = false;
     bool planning = false;
     double scale_factor = 0.2;
+    double angle_increment;
+    double roll = 0.0, pitch = 0.0, yaw = 0.0;
 
     double robot_vel, robot_acc, z_tolerance, angle_tolerance, radius, angle_limit, dz, drot;
     int num_pt;
@@ -417,16 +419,15 @@ int main(int argc, char *argv[]) {
         if (reset) {
 	    planning = true;
             msg = "Reset to default position", angle = 0.0, circle_state = 1;
-            target_pose.orientation.x = -0.7071068;
-            target_pose.orientation.y = 0.7071068;
-            target_pose.orientation.z = 0.0;
-            target_pose.orientation.w = 0.0;
-            target_pose.position.x = 0.4;
-            target_pose.position.y = 0.0;
-            target_pose.position.z = 0.0;
+            move_group_interface.setJointValueTarget("shoulder_pan_joint", to_radian(0.0));
+            move_group_interface.setJointValueTarget("shoulder_lift_joint", -to_radian(60.0));
+            move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
+            move_group_interface.setJointValueTarget("wrist_1_joint", to_radian(-120.0));
+            move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
+            move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
         } else {
-            double angle_increment = angle_limit / num_pt;
-            double roll = 0.0, pitch = 0.0, yaw = 0.0;
+            angle_increment = angle_limit / num_pt;
+            roll = 0.0, pitch = 0.0, yaw = 0.0;
             target_pose = move_group_interface.getCurrentPose().pose;
 
             if (autofocus) {
@@ -459,29 +460,32 @@ int main(int argc, char *argv[]) {
                     target_pose.position.z += -dz;
                 }
 	    } else {
-                    counter = 0;
-                    fast_focused = false;
-                    slow_focused = false;
-                    if (next) {
-			planning = true;
-                        angle += angle_increment;
+                counter = 0;
+                fast_focused = false;
+                slow_focused = false;
+                if (next) {
+		    planning = true;
+                    angle += angle_increment;
 	    	    circle_state++;
-                        yaw += to_radian(angle_increment);
-                    }
-                    if (previous) {
-			planning = true;
-                        angle -= angle_increment;
-	    	    circle_state--;
-                        yaw += to_radian(-angle_increment);
-                    }
-                    if (home) {
-			planning = true;
-                        yaw += to_radian(-angle);
-	    	    circle_state = 0;
-                        angle = 0.0;
-                    }
+                    yaw += to_radian(angle_increment);
                 }
+                if (previous) {
+		    planning = true;
+                    angle -= angle_increment;
+	    	    circle_state--;
+                    yaw += to_radian(-angle_increment);
+                }
+                if (home) {
+		    planning = true;
+                    yaw += to_radian(-angle);
+	    	    circle_state = 0;
+                    angle = 0.0;
+                }
+            }
+        }
 
+        if (planning) {
+            if (!reset) {
                 tf2::Quaternion q;
                 tf2::Quaternion target_q;
                 tf2::fromMsg(target_pose.orientation, target_q);
@@ -489,34 +493,31 @@ int main(int argc, char *argv[]) {
                 q.normalize();
                 target_q = target_q * q;
                 target_pose.orientation = tf2::toMsg(target_q);
-        }
-
-        if (planning) {
-           RCLCPP_INFO(logger, std::format("Target Pose: "
-                                           " x: {}, y: {}, z: {},"
-                                           " qx: {}, qy: {}, qz: {}, qw: {}",
-                                           target_pose.position.x,
-                                           target_pose.position.y,
-                                           target_pose.position.z,
-                                           target_pose.orientation.x,
-                                           target_pose.orientation.y,
-                                           target_pose.orientation.z,
-                                           target_pose.orientation.w)
-                                   .c_str());
-
-           move_group_interface.setPoseTarget(target_pose);
-           auto const [success, plan] = [&move_group_interface] {
-               moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
-               auto const ok = static_cast<bool>(move_group_interface.plan(plan_feedback));
-               return std::make_pair(ok, plan_feedback);
-           }();
-           if (success) {
-               move_group_interface.execute(plan);
-               msg = "Planning Success!";
-           } else {
-               RCLCPP_ERROR(logger, "Planning failed!");
-               msg = "Planning failed!";
-           }
+                RCLCPP_INFO(logger, std::format("Target Pose: "
+                                                " x: {}, y: {}, z: {},"
+                                                " qx: {}, qy: {}, qz: {}, qw: {}",
+                                                target_pose.position.x,
+                                                target_pose.position.y,
+                                                target_pose.position.z,
+                                                target_pose.orientation.x,
+                                                target_pose.orientation.y,
+                                                target_pose.orientation.z,
+                                                target_pose.orientation.w)
+                                        .c_str());
+                move_group_interface.setPoseTarget(target_pose);
+	    }
+            auto const [success, plan] = [&move_group_interface] {
+                moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
+                auto const ok = static_cast<bool>(move_group_interface.plan(plan_feedback));
+                return std::make_pair(ok, plan_feedback);
+            }();
+            if (success) {
+                move_group_interface.execute(plan);
+                msg = "Planning Success!";
+            } else {
+                RCLCPP_ERROR(logger, "Planning failed!");
+                msg = "Planning failed!";
+            }
         }
 	
         publisher_node->set_msg(msg);

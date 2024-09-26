@@ -63,13 +63,13 @@ int main(int argc, char *argv[]) {
     // target_pose.position.y += 0;
     // target_pose.position.z += 0;
     
-    tf2::Quaternion q;
-    tf2::Quaternion target_q;
-    q.setRPY(to_radians(0),to_radians(0),to_radians(-20));
-    q.normalize();
-    tf2::fromMsg(target_pose.orientation, target_q);
-    target_q = target_q * q;
-    target_pose.orientation = tf2::toMsg(target_q);
+    //tf2::Quaternion q;
+    //tf2::Quaternion target_q;
+    //q.setRPY(to_radians(0),to_radians(0),to_radians(-20));
+    //q.normalize();
+    //tf2::fromMsg(target_pose.orientation, target_q);
+    //target_q = target_q * q;
+    //target_pose.orientation = tf2::toMsg(target_q);
     
     //target_pose.orientation.x = -0.7071068;
     //target_pose.orientation.y = 0.7071068;
@@ -77,13 +77,21 @@ int main(int argc, char *argv[]) {
     //target_pose.orientation.w = 0.0;
     //target_pose.position.x = 0.4;
     //target_pose.position.y = 0.0;
-    //target_pose.position.z = -0.07;
+    //target_pose.position.z = 0.0;
 
-    move_group_interface.setPoseTarget(target_pose);
+    //move_group_interface.setPoseTarget(target_pose);
     //move_group_interface.setPoseTarget(target_pose, reference_frame);
+    
     RCLCPP_INFO(logger, std::format("[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
 			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
 			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
+
+    move_group_interface.setJointValueTarget("shoulder_pan_joint", to_radians(0.0));
+    move_group_interface.setJointValueTarget("shoulder_lift_joint", -to_radians(60.0));
+    move_group_interface.setJointValueTarget("elbow_joint", to_radians(90.0));
+    move_group_interface.setJointValueTarget("wrist_1_joint", to_radians(-120.0));
+    move_group_interface.setJointValueTarget("wrist_2_joint", to_radians(-90.0));
+    move_group_interface.setJointValueTarget("wrist_3_joint", to_radians(45.0));
 
     if (running) {
         auto const [success, plan] = [&move_group_interface] {
