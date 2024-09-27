@@ -1,26 +1,28 @@
-#include <memory>
+#include <atomic>
 #include <csignal>
-#include <atomic> 
+#include <memory>
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <rclcpp/rclcpp.hpp>
 
-#include <tf2/LinearMath/Quaternion.h>
 #include <geometry_msgs/msg/quaternion.hpp>
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-std::atomic<bool> running(true);  // Atomic flag to control the shutdown
-moveit::planning_interface::MoveGroupInterface* move_group_ptr = nullptr;  // Pointer to control the move group
+std::atomic<bool> running(true); // Atomic flag to control the shutdown
+moveit::planning_interface::MoveGroupInterface *move_group_ptr =
+    nullptr; // Pointer to control the move group
 
 void signal_handler(int signum) {
-    RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Signal %d received, cancelling execution...", signum);
+    RCLCPP_INFO(rclcpp::get_logger("signal_handler"),
+                "Signal %d received, cancelling execution...", signum);
     running = false;
     if (move_group_ptr) {
-        move_group_ptr->stop();  
+        move_group_ptr->stop();
     }
     rclcpp::shutdown();
 }
 
-double to_radians(double angle) { return (std::numbers::pi/180 * angle); }
+double to_radian(double angle) { return (std::numbers::pi / 180 * angle); }
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
@@ -48,50 +50,66 @@ int main(int argc, char *argv[]) {
 
     move_group_ptr = &move_group_interface;
 
-    //std::string reference_frame = "tool0";
-    //move_group_interface.setPoseReferenceFrame(reference_frame);
-    //geometry_msgs::msg::Pose target_pose =
-    //    move_group_interface.getCurrentPose(reference_frame).pose;
-    geometry_msgs::msg::Pose target_pose =
-         move_group_interface.getCurrentPose().pose;
+    // std::string reference_frame = "tool0";
+    // move_group_interface.setPoseReferenceFrame(reference_frame);
+    // geometry_msgs::msg::Pose target_pose =
+    //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    RCLCPP_INFO(logger, std::format("[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
-			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
-			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
-    
+    geometry_msgs::msg::Pose target_pose =
+        move_group_interface.getCurrentPose().pose;
+
+    RCLCPP_INFO(
+        logger,
+        std::format(
+            "[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+            target_pose.position.x, target_pose.position.y,
+            target_pose.position.z, target_pose.orientation.x,
+            target_pose.orientation.y, target_pose.orientation.z,
+            target_pose.orientation.w)
+            .c_str());
+
     // target_pose.position.x += 0.1;
     // target_pose.position.y += 0;
     // target_pose.position.z += 0;
-    
-    //tf2::Quaternion q;
-    //tf2::Quaternion target_q;
-    //q.setRPY(to_radians(0),to_radians(0),to_radians(-20));
-    //q.normalize();
-    //tf2::fromMsg(target_pose.orientation, target_q);
-    //target_q = target_q * q;
-    //target_pose.orientation = tf2::toMsg(target_q);
-    
-    //target_pose.orientation.x = -0.7071068;
-    //target_pose.orientation.y = 0.7071068;
-    //target_pose.orientation.z = 0.0;
-    //target_pose.orientation.w = 0.0;
-    //target_pose.position.x = 0.4;
-    //target_pose.position.y = 0.0;
-    //target_pose.position.z = 0.0;
 
-    //move_group_interface.setPoseTarget(target_pose);
-    //move_group_interface.setPoseTarget(target_pose, reference_frame);
-    
-    RCLCPP_INFO(logger, std::format("[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
-			    target_pose.position.x, target_pose.position.y, target_pose.position.z,
-			    target_pose.orientation.x, target_pose.orientation.y, target_pose.orientation.z, target_pose.orientation.w).c_str());
+    // tf2::Quaternion q;
+    // tf2::Quaternion target_q;
+    // q.setRPY(to_radian(0),to_radians(0),to_radians(-20));
+    // q.normalize();
+    // tf2::fromMsg(target_pose.orientation, target_q);
+    // target_q = target_q * q;
+    // target_pose.orientation = tf2::toMsg(target_q);
 
-    move_group_interface.setJointValueTarget("shoulder_pan_joint", to_radians(0.0));
-    move_group_interface.setJointValueTarget("shoulder_lift_joint", -to_radians(60.0));
-    move_group_interface.setJointValueTarget("elbow_joint", to_radians(90.0));
-    move_group_interface.setJointValueTarget("wrist_1_joint", to_radians(-120.0));
-    move_group_interface.setJointValueTarget("wrist_2_joint", to_radians(-90.0));
-    move_group_interface.setJointValueTarget("wrist_3_joint", to_radians(45.0));
+    target_pose.orientation.x = -0.7071068;
+    target_pose.orientation.y = 0.7071068;
+    target_pose.orientation.z = 0.0;
+    target_pose.orientation.w = 0.0;
+    target_pose.position.x = 0.4;
+    target_pose.position.y = 0.0;
+    target_pose.position.z = 0.0;
+
+    move_group_interface.setPoseTarget(target_pose);
+    // move_group_interface.setPoseTarget(target_pose, reference_frame);
+
+    RCLCPP_INFO(
+        logger,
+        std::format(
+            "[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+            target_pose.position.x, target_pose.position.y,
+            target_pose.position.z, target_pose.orientation.x,
+            target_pose.orientation.y, target_pose.orientation.z,
+            target_pose.orientation.w)
+            .c_str());
+
+    // move_group_interface.setJointValueTarget("shoulder_pan_joint",
+    //                                          to_radian(0.0));
+    // move_group_interface.setJointValueTarget("shoulder_lift_joint",
+    //                                          -to_radian(60.0));
+    // move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
+    // move_group_interface.setJointValueTarget("wrist_1_joint",
+    //                                          to_radian(-120.0));
+    // move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
+    // move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
 
     if (running) {
         auto const [success, plan] = [&move_group_interface] {

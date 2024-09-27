@@ -57,7 +57,7 @@ class dds_publisher : public rclcpp::Node {
                                         " end_state: {}",
                                         this->msg, this->angle,
                                         this->circle_state, this->fast_axis,
-					this->apply_config, this->end_state)
+                                        this->apply_config, this->end_state)
                                 .c_str());
             }
             publisher_->publish(message);
@@ -179,25 +179,30 @@ class urscript_publisher : public rclcpp::Node {
     urscript_publisher()
         : Node("urscript_publisher"), freedrive(false), executed(true) {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-        trigger_client = this->create_client<std_srvs::srv::Trigger>("/io_and_status_controller/resend_robot_program");
-        publisher_ = this->create_publisher<std_msgs::msg::String>("/urscript_interface/script_command", qos);
-	timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&urscript_publisher::publish_to_robot, this));
+        trigger_client = this->create_client<std_srvs::srv::Trigger>(
+            "/io_and_status_controller/resend_robot_program");
+        publisher_ = this->create_publisher<std_msgs::msg::String>(
+            "/urscript_interface/script_command", qos);
+        timer_ = this->create_wall_timer(
+            std::chrono::seconds(1),
+            std::bind(&urscript_publisher::publish_to_robot, this));
     }
     void activate_freedrive() {
         freedrive = true;
-	executed = false;
+        executed = false;
     }
     void deactivate_freedrive() {
         freedrive = false;
-	executed = false;
+        executed = false;
     }
+
   private:
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr trigger_client;
     bool freedrive, executed;
     void publish_to_robot() {
-	if (!executed) {
+        if (!executed) {
             executed = true;
             auto message = std_msgs::msg::String();
             if (freedrive) {
@@ -220,11 +225,15 @@ end
             RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
                         message.data.c_str());
             if (!freedrive) {
-                // ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger;
-                while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
+                // ros2 service call
+                // /io_and_status_controller/resend_robot_program
+                // std_srvs/srv/Trigger;
+                while (!trigger_client->wait_for_service(
+                    std::chrono::seconds(1))) {
                     RCLCPP_INFO(this->get_logger(), "Waiting for service...");
                 }
-                auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+                auto request =
+                    std::make_shared<std_srvs::srv::Trigger::Request>();
                 auto future = trigger_client->async_send_request(request);
             }
         }
@@ -236,8 +245,9 @@ double to_radian(const double degree) {
 }
 bool tol_measure(double &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
-    return ((std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
-            (std::abs(dz) < z_tolerance));
+    return (
+        (std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
+        (std::abs(dz) < z_tolerance));
 }
 
 void add_collision_obj(auto &move_group_interface) {
@@ -358,15 +368,19 @@ int main(int argc, char *argv[]) {
     double angle_increment;
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
 
-    double robot_vel, robot_acc, z_tolerance, angle_tolerance, radius, angle_limit, dz, drot;
+    double robot_vel, robot_acc, z_tolerance, angle_tolerance, radius,
+        angle_limit, dz, drot;
     int num_pt;
     bool autofocus, freedrive, previous, next, home, reset, fast_axis;
 
-    auto const move_group_node = std::make_shared<rclcpp::Node>("node_moveit", node_options);
-    auto move_group_interface = MoveGroupInterface(move_group_node, "ur_manipulator");
+    auto const move_group_node =
+        std::make_shared<rclcpp::Node>("node_moveit", node_options);
+    auto move_group_interface =
+        MoveGroupInterface(move_group_node, "ur_manipulator");
     auto subscriber_node = std::make_shared<dds_subscriber>();
     auto urscript_node = std::make_shared<urscript_publisher>();
-    auto publisher_node = std::make_shared<dds_publisher>(msg, angle, circle_state, fast_axis, apply_config, end_state);
+    auto publisher_node = std::make_shared<dds_publisher>(
+        msg, angle, circle_state, fast_axis, apply_config, end_state);
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
@@ -402,8 +416,8 @@ int main(int argc, char *argv[]) {
         fast_axis = subscriber_node->fast_axis();
 
         if (freedrive) {
-	    circle_state = 1;
-	    angle = 0.0;
+            circle_state = 1;
+            angle = 0.0;
             urscript_node->activate_freedrive();
             while (subscriber_node->freedrive()) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
@@ -417,22 +431,29 @@ int main(int argc, char *argv[]) {
         geometry_msgs::msg::Pose target_pose;
 
         if (reset) {
-	    planning = true;
+            planning = true;
             msg = "Reset to default position", angle = 0.0, circle_state = 1;
-            move_group_interface.setJointValueTarget("shoulder_pan_joint", to_radian(0.0));
-            move_group_interface.setJointValueTarget("shoulder_lift_joint", -to_radian(60.0));
-            move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
-            move_group_interface.setJointValueTarget("wrist_1_joint", to_radian(-120.0));
-            move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
-            move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
+            move_group_interface.setJointValueTarget("shoulder_pan_joint",
+                                                     to_radian(0.0));
+            move_group_interface.setJointValueTarget("shoulder_lift_joint",
+                                                     -to_radian(60.0));
+            move_group_interface.setJointValueTarget("elbow_joint",
+                                                     to_radian(90.0));
+            move_group_interface.setJointValueTarget("wrist_1_joint",
+                                                     to_radian(-120.0));
+            move_group_interface.setJointValueTarget("wrist_2_joint",
+                                                     to_radian(-90.0));
+            move_group_interface.setJointValueTarget("wrist_3_joint",
+                                                     to_radian(45.0));
         } else {
             angle_increment = angle_limit / num_pt;
             roll = 0.0, pitch = 0.0, yaw = 0.0;
             target_pose = move_group_interface.getCurrentPose().pose;
 
             if (autofocus) {
-                if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor)) {
-	    	    planning = false;
+                if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
+                                scale_factor)) {
+                    planning = false;
                     if (fast_axis) {
                         fast_axis = false;
                         apply_config = true;
@@ -448,37 +469,39 @@ int main(int argc, char *argv[]) {
                         end_state = true;
                         msg = "Autofocus complete";
                     }
-	        } else {
-	    	    planning = true;
+                } else {
+                    planning = true;
                     if (fast_axis) {
                         pitch += -drot;
                     } else {
                         roll += drot;
                     }
-                    target_pose.position.x += radius * std::cos(to_radian(angle));
-                    target_pose.position.y += radius * std::sin(to_radian(angle));
+                    target_pose.position.x +=
+                        radius * std::cos(to_radian(angle));
+                    target_pose.position.y +=
+                        radius * std::sin(to_radian(angle));
                     target_pose.position.z += -dz;
                 }
-	    } else {
+            } else {
                 counter = 0;
                 fast_focused = false;
                 slow_focused = false;
                 if (next) {
-		    planning = true;
+                    planning = true;
                     angle += angle_increment;
-	    	    circle_state++;
+                    circle_state++;
                     yaw += to_radian(angle_increment);
                 }
                 if (previous) {
-		    planning = true;
+                    planning = true;
                     angle -= angle_increment;
-	    	    circle_state--;
+                    circle_state--;
                     yaw += to_radian(-angle_increment);
                 }
                 if (home) {
-		    planning = true;
+                    planning = true;
                     yaw += to_radian(-angle);
-	    	    circle_state = 0;
+                    circle_state = 0;
                     angle = 0.0;
                 }
             }
@@ -493,22 +516,24 @@ int main(int argc, char *argv[]) {
                 q.normalize();
                 target_q = target_q * q;
                 target_pose.orientation = tf2::toMsg(target_q);
-                RCLCPP_INFO(logger, std::format("Target Pose: "
-                                                " x: {}, y: {}, z: {},"
-                                                " qx: {}, qy: {}, qz: {}, qw: {}",
-                                                target_pose.position.x,
-                                                target_pose.position.y,
-                                                target_pose.position.z,
-                                                target_pose.orientation.x,
-                                                target_pose.orientation.y,
-                                                target_pose.orientation.z,
-                                                target_pose.orientation.w)
-                                        .c_str());
+                RCLCPP_INFO(
+                    logger,
+                    std::format(
+                        "Target Pose: "
+                        " x: {}, y: {}, z: {},"
+                        " qx: {}, qy: {}, qz: {}, qw: {}",
+                        target_pose.position.x, target_pose.position.y,
+                        target_pose.position.z, target_pose.orientation.x,
+                        target_pose.orientation.y, target_pose.orientation.z,
+                        target_pose.orientation.w)
+                        .c_str());
                 move_group_interface.setPoseTarget(target_pose);
-	    }
+            }
             auto const [success, plan] = [&move_group_interface] {
-                moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
-                auto const ok = static_cast<bool>(move_group_interface.plan(plan_feedback));
+                moveit::planning_interface::MoveGroupInterface::Plan
+                    plan_feedback;
+                auto const ok =
+                    static_cast<bool>(move_group_interface.plan(plan_feedback));
                 return std::make_pair(ok, plan_feedback);
             }();
             if (success) {
@@ -519,7 +544,7 @@ int main(int argc, char *argv[]) {
                 msg = "Planning failed!";
             }
         }
-	
+
         publisher_node->set_msg(msg);
         publisher_node->set_angle(angle);
         publisher_node->set_circle_state(circle_state);
@@ -527,18 +552,19 @@ int main(int argc, char *argv[]) {
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
 
-	if (planning) {
+        if (planning) {
             planning = false;
             while (!subscriber_node->changed()) {
-	        if (tol_measure(drot, dz, angle_tolerance, z_tolerance, scale_factor)) {
-	            break;
-	        }
+                if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
+                                scale_factor)) {
+                    break;
+                }
                 if (!subscriber_node->autofocus()) {
                     break;
                 }
-                //rclcpp::sleep_for(std::chrono::milliseconds(200));
-	    }
-	}
+                // rclcpp::sleep_for(std::chrono::milliseconds(200));
+            }
+        }
     }
 
     rclcpp::shutdown();
