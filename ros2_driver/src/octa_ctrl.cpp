@@ -554,6 +554,7 @@ int main(int argc, char *argv[]) {
 
         if (planning) {
             planning = false;
+            rclcpp::sleep_for(std::chrono::milliseconds(1000));
             while (!subscriber_node->changed()) {
                 if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
                                 scale_factor)) {
@@ -562,7 +563,6 @@ int main(int argc, char *argv[]) {
                 if (!subscriber_node->autofocus()) {
                     break;
                 }
-                // rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
         }
     }

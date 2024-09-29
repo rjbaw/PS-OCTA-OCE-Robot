@@ -31,11 +31,11 @@ int main(int argc, char *argv[]) {
     std::signal(SIGTERM, signal_handler);
 
     auto const node = std::make_shared<rclcpp::Node>(
-        "hello_moveit",
+        "test_moveit",
         rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(
             true));
 
-    auto const logger = rclcpp::get_logger("hello_moveit");
+    auto const logger = rclcpp::get_logger("test_moveit");
 
     rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(node);
@@ -68,25 +68,25 @@ int main(int argc, char *argv[]) {
             target_pose.orientation.w)
             .c_str());
 
-    // target_pose.position.x += 0.1;
-    // target_pose.position.y += 0;
-    // target_pose.position.z += 0;
+    target_pose.position.x += 0.1;
+    target_pose.position.y += 0;
+    target_pose.position.z += 0;
 
-    // tf2::Quaternion q;
-    // tf2::Quaternion target_q;
-    // q.setRPY(to_radian(0),to_radians(0),to_radians(-20));
-    // q.normalize();
-    // tf2::fromMsg(target_pose.orientation, target_q);
-    // target_q = target_q * q;
-    // target_pose.orientation = tf2::toMsg(target_q);
+    tf2::Quaternion q;
+    tf2::Quaternion target_q;
+    q.setRPY(to_radian(0),to_radian(0),to_radian(-20));
+    q.normalize();
+    tf2::fromMsg(target_pose.orientation, target_q);
+    target_q = target_q * q;
+    target_pose.orientation = tf2::toMsg(target_q);
 
-    target_pose.orientation.x = -0.7071068;
-    target_pose.orientation.y = 0.7071068;
-    target_pose.orientation.z = 0.0;
-    target_pose.orientation.w = 0.0;
-    target_pose.position.x = 0.4;
-    target_pose.position.y = 0.0;
-    target_pose.position.z = 0.0;
+    // target_pose.orientation.x = -0.7071068;
+    // target_pose.orientation.y = 0.7071068;
+    // target_pose.orientation.z = 0.0;
+    // target_pose.orientation.w = 0.0;
+    // target_pose.position.x = 0.4;
+    // target_pose.position.y = 0.0;
+    // target_pose.position.z = 0.0;
 
     move_group_interface.setPoseTarget(target_pose);
     // move_group_interface.setPoseTarget(target_pose, reference_frame);
@@ -100,16 +100,6 @@ int main(int argc, char *argv[]) {
             target_pose.orientation.y, target_pose.orientation.z,
             target_pose.orientation.w)
             .c_str());
-
-    // move_group_interface.setJointValueTarget("shoulder_pan_joint",
-    //                                          to_radian(0.0));
-    // move_group_interface.setJointValueTarget("shoulder_lift_joint",
-    //                                          -to_radian(60.0));
-    // move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
-    // move_group_interface.setJointValueTarget("wrist_1_joint",
-    //                                          to_radian(-120.0));
-    // move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
-    // move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
 
     if (running) {
         auto const [success, plan] = [&move_group_interface] {

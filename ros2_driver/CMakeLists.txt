@@ -45,6 +45,10 @@ add_executable(test_moveit src/test_moveit.cpp)
 ament_target_dependencies(test_moveit rclcpp moveit_ros_planning_interface geometry_msgs tf2_ros std_msgs)
 target_link_libraries(test_moveit "${cpp_typesupport_target}" "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
+add_executable(reset src/reset.cpp)
+ament_target_dependencies(reset rclcpp moveit_ros_planning_interface geometry_msgs tf2_ros std_msgs)
+target_link_libraries(reset "${cpp_typesupport_target}" "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+
 add_executable(octa_ctrl src/octa_ctrl.cpp)
 ament_target_dependencies(octa_ctrl rclcpp moveit_ros_planning_interface geometry_msgs tf2_ros std_msgs)
 target_link_libraries(octa_ctrl "${cpp_typesupport_target}" "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
@@ -104,6 +108,7 @@ install(TARGETS
   joint_state_listener
   test_moveit
   octa_ctrl
+  reset
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch urdf srdf
