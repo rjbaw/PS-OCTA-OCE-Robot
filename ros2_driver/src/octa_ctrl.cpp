@@ -360,7 +360,6 @@ int main(int argc, char *argv[]) {
     bool apply_config = false;
     bool end_state = false;
 
-    int counter = 0;
     bool fast_focused = false;
     bool slow_focused = false;
     bool planning = false;
@@ -454,23 +453,26 @@ int main(int argc, char *argv[]) {
                 if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
                                 scale_factor)) {
                     planning = false;
-                    if (fast_axis) {
-                        fast_axis = false;
-                        apply_config = true;
-                        counter += 1;
-                        fast_focused = true;
-                    } else {
-                        fast_axis = true;
-                        apply_config = true;
-                        counter += 1;
-                        slow_focused = true;
-                    }
-                    if ((counter > 3) && fast_focused && slow_focused) {
+                    if (fast_focused && slow_focused) {
                         end_state = true;
                         msg = "Autofocus complete";
+                    } else {
+                        if (fast_axis) {
+                            fast_axis = false;
+                            apply_config = true;
+                            fast_focused = true;
+                        } else {
+                            fast_axis = true;
+                            apply_config = true;
+                            slow_focused = true;
+                        }
                     }
                 } else {
                     planning = true;
+                    if (fast_focused && slow_focused) {
+                        fast_focused = false;
+                        slow_focused = false;
+                    }
                     if (fast_axis) {
                         pitch += -drot;
                     } else {
@@ -483,7 +485,6 @@ int main(int argc, char *argv[]) {
                     target_pose.position.z += -dz;
                 }
             } else {
-                counter = 0;
                 fast_focused = false;
                 slow_focused = false;
                 if (next) {
@@ -552,9 +553,12 @@ int main(int argc, char *argv[]) {
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
 
+        if (apply_config && !end_state) {
+            rclcpp::sleep_for(std::chrono::milliseconds(1500));
+        }
+
         if (planning) {
             planning = false;
-            rclcpp::sleep_for(std::chrono::milliseconds(1000));
             while (!subscriber_node->changed()) {
                 if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
                                 scale_factor)) {
