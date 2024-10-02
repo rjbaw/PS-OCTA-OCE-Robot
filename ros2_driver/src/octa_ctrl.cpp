@@ -247,7 +247,7 @@ bool tol_measure(double &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
     return (
         (std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
-        (std::abs(dz) < z_tolerance));
+        (std::abs(dz) < (z_tolerance/1000.0)));
 }
 
 void add_collision_obj(auto &move_group_interface) {
@@ -363,7 +363,7 @@ int main(int argc, char *argv[]) {
     bool fast_focused = false;
     bool slow_focused = false;
     bool planning = false;
-    double scale_factor = 0.2;
+    double scale_factor = 0.25;
     double angle_increment;
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
 
