@@ -23,12 +23,13 @@ find_package(std_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED) 
 find_package(geometry_msgs REQUIRED) 
 find_package(tf2_ros REQUIRED)
-
+find_package(OpenCV REQUIRED)
 find_package(rosidl_default_generators REQUIRED) # generate the msg/srv header files
+
+include_directories(${OpenCV_INCLUDE_DIRS})
+
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Labviewint.msg"
-  "msg/Myint.msg"
-  "msg/Intarray.msg"
   "msg/Img.msg"
   "msg/Robotdata.msg"
   "msg/Labviewdata.msg"
@@ -80,20 +81,11 @@ target_link_libraries(sub_robot_data "${cpp_typesupport_target}")
 # ament_target_dependencies(pub_custom_int_labview rclcpp std_msgs)
 # target_link_libraries(pub_custom_int_labview "${cpp_typesupport_target}")
 
-# add_executable(add_int src/add_int.cpp)
-# ament_target_dependencies(add_int rclcpp std_msgs)
-
-# add_executable(pub_array src/pub_array.cpp)
-# ament_target_dependencies(pub_array rclcpp std_msgs )
-# target_link_libraries(pub_array "${cpp_typesupport_target}")
-
-# add_executable(sub_array src/sub_array.cpp)
-# ament_target_dependencies(sub_array rclcpp std_msgs )
-# target_link_libraries(sub_array "${cpp_typesupport_target}")
+add_executable(sub_img src/sub_img.cpp)
+ament_target_dependencies(sub_img rclcpp std_msgs OpenCV)
+target_link_libraries(sub_img "${cpp_typesupport_target}" "${OpenCV_LIBS}")
 
 install(TARGETS
-  # pub_array
-  # sub_array
   # sub_int32
   # sub_int32_ros
   # pub_custom_int_labview
@@ -101,6 +93,7 @@ install(TARGETS
   # add_int
   # pub_custom_int
   # sub_custom_int
+  sub_img
   sub_robot_data
   pub_robot_data
   sub_labview_data
