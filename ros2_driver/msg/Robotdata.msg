@@ -4,4 +4,5 @@ int32 circle_state
 bool fast_axis
 bool apply_config
 bool end_state
+bool scan_3d
 

@@ -26,14 +26,15 @@ void signal_handler(int signum) {
 
 class dds_publisher : public rclcpp::Node {
   public:
-    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false) {}
+    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false, false) {}
 
     dds_publisher(std::string msg = "", double angle = 0.0,
                   int circle_state = 1, bool fast_axis = false,
-                  bool apply_config = false, bool end_state = false)
+                  bool apply_config = false, bool end_state = false,
+		  bool scan_3d = false)
         : Node("pub_robot_data"), msg(msg), angle(angle),
           circle_state(circle_state), fast_axis(fast_axis),
-          apply_config(apply_config), end_state(end_state) {
+          apply_config(apply_config), end_state(end_state), scan_3d(scan_3d) {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         publisher_ =
             this->create_publisher<octa_ros::msg::Robotdata>("robot_data", qos);
@@ -46,6 +47,7 @@ class dds_publisher : public rclcpp::Node {
             message.fast_axis = this->fast_axis;
             message.apply_config = this->apply_config;
             message.end_state = this->end_state;
+            message.scan_3d = this->scan_3d;
             if (old_message != message) {
                 RCLCPP_INFO(this->get_logger(),
                             std::format("[PUBLISHING] "
@@ -54,10 +56,12 @@ class dds_publisher : public rclcpp::Node {
                                         " circle_state: {},"
                                         " fast_axis: {},"
                                         " apply_config: {},"
-                                        " end_state: {}",
+                                        " end_state: {},"
+                                        " scan_3d: {}",
                                         this->msg, this->angle,
                                         this->circle_state, this->fast_axis,
-                                        this->apply_config, this->end_state)
+                                        this->apply_config, this->end_state,
+					this->scan_3d)
                                 .c_str());
             }
             publisher_->publish(message);
@@ -75,6 +79,7 @@ class dds_publisher : public rclcpp::Node {
         apply_config = new_apply_config;
     }
     void set_end_state(bool new_end_state) { end_state = new_end_state; }
+    void set_scan_3d(bool new_scan_3d) { scan_3d = new_scan_3d; }
 
   private:
     rclcpp::TimerBase::SharedPtr timer_;
@@ -82,7 +87,7 @@ class dds_publisher : public rclcpp::Node {
     std::string msg;
     double angle;
     int circle_state;
-    bool fast_axis, apply_config, end_state;
+    bool fast_axis, apply_config, end_state, scan_3d;
     octa_ros::msg::Robotdata old_message = octa_ros::msg::Robotdata();
 };
 
@@ -112,6 +117,7 @@ class dds_subscriber : public rclcpp::Node {
                 home_ = msg->home;
                 reset_ = msg->reset;
                 fast_axis_ = msg->fast_axis;
+		scan_3d_ = msg->scan_3d;
                 if (old_msg != *msg) {
                     RCLCPP_INFO(
                         this->get_logger(),
@@ -131,11 +137,13 @@ class dds_subscriber : public rclcpp::Node {
                                     " next: {},"
                                     " home: {},"
                                     " reset: {},"
-                                    " fast_axis: {},",
+                                    " fast_axis: {},"
+                                    " scan_3d: {}",
                                     robot_vel_, robot_acc_, z_tolerance_,
                                     angle_tolerance_, radius_, angle_limit_,
                                     num_pt_, dz_, drot_, autofocus_, freedrive_,
-                                    previous_, next_, home_, reset_, fast_axis_)
+                                    previous_, next_, home_, reset_, fast_axis_,
+				    scan_3d_)
                             .c_str());
                     changed_ = true;
                 } else {
@@ -161,6 +169,7 @@ class dds_subscriber : public rclcpp::Node {
     bool reset() { return reset_; };
     bool fast_axis() { return fast_axis_; };
     bool changed() { return changed_; };
+    bool scan_3d() { return scan_3d_; };
 
   private:
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
@@ -170,7 +179,7 @@ class dds_subscriber : public rclcpp::Node {
     int num_pt_ = 0;
     bool autofocus_ = false, freedrive_ = false, previous_ = false,
          next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
-         changed_ = false;
+         changed_ = false, scan_3d_ = false;
     octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
 };
 
@@ -359,6 +368,7 @@ int main(int argc, char *argv[]) {
     int circle_state = 1;
     bool apply_config = false;
     bool end_state = false;
+    bool scan_3d = false;
 
     bool fast_focused = false;
     bool slow_focused = false;
@@ -379,7 +389,8 @@ int main(int argc, char *argv[]) {
     auto subscriber_node = std::make_shared<dds_subscriber>();
     auto urscript_node = std::make_shared<urscript_publisher>();
     auto publisher_node = std::make_shared<dds_publisher>(
-        msg, angle, circle_state, fast_axis, apply_config, end_state);
+        msg, angle, circle_state, fast_axis, apply_config, end_state, scan_3d
+    );
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
@@ -413,6 +424,7 @@ int main(int argc, char *argv[]) {
         home = subscriber_node->home();
         reset = subscriber_node->reset();
         fast_axis = subscriber_node->fast_axis();
+	scan_3d = subscriber_node->scan_3d();
 
         if (freedrive) {
             circle_state = 1;
@@ -552,6 +564,7 @@ int main(int argc, char *argv[]) {
         publisher_node->set_fast_axis(fast_axis);
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
+        publisher_node->set_scan_3d(scan_3d);
 
         if (apply_config && !end_state) {
             rclcpp::sleep_for(std::chrono::milliseconds(1500));
