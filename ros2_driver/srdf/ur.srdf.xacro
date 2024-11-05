@@ -4,7 +4,7 @@
   <!-- robot name parameter -->
   <xacro:arg name="name" default="ur"/>
 
-  <xacro:include filename="$(find ur_moveit_config)/srdf/ur_macro.srdf.xacro"/>
+  <xacro:include filename="$(find octa_ros)/srdf/ur_macro.srdf.xacro"/>
 
   <xacro:ur_srdf/>
 

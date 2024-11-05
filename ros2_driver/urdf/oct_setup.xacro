@@ -3,13 +3,14 @@
   <!-- robot name parameter -->
   <xacro:arg name="name" default="ur"/>
 
-  <!-- ur_description -->
-  <xacro:include filename="$(find octa_ros)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
   <!-- ros2 control include -->
   <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro" />
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
+
   <!-- end_effector include -->
   <xacro:include filename="$(find octa_ros)/urdf/end_effector.xacro" />
+  <!-- <xacro:include filename="$(find ur_robot_driver)/urdf/ur.urdf.xacro" /> -->
 
   <!-- possible 'ur_type' values: ur3, ur3e, ur5, ur5e, ur10, ur10e, ur16e, ur20 -->
   <!-- the default value should raise an error in case this was called without defining the type -->
@@ -106,8 +107,18 @@
     trajectory_port="$(arg trajectory_port)"
   />
 
-  <xacro:end_effector prefix="" parent="flange">
-    <origin xyz="0.051 0.0 0.0" rpy="0 0 0"/>
+  <link name="$(arg tf_prefix)tcp"/>
+  <joint name="$(arg tf_prefix)tool0-tcp" type="fixed">
+    <!-- default toolframe - X+ left, Y+ up, Z+ front -->
+    <!-- origin xyz="0 0 0" rpy="${pi/2.0} 0 ${pi/2.0}"/ -->
+    <!-- <origin xyz="0.132806 0.008687832114 0.008129217757" rpy="${pi/2.0} ${pi/4.0} ${pi/2.0}"/> -->
+    <origin xyz="0.008687832114 0.008129217757 0.132806" rpy="0 0 ${-3*pi/4.0}"/>
+    <parent link="$(arg tf_prefix)tool0"/>
+    <child link="$(arg tf_prefix)tcp"/>
+  </joint>
+
+  <xacro:end_effector prefix="" parent="$(arg tf_prefix)tool0">
+    <origin xyz="0.0 0.0 0.051" rpy="0 0 0"/>
   </xacro:end_effector>
 
 </robot>
