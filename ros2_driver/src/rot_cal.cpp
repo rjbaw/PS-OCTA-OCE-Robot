@@ -2,7 +2,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "octa_ros/msg/img.hpp"
 #include <opencv2/opencv.hpp>
-#include <filesystem>
 
 #define be RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
 
@@ -20,6 +19,9 @@ public:
        	[this](const octa_ros::msg::Img::SharedPtr msg)
         { 
 	RCLCPP_INFO(this->get_logger(), "Subscribing"); 
+	//RCLCPP_INFO(this->get_logger(), std::format(
+	//			"I heard: {} {} {}", msg->img[0], msg->img[1], msg->img[255999]
+	//			).c_str()); 
 	RCLCPP_INFO(this->get_logger(), std::format(
 				"length: {}", msg->img.size()
 				).c_str()); 
@@ -36,10 +38,6 @@ public:
 	
         cv::imwrite("test/test.jpg", img);
 	std::string filename = std::format("test/test{}.jpg", count);
-	if (std::filesystem::exists(filename.c_str())) {
-	    count++;
-	    filename = std::format("test/test{}.jpg", count);
-	}
         cv::imwrite(filename.c_str(), img);
 
 	}

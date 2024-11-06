@@ -3,6 +3,7 @@ import numpy as np
 import os
 import shutil
 import open3d as o3d
+from scipy.spatial.transform import Rotation as R
 
 
 def segment(image):
@@ -88,46 +89,35 @@ def lines_3d(file_list, data_path, result_path, interval, acq_interval=False):
 
 
 def interpolate_3d(data_frames, interval):
-    total_frames = 500  # Fixed total number of frames
+    total_frames = 500
     num_frames = len(data_frames)
-    num_x_indices = 500  # Assuming x ranges from 0 to 499
-
-    # Initialize arrays to hold y values across frames
+    num_x_indices = 500
     y_values = np.zeros((num_frames, num_x_indices))
 
-    # Collect z-values from key frames
     z_key_values = np.zeros(num_frames)
 
-    # Populate y_values array and collect z-values
     for frame_idx, frame in enumerate(data_frames):
         y_values[frame_idx, :] = frame[:, 1]
-        z_key_values[frame_idx] = frame[0, 2]  # All z-values in a frame are the same
+        z_key_values[frame_idx] = frame[0, 2]
 
-    # Number of segments between frames
     num_segments = num_frames - 1
 
-    # Total number of interpolated frames between key frames
     total_interpolated_frames = total_frames - num_frames
 
-    # Number of interpolated frames per segment
     interpolated_frames_per_segment = total_interpolated_frames // num_segments
 
-    # Remainder frames to distribute among segments
     remainder_frames = total_interpolated_frames % num_segments
 
-    # List to hold all frames
     all_frames = []
     interpolated_frames = []
     idx_start = 0
 
-    # Loop over each segment between frames
     for i in range(num_segments):
-        # Determine number of interpolated frames for this segment
+
         frames_this_segment = interpolated_frames_per_segment
         if i < remainder_frames:
             frames_this_segment += 1
 
-        # For each segment, generate interpolated frames
         for p in range(frames_this_segment):
             t = (p + 1) / (frames_this_segment + 1)
             y_interp = (1 - t) * y_values[i, :] + t * y_values[i + 1, :]
@@ -135,20 +125,16 @@ def interpolate_3d(data_frames, interval):
             interpolated_frame = np.column_stack((x_indices, y_interp))
             interpolated_frames.append(interpolated_frame)
 
-        # Assemble frames
-        all_frames.append(data_frames[i][:, [0, 1]])  # Only x and y
+        all_frames.append(data_frames[i][:, [0, 1]])
         idx_end = idx_start + frames_this_segment
         all_frames.extend(interpolated_frames[idx_start:idx_end])
         idx_start = idx_end
 
-    # Add the last original frame
     all_frames.append(data_frames[-1][:, [0, 1]])
 
-    # Now, assign z-values to all frames to cover 0-499
     total_frames = len(all_frames)
     z_values = np.linspace(0, 499, total_frames)
 
-    # Add z-values to each frame
     for i, frame in enumerate(all_frames):
         z_val = np.full((num_x_indices,), z_values[i])
         all_frames[i] = np.column_stack((frame, z_val))
@@ -156,45 +142,26 @@ def interpolate_3d(data_frames, interval):
     return np.array(all_frames)
 
 
-from scipy.spatial.transform import Rotation as R
-
-
-# Step 2: Convert normals to quaternions
-def normal_to_quaternion(normal, reference=[0, 0, 1]):
-    normal = normal / np.linalg.norm(normal)
-    axis = np.cross(reference, normal)
-    angle = np.arccos(np.clip(np.dot(reference, normal), -1.0, 1.0))
-    if np.isclose(angle, 0):
-        return np.array([0, 0, 0, 1])
-    if np.isclose(angle, np.pi):
-        orthogonal = (
-            np.array([1, 0, 0])
-            if not np.allclose(reference, [1, 0, 0])
-            else np.array([0, 1, 0])
-        )
-        axis = np.cross(reference, orthogonal)
-        axis = axis / np.linalg.norm(axis)
-    quat = R.from_rotvec(axis * angle).as_quat()
-    return quat
-
-
-# Step 3: Average the quaternions
-def average_quaternions(quaternions):
-    quaternions = quaternions / np.linalg.norm(quaternions, axis=1)[:, np.newaxis]
-    ref_quat = quaternions[0]
-    for i in range(len(quaternions)):
-        if np.dot(ref_quat, quaternions[i]) < 0:
-            quaternions[i] = -quaternions[i]
-    avg_quat = np.mean(quaternions, axis=0)
-    avg_quat = avg_quat / np.linalg.norm(avg_quat)
-    return avg_quat
+def align_to_direction(rot_matrix):
+    out_matrix = np.zeros((3, 3))
+    for col in range(3):
+        max_idx = np.argmax(np.abs(rot_matrix[:, col]))
+        if col != max_idx:
+            out_matrix[:, max_idx] = rot_matrix[:, col]
+        else:
+            out_matrix[:, col] = rot_matrix[:, col]
+    for col in range(3):
+        if out_matrix[col, col] < 0:
+            out_matrix[:, col] *= -1
+    return out_matrix
 
 
 def main(data_path, result_path, interval):
+    start_idx = 3
     shutil.rmtree(result_path)
     os.makedirs(result_path)
     file_list = sorted(os.listdir(data_path), key=lambda x: int(os.path.splitext(x)[0]))
-
+    file_list = file_list[(interval * start_idx) :]
     pc_lines = lines_3d(file_list, data_path, result_path, interval, False)
     pc_lines = pc_lines.reshape(-1, 3)
     pc_lines[:, [2, 1]] = pc_lines[:, [1, 2]]
@@ -203,14 +170,22 @@ def main(data_path, result_path, interval):
     ref_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=300, origin=[0, 0, 0]
     )
-    boundbox = pcd_lines.get_minimal_oriented_bounding_box()
+    boundbox = pcd_lines.get_minimal_oriented_bounding_box(robust=False)
+    # boundbox = pcd_lines.get_oriented_bounding_box()
     boundbox.color = (1, 0, 0)
-    rot_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
+    box_pt = np.asarray(boundbox.get_box_points())
+    rot_mat = align_to_direction(boundbox.R)
+    rpy = R.from_matrix(np.array(rot_mat)).as_euler("xyz", degrees=True)
+    print("rotation from bounding box: ", rpy)
+    print(rot_mat)
+
+    final_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=300, origin=np.mean(pc_lines, axis=0)
     )
-    rot_coor = rot_coor.rotate(boundbox.R)
+    final_coor = final_coor.rotate(rot_mat)
+
     o3d.visualization.draw_geometries(
-        [pcd_lines, ref_coor, boundbox, rot_coor], point_show_normal=True
+        [pcd_lines, ref_coor, boundbox, final_coor], point_show_normal=False
     )
 
     pc_3d = lines_3d(file_list, data_path, result_path, interval, True)
@@ -231,73 +206,47 @@ def main(data_path, result_path, interval):
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
     )
     # pcd.orient_normals_consistent_tangent_plane(100)
-    print(np.asarray(pcd.normals))
-    print(pcd.detect_planar_patches())
-    planar = pcd.detect_planar_patches(
-        normal_variance_threshold_deg=45,  # Try lower values
-        coplanarity_deg=80,  # Try higher values
-        outlier_ratio=0.6,  # Try higher values
-        min_plane_edge_length=0.1,  # Try lower values
-        min_num_points=100,  # Adjust based on your point cloud density
-        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.2, max_nn=50),
-    )
-    print(planar)
+
     boundbox = pcd.get_minimal_oriented_bounding_box()
-    # boundbox = (pcd.get_oriented_bounding_box())
+    # boundbox = pcd.get_oriented_bounding_box()
+    # boundbox = pcd.get_axis_aligned_bounding_box()
+
+    box_pt = np.asarray(boundbox.get_box_points())
     boundbox.color = (1, 0, 0)
 
     pc_3d_mean = np.mean(pc_3d, axis=0)
-    print(pc_3d_mean)
+    print("mean centre point:", pc_3d_mean)
     ref_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=300, origin=[0, 0, 0]
     )
-    rot_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=300, origin=pc_3d_mean
-    )
+
     robot_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=300, origin=[249, 249, 499]
+    )
+    robot_frame = robot_coor.get_rotation_matrix_from_xyz(
+        (np.radians(180), np.radians(0), np.radians(-90))
+    )
+    robot_coor.rotate(robot_frame)
+
+    final_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=300, origin=pc_3d_mean
     )
-    rot_coor = rot_coor.rotate(boundbox.R)
+    final_coor = final_coor.rotate(robot_frame)
+
+    rpy = R.from_matrix(np.array(boundbox.R)).as_euler("xyz", degrees=True)
+    print("rotation from bounding box: ", rpy)
+    print(boundbox.R)
+
+    rot_mat = align_to_direction(boundbox.R)
+    final_coor = final_coor.rotate(rot_mat)
+
+    rpy = R.from_matrix(np.array(rot_mat)).as_euler("xyz", degrees=True)
+    print("rotation from bounding box: ", rpy)
+    print(rot_mat)
+
     o3d.visualization.draw_geometries(
-        [pcd, ref_coor, boundbox, rot_coor], point_show_normal=True
+        [pcd, ref_coor, boundbox, final_coor, robot_coor], point_show_normal=False
     )
-
-    # normals = pcd.normals
-    # quaternions = np.array([normal_to_quaternion(n) for n in normals])
-    # avg_quat = average_quaternions(quaternions)
-    # # Step 4: Use the average quaternion
-    # rotation = R.from_quat(avg_quat)
-    # rotation_matrix = rotation.as_matrix()
-    # euler_angles = rotation.as_euler("xyz", degrees=True)
-    # print("Average Quaternion:", avg_quat)
-    # print("Rotation Matrix:\n", rotation_matrix)
-    # print("Euler Angles (degrees):", euler_angles)
-
-    hull, _ = pcd.compute_convex_hull()
-    hull.compute_vertex_normals()
-    hull.compute_triangle_normals()
-    print(np.asarray(hull.triangle_normals))
-
-    triangles = np.asarray(hull.triangles)
-    normals = np.asarray(hull.triangle_normals)
-    vertices = np.asarray(hull.vertices)
-    # Compute triangle centers
-    centers = np.mean(vertices[triangles], axis=1)
-    # Create a point cloud for the triangle centers
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(centers)
-    pcd.normals = o3d.utility.Vector3dVector(normals)
-
-    # Create a coordinate frame for reference
-    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=0.5, origin=[0, 0, 0]
-    )
-
-    # Visualize the hull, normal points, and coordinate frame
-    o3d.visualization.draw_geometries(
-        [hull, pcd, coord_frame], point_show_normal=True, mesh_show_wireframe=True
-    )
-    # o3d.visualization.draw_geometries([hull], point_show_normal=True)
 
 
 # path = "data/skin"
