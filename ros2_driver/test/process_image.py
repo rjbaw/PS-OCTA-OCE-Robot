@@ -85,7 +85,10 @@ def lines_3d(file_list, data_path, result_path, interval, acq_interval=False):
             pc_3d.append(pc_z)
             if acq_interval and len(pc_3d) == interval:
                 break
-    return np.array(pc_3d)
+    pc_3d = np.array(pc_3d)
+    pc_3d = np.vstack(pc_3d)
+    pc_3d[:, [2, 1]] = pc_3d[:, [1, 2]]
+    return pc_3d
 
 
 def interpolate_3d(data_frames, interval):
@@ -160,11 +163,11 @@ def main(data_path, result_path, interval):
     start_idx = 3
     shutil.rmtree(result_path)
     os.makedirs(result_path)
+
     file_list = sorted(os.listdir(data_path), key=lambda x: int(os.path.splitext(x)[0]))
     file_list = file_list[(interval * start_idx) :]
+
     pc_lines = lines_3d(file_list, data_path, result_path, interval, False)
-    pc_lines = pc_lines.reshape(-1, 3)
-    pc_lines[:, [2, 1]] = pc_lines[:, [1, 2]]
     pcd_lines = o3d.geometry.PointCloud()
     pcd_lines.points = o3d.utility.Vector3dVector(pc_lines)
     ref_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
@@ -173,7 +176,7 @@ def main(data_path, result_path, interval):
     boundbox = pcd_lines.get_minimal_oriented_bounding_box(robust=False)
     # boundbox = pcd_lines.get_oriented_bounding_box()
     boundbox.color = (1, 0, 0)
-    box_pt = np.asarray(boundbox.get_box_points())
+    # box_pt = np.asarray(boundbox.get_box_points())
     rot_mat = align_to_direction(boundbox.R)
     rpy = R.from_matrix(np.array(rot_mat)).as_euler("xyz", degrees=True)
     print("rotation from bounding box: ", rpy)
@@ -190,10 +193,6 @@ def main(data_path, result_path, interval):
 
     pc_3d = lines_3d(file_list, data_path, result_path, interval, True)
     pc_3d = interpolate_3d(pc_3d, interval)
-
-    # pc_3d = pc_3d.reshape(-1, 3)
-    pc_3d = np.vstack(pc_3d)
-    pc_3d[:, [2, 1]] = pc_3d[:, [1, 2]]
     print(pc_3d)
     print(pc_3d.shape)
 
@@ -211,7 +210,7 @@ def main(data_path, result_path, interval):
     # boundbox = pcd.get_oriented_bounding_box()
     # boundbox = pcd.get_axis_aligned_bounding_box()
 
-    box_pt = np.asarray(boundbox.get_box_points())
+    # box_pt = np.asarray(boundbox.get_box_points())
     boundbox.color = (1, 0, 0)
 
     pc_3d_mean = np.mean(pc_3d, axis=0)
