@@ -183,6 +183,8 @@ SegmentResult detect_lines(const cv::Mat &img) {
     result.image = output_image;
     result.coordinates = ret_coord;
 
+    printf("Image processing done\n");
+
     return result;
 }
 
@@ -194,8 +196,10 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     double increments = 499.0 / static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
+    	printf("Processing image %ld\n", i);
         cv::Mat img = img_array[i];
         SegmentResult pc = detect_lines(img);
+	cv::imwrite(std::format("{}.jpg",i).c_str(), pc.image);
         if (pc.coordinates.empty()) {
             continue;
         }
@@ -316,12 +320,13 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("img_processing");
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    // rclcpp::executors::MultiThreadedExecutor executor;
+    rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(img_subscriber_node);
-    std::thread([&executor]() { executor.spin(); }).detach();
+    // std::thread([&executor]() { executor.spin(); }).detach();
 
-    // // Run the executor in a separate thread
-    // std::thread spinner([&executor]() { executor.spin(); });
+    // Run the executor in a separate thread
+    std::thread spinner([&executor]() { executor.spin(); });
 
     cv::Mat img;
     std::vector<cv::Mat> img_array;
@@ -331,16 +336,19 @@ int main(int argc, char *argv[]) {
             if (!img.empty()) {
                 break;
             }
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            rclcpp::sleep_for(std::chrono::milliseconds(500));
         }
         img_array.push_back(img);
         RCLCPP_INFO(logger, "Collected image %d", i + 1);
     }
-    // executor.cancel();
-    // spinner.join();
+    executor.cancel();
+    spinner.join();
+    RCLCPP_INFO(logger, "Terminated Image subscriber");
 
+    RCLCPP_INFO(logger, "Forming 3D");
     std::vector<Eigen::Vector3d> pc_lines =
         lines_3d(img_array, interval, single_interval);
+    RCLCPP_INFO(logger, "Computing Bounding Box");
     open3d::geometry::PointCloud pcd_lines;
     for (const auto &point : pc_lines) {
         pcd_lines.points_.emplace_back(point);
@@ -349,6 +357,7 @@ int main(int argc, char *argv[]) {
     Eigen::Matrix3d rot_mat = align_to_direction(boundbox.R_);
     // RCLCPP_INFO(logger->get_logger(), "Aligned Rotation Matrix:\n" <<
     // rot_mat);
+    RCLCPP_INFO(logger, "Done");
     std::cout << "Aligned Rotation Matrix:\n" << rot_mat << std::endl;
 
     rclcpp::shutdown();

@@ -1,5 +1,5 @@
 netsh interface portproxy reset
-Set-NetConnectionProfile -InterfaceAlias "Ethernet 3" -NetworkCategory Private
+Set-NetConnectionProfile -InterfaceAlias "Ethernet 2" -NetworkCategory Private
 netsh interface portproxy add v4tov4 listenport=50001 listenaddress=0.0.0.0 connectport=50001 connectaddress=$(wsl hostname -I)
 netsh interface portproxy add v4tov4 listenport=50002 listenaddress=0.0.0.0 connectport=50002 connectaddress=$(wsl hostname -I)
 netsh interface portproxy add v4tov4 listenport=50003 listenaddress=0.0.0.0 connectport=50003 connectaddress=$(wsl hostname -I)
