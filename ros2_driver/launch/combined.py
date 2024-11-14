@@ -452,9 +452,8 @@ def launch_setup():
 
     octa_node = Node(
         package="octa_ros",
-        executable="octa_ctrl",
-        name="octa_ctrl",
-        # output="screen",
+        executable="single_axis_ctrl",
+        name="single_axis_ctrl",
         output="log",
         parameters=[
             moveit_config.robot_description,
@@ -697,7 +696,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "rviz_config_file",
             default_value=PathJoinSubstitution(
-                # [FindPackageShare("octa_ros"), "config", "moveit.rviz"]
                 [FindPackageShare("ur_moveit_config"), "config", "moveit.rviz"]
             ),
             description="RViz config file (absolute path) to use when launching rviz.",
