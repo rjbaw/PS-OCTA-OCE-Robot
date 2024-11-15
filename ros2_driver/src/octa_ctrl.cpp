@@ -57,10 +57,6 @@ class img_subscriber : public rclcpp::Node {
                     std::format("Subscribing to image, array length: {}",
                                 msg->img.size())
                         .c_str());
-
-        // std::vector<uint8_t> &source_img = msg->img;
-        // std::vector<uint8_t> source_img(msg->img.begin(), msg->img.end());
-        // cv::Mat img(height_, width_, CV_8UC1, source_img.data());
         cv::Mat img(height_, width_, CV_8UC1);
         std::copy(msg->img.begin(), msg->img.end(), img.data);
         {
@@ -469,11 +465,11 @@ end
 double to_radian(const double degree) {
     return (std::numbers::pi / 180 * degree);
 }
-bool tol_measure(double &drot, double &dz, double &angle_tolerance,
+bool tol_measure(Eigen::Matrix3d &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
-    return (
-        (std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
-        (std::abs(dz) < (z_tolerance / 1000.0)));
+    return ((std::abs((1 / scale_factor * drot.norm())) <
+             to_radian(angle_tolerance)) &&
+            (std::abs(dz) < (z_tolerance / 1000.0)));
 }
 
 void add_collision_obj(auto &move_group_interface) {
@@ -562,14 +558,6 @@ void add_collision_obj(auto &move_group_interface) {
     planning_scene_interface.applyCollisionObject(collision_monitor);
 }
 
-bool image_changed(auto &subscriber_node, double &drot, double &dz,
-                   double &angle_tolerance, double &z_tolerance) {
-    return ((std::pow(std::abs(subscriber_node->dz()) - std::abs(dz), 2) <
-             (z_tolerance)) &&
-            (std::pow(std::abs(subscriber_node->drot()) - std::abs(drot), 2) <
-             to_radian(angle_tolerance * 1)));
-}
-
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     std::signal(SIGINT, signal_handler);
@@ -580,6 +568,14 @@ int main(int argc, char *argv[]) {
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
 
+    // // Declare parameters
+    // move_group_node->declare_parameter("interval", 4);
+    // move_group_node->declare_parameter("scale_factor", 0.25);
+    //
+    // // Get parameter values
+    // int interval = move_group_node->get_parameter("interval").as_int();
+    // double scale_factor =
+    // move_group_node->get_parameter("scale_factor").as_double();
     const int interval = 4;
     const bool single_interval = false;
 
@@ -589,16 +585,15 @@ int main(int argc, char *argv[]) {
     bool apply_config = false;
     bool end_state = false;
     bool scan_3d = false;
+    Eigen::Matrix3d rotmat_eigen;
 
-    // bool fast_focused = false;
-    // bool slow_focused = false;
     bool planning = false;
     double scale_factor = 0.25;
     double angle_increment;
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
 
-    double robot_vel, robot_acc, z_tolerance, angle_tolerance, radius,
-        angle_limit, dz, drot;
+    double robot_vel, robot_acc, radius, angle_limit, dz, drot;
+    double z_tolerance, angle_tolerance;
     int num_pt;
     bool autofocus, freedrive, previous, next, home, reset, fast_axis;
 
@@ -691,6 +686,7 @@ int main(int argc, char *argv[]) {
                 } else {
                     planning = true;
                     end_state = true;
+                    scan_3d = false;
 
                     cv::Mat img;
                     std::vector<cv::Mat> img_array;
@@ -715,8 +711,7 @@ int main(int argc, char *argv[]) {
                         pcd_lines.GetMinimalOrientedBoundingBox(false);
                     Eigen::Vector3d center = boundbox.GetCenter();
                     double z_height = center[2];
-                    Eigen::Matrix3d rotmat_eigen =
-                        align_to_direction(boundbox.R_);
+                    rotmat_eigen = align_to_direction(boundbox.R_);
                     tf2::Matrix3x3 rotmat_tf(
                         rotmat_eigen(0, 0), rotmat_eigen(0, 1),
                         rotmat_eigen(0, 2), rotmat_eigen(1, 0),
@@ -754,8 +749,6 @@ int main(int argc, char *argv[]) {
                     move_group_interface.setPoseTarget(target_pose);
                 }
             } else {
-                // fast_focused = false;
-                // slow_focused = false;
                 if (next) {
                     planning = true;
                     angle += angle_increment;
@@ -823,35 +816,18 @@ int main(int argc, char *argv[]) {
         publisher_node->set_end_state(end_state);
         publisher_node->set_scan_3d(scan_3d);
 
-        // if (apply_config && !end_state) {
-        //     rclcpp::sleep_for(std::chrono::milliseconds(1500));
-        // }
-
         if (planning) {
             planning = false;
+            while (!subscriber_node->changed()) {
+                if (tol_measure(rotmat_eigen, dz, angle_tolerance, z_tolerance,
+                                scale_factor)) {
+                    break;
+                }
+                if (!subscriber_node->autofocus()) {
+                    break;
+                }
+            }
         }
-
-        // if (planning) {
-        //     planning = false;
-        //     while (!subscriber_node->changed()) {
-        //         if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
-        //                         scale_factor)) {
-        //             break;
-        //         }
-        //         if (!subscriber_node->autofocus()) {
-        //             break;
-        //         }
-        //     }
-        // }
-
-        // // Declare parameters
-        // move_group_node->declare_parameter("interval", 4);
-        // move_group_node->declare_parameter("scale_factor", 0.25);
-        //
-        // // Get parameter values
-        // int interval = move_group_node->get_parameter("interval").as_int();
-        // double scale_factor =
-        // move_group_node->get_parameter("scale_factor").as_double();
     }
 
     executor.cancel();

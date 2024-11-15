@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <memory>
 #include <open3d/Open3D.h>
+#include <opencv2/img_hash.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <thread>
@@ -31,41 +32,43 @@ class img_subscriber : public rclcpp::Node {
     }
 
     cv::Mat get_img() {
-        std::lock_guard<std::mutex> lock(img_mutex_);
-        return img_.clone();
+        std::unique_lock<std::mutex> lock(img_mutex_);
+        img_status_.wait(lock, [this] { return new_img_; });
+        cv::Mat img_copy = img_.clone();
+        new_img_ = false;
+        return img_copy;
     }
 
   private:
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        RCLCPP_INFO(this->get_logger(), "Subscribing to image");
-        RCLCPP_INFO(this->get_logger(),
-                    std::format("length: {}", msg->img.size()).c_str());
-
-        // uint8_t &source_img = msg->img;
-        // for (int row = 0; row < height; row++) {
-        //     for (int col = 0; col < width; col++) {
-        //         reshape_img[row][col] = source_img[(col + row *
-        //         width)];
-        //     }
-        // }
-
-        // std::vector<uint8_t> &source_img = msg->img;
-        // std::vector<uint8_t> source_img(msg->img.begin(), msg->img.end());
-        // cv::Mat img(height_, width_, CV_8UC1, source_img.data());
+        RCLCPP_INFO(
+            this->get_logger(),
+            std::format("Subscribing to image, length: {}", msg->img.size())
+                .c_str());
         cv::Mat img(height_, width_, CV_8UC1);
         std::copy(msg->img.begin(), msg->img.end(), img.data);
+
+        cv::Mat current_hash;
+        cv::img_hash::AverageHash::create()->compute(img, current_hash);
         {
             std::lock_guard<std::mutex> lock(img_mutex_);
-            img_ = img.clone();
+            if (img_.empty() || cv::norm(img_hash_, current_hash) > 0) {
+                img_ = img.clone();
+                img_hash_ = current_hash;
+                new_img_ = true;
+                img_status_.notify_one();
+            }
         }
     }
 
     const int width_ = 500;
     const int height_ = 512;
 
-    // uint8_t reshape_img[512][500];
     cv::Mat img_;
+    cv::Mat img_hash_;
     std::mutex img_mutex_;
+    std::condition_variable img_status_;
+    bool new_img_ = false;
 
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr subscription_;
     rclcpp::QoS best_effort;
@@ -196,10 +199,10 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     double increments = 499.0 / static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
-    	printf("Processing image %ld\n", i);
+        printf("Processing image %ld\n", i);
         cv::Mat img = img_array[i];
         SegmentResult pc = detect_lines(img);
-	cv::imwrite(std::format("{}.jpg",i).c_str(), pc.image);
+        cv::imwrite(std::format("{}.jpg", i).c_str(), pc.image);
         if (pc.coordinates.empty()) {
             continue;
         }

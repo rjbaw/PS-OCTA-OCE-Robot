@@ -110,6 +110,11 @@ ament_target_dependencies(rot_cal rclcpp std_msgs OpenCV Open3D Eigen3)
 target_link_libraries(rot_cal "${cpp_typesupport_target}" "${OpenCV_LIBS}"
                       Open3D::Open3D Eigen3::Eigen)
 
+# add_executable(subscribers src/subscribers.cpp)
+# ament_target_dependencies(subscribers rclcpp std_msgs OpenCV)
+# target_link_libraries(rot_cal "${cpp_typesupport_target}" "${OpenCV_LIBS}"
+#                       Open3D::Open3D)
+
 install(
   TARGETS sub_img
           sub_robot_data
