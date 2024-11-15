@@ -26,7 +26,7 @@ done
 
 pkill ros
 rm -f core*
-source ur_driver/install/setup.bash
+#source ur_driver/install/setup.bash
 source install/setup.bash
 if  [[ $sim == "true" ]]; then
 	ros2 launch octa_ros reset.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true

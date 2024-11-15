@@ -45,12 +45,25 @@ int main(int argc, char *argv[]) {
     auto move_group_interface = MoveGroupInterface(node, "ur_manipulator");
     move_group_interface.setPlanningTime(10.0);
     move_group_interface.setStartStateToCurrentState();
+
+    RCLCPP_INFO(logger, "Planning Frame: %s", move_group_interface.getPlanningFrame().c_str());
+    auto current_state = move_group_interface.getCurrentState(10);
+    if (!current_state) {
+        RCLCPP_ERROR(logger, "Failed to get current robot state");
+        return 1; 
+    }
+    if (!current_state->satisfiesBounds()) {
+        RCLCPP_ERROR(logger, "Current state is not within bounds, adjusting...");
+	current_state->enforceBounds();
+    }
+    move_group_interface.setStartState(*current_state);
+
     RCLCPP_INFO(logger, "Waiting for MoveGroupInterface to be ready...");
     rclcpp::sleep_for(std::chrono::milliseconds(100));
 
     move_group_ptr = &move_group_interface;
 
-    // std::string reference_frame = "tool0";
+    // std::string reference_frame = "tcp";
     // move_group_interface.setPoseReferenceFrame(reference_frame);
     // geometry_msgs::msg::Pose target_pose =
     //     move_group_interface.getCurrentPose(reference_frame).pose;
@@ -68,13 +81,13 @@ int main(int argc, char *argv[]) {
             target_pose.orientation.w)
             .c_str());
 
-    target_pose.position.x += 0.1;
+    target_pose.position.x += 0;
     target_pose.position.y += 0;
     target_pose.position.z += 0;
 
     tf2::Quaternion q;
     tf2::Quaternion target_q;
-    q.setRPY(to_radian(0),to_radian(0),to_radian(-20));
+    q.setRPY(to_radian(0),to_radian(0),to_radian(20));
     q.normalize();
     tf2::fromMsg(target_pose.orientation, target_q);
     target_q = target_q * q;
