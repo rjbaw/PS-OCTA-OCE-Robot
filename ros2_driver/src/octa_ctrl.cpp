@@ -1,24 +1,23 @@
+#include "octa_ros/msg/img.hpp"
+#include <Eigen/Dense>
 #include <chrono>
 #include <csignal>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
-#include <memory>
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_interface/planning_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
+#include <open3d/Open3D.h>
+#include <opencv2/img_hash.hpp>
+#include <opencv2/opencv.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <string>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
-#include "octa_ros/msg/img.hpp"
-#include <Eigen/Dense>
-#include <open3d/Open3D.h>
-#include <opencv2/opencv.hpp>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -47,21 +46,32 @@ class img_subscriber : public rclcpp::Node {
     }
 
     cv::Mat get_img() {
-        std::lock_guard<std::mutex> lock(img_mutex_);
-        return img_.clone();
+        std::unique_lock<std::mutex> lock(img_mutex_);
+        img_status_.wait(lock, [this] { return new_img_; });
+        cv::Mat img_copy = img_.clone();
+        new_img_ = false;
+        return img_copy;
     }
 
   private:
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        RCLCPP_INFO(this->get_logger(),
-                    std::format("Subscribing to image, array length: {}",
-                                msg->img.size())
-                        .c_str());
+        RCLCPP_INFO(
+            this->get_logger(),
+            std::format("Subscribing to image, length: {}", msg->img.size())
+                .c_str());
         cv::Mat img(height_, width_, CV_8UC1);
         std::copy(msg->img.begin(), msg->img.end(), img.data);
+
+        cv::Mat current_hash;
+        cv::img_hash::AverageHash::create()->compute(img, current_hash);
         {
             std::lock_guard<std::mutex> lock(img_mutex_);
-            img_ = img.clone();
+            if (img_.empty() || cv::norm(img_hash_, current_hash) > 0) {
+                img_ = img.clone();
+                img_hash_ = current_hash;
+                new_img_ = true;
+                img_status_.notify_one();
+            }
         }
     }
 
@@ -69,7 +79,10 @@ class img_subscriber : public rclcpp::Node {
     const int height_ = 512;
 
     cv::Mat img_;
+    cv::Mat img_hash_;
     std::mutex img_mutex_;
+    std::condition_variable img_status_;
+    bool new_img_ = false;
 
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr subscription_;
     rclcpp::QoS best_effort;
@@ -467,7 +480,7 @@ double to_radian(const double degree) {
 }
 bool tol_measure(Eigen::Matrix3d &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
-    return ((std::abs((1 / scale_factor * drot.norm())) <
+    return ((std::abs((1 / scale_factor * std::abs(drot.trace() - 3))) <
              to_radian(angle_tolerance)) &&
             (std::abs(dz) < (z_tolerance / 1000.0)));
 }
@@ -568,30 +581,29 @@ int main(int argc, char *argv[]) {
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
 
-    // // Declare parameters
-    // move_group_node->declare_parameter("interval", 4);
-    // move_group_node->declare_parameter("scale_factor", 0.25);
-    //
-    // // Get parameter values
-    // int interval = move_group_node->get_parameter("interval").as_int();
-    // double scale_factor =
-    // move_group_node->get_parameter("scale_factor").as_double();
+    // 3D Parameters
     const int interval = 4;
     const bool single_interval = false;
 
+    // Publisher Parameters
     std::string msg;
     double angle = 0.0;
     int circle_state = 1;
     bool apply_config = false;
     bool end_state = false;
     bool scan_3d = false;
-    Eigen::Matrix3d rotmat_eigen;
 
+    // Internal Parameters
     bool planning = false;
     double scale_factor = 0.25;
     double angle_increment;
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
+    Eigen::Matrix3d rotmat_eigen;
+    cv::Mat img;
+    std::vector<cv::Mat> img_array;
+    std::vector<Eigen::Vector3d> pc_lines;
 
+    // Subscriber Parameters
     double robot_vel, robot_acc, radius, angle_limit, dz, drot;
     double z_tolerance, angle_tolerance;
     int num_pt;
@@ -684,12 +696,7 @@ int main(int argc, char *argv[]) {
                     apply_config = true;
                     msg = "Starting 3D Scan";
                 } else {
-                    planning = true;
-                    end_state = true;
-                    scan_3d = false;
-
-                    cv::Mat img;
-                    std::vector<cv::Mat> img_array;
+                    img_array.clear();
                     for (int i = 0; i < interval; i++) {
                         while (true) {
                             img = img_subscriber_node->get_img();
@@ -701,8 +708,7 @@ int main(int argc, char *argv[]) {
                         img_array.push_back(img);
                         RCLCPP_INFO(logger, "Collected image %d", i + 1);
                     }
-                    std::vector<Eigen::Vector3d> pc_lines =
-                        lines_3d(img_array, interval, single_interval);
+                    pc_lines = lines_3d(img_array, interval, single_interval);
                     open3d::geometry::PointCloud pcd_lines;
                     for (const auto &point : pc_lines) {
                         pcd_lines.points_.emplace_back(point);
@@ -711,6 +717,7 @@ int main(int argc, char *argv[]) {
                         pcd_lines.GetMinimalOrientedBoundingBox(false);
                     Eigen::Vector3d center = boundbox.GetCenter();
                     double z_height = center[2];
+                    dz = (z_height - 190) / 150 * 1.2 / 1000;
                     rotmat_eigen = align_to_direction(boundbox.R_);
                     tf2::Matrix3x3 rotmat_tf(
                         rotmat_eigen(0, 0), rotmat_eigen(0, 1),
@@ -721,32 +728,41 @@ int main(int argc, char *argv[]) {
                     std::cout << "Aligned Rotation Matrix:\n"
                               << rotmat_eigen << std::endl;
 
-                    tf2::Quaternion q;
-                    tf2::Quaternion target_q;
-                    tf2::fromMsg(target_pose.orientation, target_q);
-                    rotmat_tf.getRotation(q);
-                    q.normalize();
-                    target_q = target_q * q;
-                    target_pose.orientation = tf2::toMsg(target_q);
-                    target_pose.position.x +=
-                        radius * std::cos(to_radian(angle));
-                    target_pose.position.y +=
-                        radius * std::sin(to_radian(angle));
-                    dz = (z_height - 190) / 150 * 1.2 / 1000;
-                    target_pose.position.z += -dz;
-                    RCLCPP_INFO(logger,
-                                std::format("Target Pose: "
-                                            " x: {}, y: {}, z: {},"
-                                            " qx: {}, qy: {}, qz: {}, qw: {}",
-                                            target_pose.position.x,
-                                            target_pose.position.y,
-                                            target_pose.position.z,
-                                            target_pose.orientation.x,
-                                            target_pose.orientation.y,
-                                            target_pose.orientation.z,
-                                            target_pose.orientation.w)
-                                    .c_str());
-                    move_group_interface.setPoseTarget(target_pose);
+                    if (tol_measure(rotmat_eigen, dz, angle_tolerance,
+                                    z_tolerance, scale_factor)) {
+                        planning = false;
+                        scan_3d = false;
+                        end_state = true;
+                        msg = "Autofocus complete";
+                    } else {
+                        planning = true;
+                        tf2::Quaternion q;
+                        tf2::Quaternion target_q;
+                        tf2::fromMsg(target_pose.orientation, target_q);
+                        rotmat_tf.getRotation(q);
+                        q.normalize();
+                        target_q = target_q * q;
+                        target_pose.orientation = tf2::toMsg(target_q);
+                        target_pose.position.x +=
+                            radius * std::cos(to_radian(angle));
+                        target_pose.position.y +=
+                            radius * std::sin(to_radian(angle));
+                        target_pose.position.z += -dz;
+                        RCLCPP_INFO(
+                            logger,
+                            std::format("Target Pose: "
+                                        " x: {}, y: {}, z: {},"
+                                        " qx: {}, qy: {}, qz: {}, qw: {}",
+                                        target_pose.position.x,
+                                        target_pose.position.y,
+                                        target_pose.position.z,
+                                        target_pose.orientation.x,
+                                        target_pose.orientation.y,
+                                        target_pose.orientation.z,
+                                        target_pose.orientation.w)
+                                .c_str());
+                        move_group_interface.setPoseTarget(target_pose);
+                    }
                 }
             } else {
                 if (next) {
@@ -767,31 +783,33 @@ int main(int argc, char *argv[]) {
                     circle_state = 0;
                     angle = 0.0;
                 }
+
+                if (planning) {
+                    tf2::Quaternion q;
+                    tf2::Quaternion target_q;
+                    tf2::fromMsg(target_pose.orientation, target_q);
+                    q.setRPY(roll, pitch, yaw);
+                    q.normalize();
+                    target_q = target_q * q;
+                    target_pose.orientation = tf2::toMsg(target_q);
+                    RCLCPP_INFO(logger,
+                                std::format("Target Pose: "
+                                            " x: {}, y: {}, z: {},"
+                                            " qx: {}, qy: {}, qz: {}, qw: {}",
+                                            target_pose.position.x,
+                                            target_pose.position.y,
+                                            target_pose.position.z,
+                                            target_pose.orientation.x,
+                                            target_pose.orientation.y,
+                                            target_pose.orientation.z,
+                                            target_pose.orientation.w)
+                                    .c_str());
+                    move_group_interface.setPoseTarget(target_pose);
+                }
             }
         }
 
         if (planning) {
-            if (!reset && !autofocus) {
-                tf2::Quaternion q;
-                tf2::Quaternion target_q;
-                tf2::fromMsg(target_pose.orientation, target_q);
-                q.setRPY(roll, pitch, yaw);
-                q.normalize();
-                target_q = target_q * q;
-                target_pose.orientation = tf2::toMsg(target_q);
-                RCLCPP_INFO(
-                    logger,
-                    std::format(
-                        "Target Pose: "
-                        " x: {}, y: {}, z: {},"
-                        " qx: {}, qy: {}, qz: {}, qw: {}",
-                        target_pose.position.x, target_pose.position.y,
-                        target_pose.position.z, target_pose.orientation.x,
-                        target_pose.orientation.y, target_pose.orientation.z,
-                        target_pose.orientation.w)
-                        .c_str());
-                move_group_interface.setPoseTarget(target_pose);
-            }
             auto const [success, plan] = [&move_group_interface] {
                 moveit::planning_interface::MoveGroupInterface::Plan
                     plan_feedback;
@@ -815,6 +833,10 @@ int main(int argc, char *argv[]) {
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
         publisher_node->set_scan_3d(scan_3d);
+
+        if (apply_config && !end_state) {
+            rclcpp::sleep_for(std::chrono::milliseconds(1500));
+        }
 
         if (planning) {
             planning = false;
