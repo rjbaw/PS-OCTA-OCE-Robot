@@ -90,115 +90,117 @@ class img_subscriber : public rclcpp::Node {
 
 struct SegmentResult {
     cv::Mat image;
-    cv::Mat coordinates;
+    std::vector<cv::Point> coordinates;
 };
+
+std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
+    std::vector<cv::Point> ret_coords;
+    // int height = img.rows;
+    int width = img.cols;
+
+    for (int x = 0; x < width; ++x) {
+        cv::Mat intensity = img.col(x);
+        double minVal, maxVal;
+        cv::Point minLoc, maxLoc;
+        cv::minMaxLoc(intensity, &minVal, &maxVal, &minLoc, &maxLoc);
+        int detected_y = maxLoc.y;
+        ret_coords.emplace_back(x, detected_y);
+    }
+    return ret_coords;
+}
+
+void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
+    for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
+        cv::Point pt1 = ret_coord[i];
+        cv::Point pt2 = ret_coord[i + 1];
+        cv::line(image, pt1, pt2, cv::Scalar(255, 0, 0), 2);
+    }
+}
 
 SegmentResult detect_lines(const cv::Mat &img) {
     SegmentResult result;
 
-    cv::Mat gray_img;
-    if (img.channels() == 3) {
-        cv::cvtColor(img, gray_img, cv::COLOR_BGR2GRAY);
-    } else {
-        gray_img = img.clone();
+    cv::Mat denoised_image;
+    cv::medianBlur(img, denoised_image, 5);
+
+    cv::Mat processed_img = denoised_image.clone();
+    processed_img.convertTo(processed_img, CV_64F);
+
+    cv::Mat row_means;
+    cv::reduce(processed_img, row_means, 1, cv::REDUCE_AVG);
+    cv::Mat mean_mat;
+    cv::repeat(row_means, 1, processed_img.cols, mean_mat);
+    processed_img -= mean_mat;
+
+    cv::Mat sobely;
+    cv::Sobel(processed_img, sobely, CV_64F, 0, 1, 9);
+
+    std::vector<cv::Point> ret_coords = get_max_coor(sobely);
+
+    std::vector<double> observations;
+    for (const auto &pt : ret_coords) {
+        observations.push_back(pt.y);
     }
 
-    double alpha = 1.5;
-    int beta = 100;
-    cv::Mat adjusted_img;
-    gray_img.convertTo(adjusted_img, -1, alpha, beta);
+    size_t obs_length = observations.size();
+    int window = std::max(1, static_cast<int>(obs_length / 20));
 
-    cv::Mat laplacian_img;
-    cv::Laplacian(adjusted_img, laplacian_img, CV_64F, 3);
-    cv::convertScaleAbs(laplacian_img, laplacian_img);
+    for (size_t i = 0; i < obs_length; ++i) {
+        int start = std::max(0, static_cast<int>(i) - window);
+        int end = std::min(static_cast<int>(obs_length),
+                           static_cast<int>(i) + window + 1);
+        std::vector<double> window_vals(observations.begin() + start,
+                                        observations.begin() + end);
 
-    cv::Mat gray_image = laplacian_img;
+        double mu =
+            std::accumulate(window_vals.begin(), window_vals.end(), 0.0) /
+            window_vals.size();
 
-    cv::Mat output_image;
-    cv::cvtColor(gray_image, output_image, cv::COLOR_GRAY2BGR);
-
-    int height = gray_image.rows;
-    int width = gray_image.cols;
-
-    std::vector<std::pair<int, int>> dpoints;
-
-    for (int x = 0; x < width; ++x) {
-        std::vector<int> black_regions;
-
-        for (int y = 0; y < height; ++y) {
-            uchar intensity = gray_image.at<uchar>(y, x);
-            if (intensity < 128) {
-                black_regions.push_back(y);
-            }
+        double accum = 0.0;
+        for (double val : window_vals) {
+            accum += (val - mu) * (val - mu);
         }
+        double sigma = std::sqrt(accum / window_vals.size());
 
-        if (!black_regions.empty()) {
-            std::vector<std::vector<int>> segments;
-            std::vector<int> current_segment;
-            current_segment.push_back(black_regions[0]);
+        std::vector<double> sorted_vals = window_vals;
+        std::nth_element(sorted_vals.begin(),
+                         sorted_vals.begin() + sorted_vals.size() / 2,
+                         sorted_vals.end());
+        double med = sorted_vals[sorted_vals.size() / 2];
 
-            for (size_t i = 1; i < black_regions.size(); ++i) {
-                if (black_regions[i] == black_regions[i - 1] + 1) {
-                    current_segment.push_back(black_regions[i]);
-                } else {
-                    segments.push_back(current_segment);
-                    current_segment.clear();
-                    current_segment.push_back(black_regions[i]);
-                }
-            }
-            segments.push_back(current_segment);
+        double z = (sigma != 0.0) ? (observations[i] - mu) / sigma
+                                  : observations[i] - mu;
 
-            auto max_segment_it = std::max_element(
-                segments.begin(), segments.end(),
-                [](const std::vector<int> &a, const std::vector<int> &b) {
-                    return a.size() < b.size();
-                });
-            std::vector<int> max_segment = *max_segment_it;
-
-            int detected_y =
-                *std::min_element(max_segment.begin(), max_segment.end());
-            dpoints.emplace_back(std::make_pair(x, detected_y));
+        if (z > 0.5) {
+            observations[i] = med;
         }
     }
 
-    std::vector<int> dpoints_x;
-    std::vector<float> dpoints_y;
+    double x_k = observations[0];
+    double P_k = 1.0;
+    double Q = 0.01;
+    double R = 5.0;
+    std::vector<double> x_k_estimates;
 
-    dpoints_x.reserve(dpoints.size());
-    dpoints_y.reserve(dpoints.size());
-
-    for (const auto &point : dpoints) {
-        dpoints_x.push_back(point.first);
-        dpoints_y.push_back(static_cast<float>(point.second));
+    for (double z_k : observations) {
+        double x_k_pred = x_k;
+        double P_k_pred = P_k + Q;
+        double K_k = P_k_pred / (P_k_pred + R);
+        x_k = x_k_pred + K_k * (z_k - x_k_pred);
+        P_k = (1 - K_k) * P_k_pred;
+        x_k_estimates.push_back(x_k);
     }
 
-    cv::Mat y_mat(dpoints_y);
-    y_mat = y_mat.reshape(1, 1);
-    cv::Mat y_blurred;
-    cv::GaussianBlur(y_mat, y_blurred, cv::Size(0, 0), 40);
-    y_blurred = y_blurred.reshape(1, static_cast<int>(dpoints_y.size()));
-
-    std::vector<float> dpoints_y_blurred;
-    dpoints_y_blurred.reserve(dpoints_y.size());
-    for (int i = 0; i < y_blurred.cols; ++i) {
-        dpoints_y_blurred.push_back(y_blurred.at<float>(0, i));
+    for (size_t i = 0; i < ret_coords.size(); ++i) {
+        ret_coords[i].y = static_cast<int>(x_k_estimates[i]);
     }
 
-    for (size_t i = 0; i < dpoints_x.size() - 1; ++i) {
-        cv::Point pt1(dpoints_x[i], static_cast<int>(dpoints_y_blurred[i]));
-        cv::Point pt2(dpoints_x[i + 1],
-                      static_cast<int>(dpoints_y_blurred[i + 1]));
-        cv::line(output_image, pt1, pt2, cv::Scalar(255, 0, 0), 2);
-    }
+    cv::Mat detected_image = img.clone();
+    draw_line(detected_image, ret_coords);
+    cv::imwrite("detected_image.jpg", detected_image);
 
-    cv::Mat ret_coord(static_cast<int>(dpoints_x.size()), 2, CV_32F);
-    for (size_t i = 0; i < dpoints_x.size(); ++i) {
-        ret_coord.at<float>(i, 0) = static_cast<float>(dpoints_x[i]);
-        ret_coord.at<float>(i, 1) = dpoints_y_blurred[i];
-    }
-
-    result.image = output_image;
-    result.coordinates = ret_coord;
+    result.image = detected_image;
+    result.coordinates = ret_coords;
 
     return result;
 }
@@ -207,7 +209,7 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       const int interval,
                                       const bool acq_interval = false) {
     std::vector<Eigen::Vector3d> pc_3d;
-    int num_frames = interval;
+    int num_frames = interval > 1 ? interval : 2;
     double increments = 499.0 / static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
@@ -218,11 +220,10 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
         int idx = static_cast<int>(i) % interval;
         double z_val = idx * increments;
 
-        for (int j = 0; j < pc.coordinates.rows; ++j) {
-            float x = pc.coordinates.at<float>(j, 0);
-            float y = pc.coordinates.at<float>(j, 1);
-            pc_3d.emplace_back(Eigen::Vector3d(static_cast<double>(x),
-                                               static_cast<double>(y), z_val));
+        for (size_t j = 0; j < pc.coordinates.size(); ++j) {
+            double x = static_cast<double>(pc.coordinates[j].x);
+            double y = static_cast<double>(pc.coordinates[j].y);
+            pc_3d.emplace_back(Eigen::Vector3d(x, y, z_val));
         }
 
         if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {

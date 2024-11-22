@@ -290,6 +290,16 @@ def mean_smoothing(obs):
     return obs
 
 
+def get_max_coor(img):
+    ret_coords = []
+    height, width = img.shape
+    for x in range(width):
+        intensity = img[:, x]
+        detected_y = np.argmax(intensity)
+        ret_coords.append((x, detected_y))
+    return np.array(ret_coords)
+
+
 def detect_lines(image_path, save_dir):
     img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img_raw is None:
@@ -306,21 +316,21 @@ def detect_lines(image_path, save_dir):
     img = denoised_image
     img = img.copy() - np.mean(img, axis=1, keepdims=True)
     # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
-    cv2.imwrite(base_name + "_sub.jpg", img)
+    # cv2.imwrite(base_name + "_sub.jpg", img)
 
     sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=9)
-    cv2.imwrite(base_name + "_sobely.jpg", sobely)
-    cv2.imwrite(
-        base_name + "_sobely_detected.jpg",
-        draw_line(img_raw.copy(), get_max_coor(sobely)),
-    )
+    # cv2.imwrite(base_name + "_sobely.jpg", sobely)
+    # cv2.imwrite(
+    #     base_name + "_sobely_detected.jpg",
+    #     draw_line(img_raw.copy(), get_max_coor(sobely)),
+    # )
     img = sobely
 
     ret_coords = get_max_coor(img)
-    cv2.imwrite(
-        base_name + "_max.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
+    # cv2.imwrite(
+    #     base_name + "_max.jpg",
+    #     draw_line(img_raw.copy(), ret_coords),
+    # )
 
     # from scipy.signal import medfilt
     # ret_coords[:, 1] = medfilt(ret_coords[:, 1], kernel_size=15)
@@ -364,7 +374,7 @@ def detect_lines(image_path, save_dir):
     ret_coords[:, 1] = x_k_estimates
 
     cv2.imwrite(
-        base_name + "_sub_detected.jpg",
+        base_name + "_detected.jpg",
         draw_line(img_raw.copy(), ret_coords),
     )
 
@@ -404,16 +414,6 @@ def segment_white(image):
 
     ret_coord = np.column_stack([dpoints_x, dpoints_y])
     return ret_coord
-
-
-def get_max_coor(img):
-    ret_coords = []
-    height, width = img.shape
-    for x in range(width):
-        intensity = img[:, x]
-        detected_y = np.argmax(intensity)
-        ret_coords.append((x, detected_y))
-    return np.array(ret_coords)
 
 
 def lines_3d(
