@@ -6,6 +6,210 @@ import open3d as o3d
 from scipy.spatial.transform import Rotation as R
 
 import torch
+from torch._C import _get_max_operator_version
+from torch.functional import _return_counts
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+
+
+# Patch Embedding Layer
+class PatchEmbed(nn.Module):
+    def __init__(self, patch_size=16, in_chans=1, embed_dim=256):
+        super().__init__()
+        self.patch_size = patch_size
+        self.proj = nn.Conv2d(
+            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
+
+    def forward(self, x):
+        # x: [B, C, H, W]
+        B, C, H, W = x.shape
+        x = self.proj(x)  # Shape: [B, embed_dim, H', W']
+        H_p, W_p = x.shape[2], x.shape[3]
+        x = x.flatten(2).transpose(1, 2)  # Shape: [B, num_patches, embed_dim]
+        return x, (H_p, W_p)
+
+
+# Multi-head Self-Attention
+class Attention(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=False):
+        super().__init__()
+        assert (
+            dim % num_heads == 0
+        ), "Embedding dimension must be divisible by number of heads."
+
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+
+        self.scale = self.head_dim**-0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.proj = nn.Linear(dim, dim)
+
+    def forward(self, x):
+        B, N, C = x.shape
+
+        qkv = self.qkv(x)  # Shape: [B, N, 3C]
+        qkv = qkv.reshape(B, N, 3, self.num_heads, self.head_dim)
+        qkv = qkv.permute(2, 0, 3, 1, 4)  # Shape: [3, B, num_heads, N, head_dim]
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each shape: [B, num_heads, N, head_dim]
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale  # Shape: [B, num_heads, N, N]
+        attn = attn.softmax(dim=-1)
+
+        x = attn @ v  # Shape: [B, num_heads, N, head_dim]
+        x = x.transpose(1, 2).reshape(B, N, C)  # Shape: [B, N, C]
+
+        x = self.proj(x)
+        return x, attn
+
+
+# Feed-forward Network
+class MLP(nn.Module):
+    def __init__(self, in_features, hidden_features, drop=0.0):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_features, in_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.act(self.fc1(x))
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+
+
+# Transformer Encoder Block
+class Block(nn.Module):
+    def __init__(self, dim, num_heads, mlp_ratio=4.0, qkv_bias=False):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = Attention(dim, num_heads=num_heads, qkv_bias=qkv_bias)
+
+        self.norm2 = nn.LayerNorm(dim)
+        hidden_dim = int(dim * mlp_ratio)
+        self.mlp = MLP(dim, hidden_dim)
+
+    def forward(self, x):
+        attn_output, attn_weights = self.attn(self.norm1(x))
+        x = x + attn_output  # Residual connection
+        x = x + self.mlp(self.norm2(x))  # Residual connection
+        return x, attn_weights
+
+
+# Function to generate 2D sine-cosine positional embeddings
+def get_2d_sincos_pos_embed(embed_dim, grid_size_h, grid_size_w):
+    grid_h = np.arange(grid_size_h, dtype=np.float32)
+    grid_w = np.arange(grid_size_w, dtype=np.float32)
+    grid = np.meshgrid(grid_w, grid_h)  # First dim is W, second is H
+    grid = np.stack(grid, axis=0)
+
+    grid = grid.reshape([2, -1]).T  # Shape: [H_p*W_p, 2]
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+    return pos_embed
+
+
+def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
+    assert embed_dim % 2 == 0
+    # Use half of embed_dim for H and half for W
+    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[:, 0])  # [N, D/2]
+    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[:, 1])  # [N, D/2]
+    emb = np.concatenate([emb_h, emb_w], axis=1)  # [N, D]
+    return emb
+
+
+def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
+    assert embed_dim % 2 == 0
+    omega = np.arange(embed_dim // 2, dtype=np.float32)
+    omega = 1.0 / 10000 ** (omega / (embed_dim // 2))
+    out = np.einsum("n,d->nd", pos, omega)  # [N, D/2]
+    emb_sin = np.sin(out)  # [N, D/2]
+    emb_cos = np.cos(out)  # [N, D/2]
+    emb = np.concatenate([emb_sin, emb_cos], axis=1)  # [N, D]
+    return emb
+
+
+# Vision Transformer for Segmentation
+class VisionTransformerSegmentation(nn.Module):
+    def __init__(
+        self,
+        patch_size=4,
+        in_chans=1,
+        num_classes=21,
+        embed_dim=256,
+        depth=6,
+        num_heads=8,
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+        self.embed_dim = embed_dim
+
+        self.patch_embed = PatchEmbed(patch_size, in_chans, embed_dim)
+        self.pos_drop = nn.Dropout(0.0)
+
+        self.blocks = nn.ModuleList(
+            [
+                Block(dim=embed_dim, num_heads=num_heads, qkv_bias=True)
+                for _ in range(depth)
+            ]
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+
+        # Segmentation head
+        self.head = nn.Sequential(
+            nn.ConvTranspose2d(embed_dim, embed_dim // 2, kernel_size=2, stride=2),
+            nn.BatchNorm2d(embed_dim // 2),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(embed_dim // 2, num_classes, kernel_size=2, stride=2),
+        )
+
+    def forward(self, x):
+        B, C, H, W = x.size()
+        x_input_height, x_input_width = H, W
+        x, (H_p, W_p) = self.patch_embed(x)  # Shape: [B, num_patches, embed_dim]
+        self.H_p, self.W_p = H_p, W_p  # Store for later use
+
+        # Generate 2D sine-cosine positional embeddings
+        pos_embed = get_2d_sincos_pos_embed(self.embed_dim, H_p, W_p)
+        pos_embed = (
+            torch.from_numpy(pos_embed).float().to(x.device).unsqueeze(0)
+        )  # Shape: [1, num_patches, embed_dim]
+        x = x + pos_embed
+        x = self.pos_drop(x)
+
+        attn_weights_list = []
+        for blk in self.blocks:
+            x, attn_weights = blk(x)
+            attn_weights_list.append(attn_weights)
+
+        x = self.norm(x)  # Shape: [B, num_patches, embed_dim]
+
+        # Reshape tokens back to 2D feature map
+        x = x.transpose(1, 2).reshape(
+            B, -1, H_p, W_p
+        )  # Shape: [B, embed_dim, H_p, W_p]
+
+        # Upsample to original image size
+        x = F.interpolate(
+            x,
+            size=(H_p * self.patch_embed.patch_size, W_p * self.patch_embed.patch_size),
+            mode="bilinear",
+            align_corners=False,
+        )
+        x = self.head(x)  # Shape: [B, num_classes, H', W']
+
+        x = F.interpolate(
+            x,
+            size=(x_input_height, x_input_width),
+            mode="bilinear",
+            align_corners=False,
+        )
+        return x, attn_weights_list
 
 
 def segment(image):
@@ -35,24 +239,27 @@ def segment(image):
     dpoints_y = cv2.GaussianBlur(dpoints_y, (0, 0), sigmaX=40)
     dpoints_y = np.squeeze(dpoints_y)
 
-    for i in range(len(dpoints_x) - 1):
-        pt1 = (int(dpoints_x[i]), int(dpoints_y[i]))
-        pt2 = (int(dpoints_x[i + 1]), int(dpoints_y[i + 1]))
-        cv2.line(image, pt1, pt2, (255, 0, 0), 2)
-
     ret_coord = np.column_stack([dpoints_x, dpoints_y])
-    return image, ret_coord
+    return ret_coord
 
 
-def detect_lines(image_path, save_dir):
-    img = cv2.imread(image_path)
-    if img is None:
+def draw_line(image, ret_coord):
+    for i in range(len(ret_coord) - 1):
+        pt1 = (int(ret_coord[i, 0]), int(ret_coord[i, 1]))
+        pt2 = (int(ret_coord[i + 1, 0]), int(ret_coord[i + 1, 1]))
+        cv2.line(image, pt1, pt2, (255, 0, 0), 2)
+    return image
+
+
+def detect_lines_old(image_path, save_dir):
+    img_raw = cv2.imread(image_path)
+    if img_raw is None:
         print("Error: Could not load image.")
         return
 
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     base_name = os.path.join(save_dir, base_name)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
 
     cv2.imwrite(base_name + "_raw.jpg", img)
 
@@ -61,18 +268,152 @@ def detect_lines(image_path, save_dir):
     img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
     # cv2.imwrite(base_name + "_adjusted.jpg", img)
 
-    # img = 255 - img
-    # _, img = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY)
-    # cv2.imwrite(base_name + "_mask.jpg", img)
-
     img = cv2.Laplacian(img, cv2.CV_64F, ksize=3)
     img = cv2.convertScaleAbs(img)
     # cv2.imwrite(base_name + "_laplacian.jpg", img)
 
-    img, ret_coords = segment(img)
-    print(ret_coords)
+    ret_coords = segment(img)
+    np.save(base_name + ".npy", ret_coords)
+    img = draw_line(img_raw, ret_coords)
     cv2.imwrite(base_name + "_detected.jpg", img)
     return ret_coords
+
+
+def mean_smoothing(obs):
+    obs_length = len(obs)
+    window = max(1, int(obs_length / 10))
+    for i, pt in enumerate(obs):
+        start = max(0, i - window)
+        end = min(obs_length, i + window + 1)
+        mu = np.mean(obs[start:end])
+        obs[i] = mu
+    return obs
+
+
+def detect_lines(image_path, save_dir):
+    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if img_raw is None:
+        print("Error: Could not load image.")
+        return
+
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    base_name = os.path.join(save_dir, base_name)
+    # img = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite(base_name + "_raw.jpg", img_raw)
+
+    denoised_image = cv2.medianBlur(img_raw, 5)
+
+    img = denoised_image
+    img = img.copy() - np.mean(img, axis=1, keepdims=True)
+    # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
+    cv2.imwrite(base_name + "_sub.jpg", img)
+
+    sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=9)
+    cv2.imwrite(base_name + "_sobely.jpg", sobely)
+    cv2.imwrite(
+        base_name + "_sobely_detected.jpg",
+        draw_line(img_raw.copy(), get_max_coor(sobely)),
+    )
+    img = sobely
+
+    ret_coords = get_max_coor(img)
+    cv2.imwrite(
+        base_name + "_max.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    # from scipy.signal import medfilt
+    # ret_coords[:, 1] = medfilt(ret_coords[:, 1], kernel_size=15)
+
+    observations = ret_coords[:, 1]
+
+    obs_length = len(observations)
+    window = max(1, int(obs_length / 20))
+    old_val = 0
+    for i, pt in enumerate(observations):
+        start = max(0, i - window)
+        end = min(obs_length, i + window + 1)
+        mu = np.mean(observations[start:end])
+        sigma = np.std(observations[start:end])
+        med = np.median(observations[start:end])
+        if sigma != 0:
+            z = (pt - mu) / sigma
+        else:
+            z = pt - mu
+        if z > 0.5:
+            # if ((med - mu) / sigma) > 3:
+            #     observations[i] = mu
+            # else:
+            #     observations[i] = med
+            observations[i] = med
+
+    x_k = observations[0]
+    P_k = 1
+    Q = 0.01
+    R = 5.0
+    x_k_estimates = []
+    P_k_values = []
+    for z_k in observations:
+        x_k_pred = x_k
+        P_k_pred = P_k + Q
+        K_k = P_k_pred / (P_k_pred + R)
+        x_k = x_k_pred + K_k * (z_k - x_k_pred)
+        P_k = (1 - K_k) * P_k_pred
+        x_k_estimates.append(x_k)
+        P_k_values.append(P_k)
+    ret_coords[:, 1] = x_k_estimates
+
+    cv2.imwrite(
+        base_name + "_sub_detected.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    return ret_coords
+
+
+def segment_white(image):
+    dpoints = []
+    height, width = image.shape
+    for x in range(width):
+        intensity = image[:, x]
+
+        is_white = intensity > 20
+        white_regions = np.where(is_white)[0]
+
+        diff = np.diff(white_regions)
+        split_indices = np.where(diff > 1)[0] + 1
+        segments = np.split(white_regions, split_indices)
+        max_segment = max(segments, key=len)
+        detected_y = int(max_segment.min())
+        dpoints.append((x, detected_y))
+
+        # if len(white_regions) > 0:
+        #     diff = np.diff(white_regions)
+        #     split_indices = np.where(diff > 1)[0] + 1
+        #     segments = np.split(white_regions, split_indices)
+        #     max_segment = max(segments, key=len)
+        #     detected_y = int(max_segment.min())
+        #     dpoints.append((x, detected_y))
+
+    dpoints = np.array(dpoints)
+    dpoints_x = dpoints[:, 0]
+    dpoints_y = dpoints[:, 1].astype(np.float32)
+
+    dpoints_y = cv2.GaussianBlur(dpoints_y, (0, 0), sigmaX=40)
+    dpoints_y = np.squeeze(dpoints_y)
+
+    ret_coord = np.column_stack([dpoints_x, dpoints_y])
+    return ret_coord
+
+
+def get_max_coor(img):
+    ret_coords = []
+    height, width = img.shape
+    for x in range(width):
+        intensity = img[:, x]
+        detected_y = np.argmax(intensity)
+        ret_coords.append((x, detected_y))
+    return np.array(ret_coords)
 
 
 def lines_3d(
@@ -260,28 +601,74 @@ def detect_ml(image_path, save_dir):
     base_name = os.path.join(save_dir, base_name)
 
     img = cv2.imread(image_path)
+    # img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         print("Error: Could not load image.")
         return
     cv2.imwrite(base_name + "_raw.jpg", img)
 
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # alpha = 1.5  # Contrast control (1.0-3.0)
-    # beta = 100  # Brightness control (0-100)
-    # img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
-    # # cv2.imwrite(base_name + "_adjusted.jpg", img)
 
-    # img = 255 - img
-    # _, img = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY)
-    # cv2.imwrite(base_name + "_mask.jpg", img)
+    # Normalize the image to [0, 1]
+    img = img.astype(np.float32) / 255.0
 
-    # img = cv2.Laplacian(img, cv2.CV_64F, ksize=3)
-    # img = cv2.convertScaleAbs(img)
-    # cv2.imwrite(base_name + "_laplacian.jpg", img)
+    # Convert the numpy array to a PyTorch tensor
+    input_tensor = torch.from_numpy(img)
 
-    img, ret_coords = segment(img)
-    cv2.imwrite(base_name + "_detected.jpg", img)
-    return ret_coords
+    # Add batch and channel dimensions
+    input_tensor = input_tensor.unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, H, W]
+
+    # Instantiate the model
+    model = VisionTransformerSegmentation(
+        patch_size=4,
+        num_classes=21,
+        embed_dim=256,
+        depth=6,
+        num_heads=8,
+        in_chans=1,
+    )
+
+    # Forward pass through the model
+    output, attn_weights_list = model(input_tensor)
+    H_p, W_p = model.H_p, model.W_p  # Retrieve the patch grid dimensions
+    print("Output shape:", output.shape)  # Expected: [1, num_classes, H, W]
+
+    # Extract the attention map from the first block and first head
+    block_index = 0  # First transformer block
+    head_index = 0  # First attention head
+    attn_map = attn_weights_list[block_index][0, head_index]  # Shape: [N, N]
+
+    # Select a query token (e.g., central token)
+    center_h = H_p // 2
+    center_w = W_p // 2
+    center_index = center_h * W_p + center_w
+
+    # Get attention weights for the selected query token
+    attn_weights = attn_map[center_index]  # Shape: [N]
+    attn_weights = attn_weights.reshape(H_p, W_p)
+
+    # Upsample the attention map to the original image size
+    attn_weights = F.interpolate(
+        attn_weights.unsqueeze(0).unsqueeze(0),
+        size=(input_tensor.shape[2], input_tensor.shape[3]),
+        mode="bilinear",
+        align_corners=False,
+    )
+    attn_weights = attn_weights.squeeze().detach().cpu().numpy()
+
+    # Save the attention map as an image
+    plt.figure(figsize=(8, 8))
+    plt.imshow(attn_weights, cmap="viridis")
+    plt.colorbar()
+    plt.title("Attention Map")
+    plt.axis("off")
+    plt.savefig("attention_map.png")
+    plt.close()
+
+    # ret_coords = segment(img)
+    # cv2.imwrite(base_name + "_detected.jpg", img)
+    # return ret_coords
+    return None
 
 
 def test_ml(file_list, data_path, result_path, interval):
@@ -323,18 +710,21 @@ def main(data_path, result_path, interval):
     file_list = file_list[(interval * start_idx) :]
 
     test_basic(file_list, data_path, result_path, interval)
-    test_3d(file_list, data_path, result_path, interval)
+    # test_3d(file_list, data_path, result_path, interval)
+    # test_ml(file_list, data_path, result_path, interval)
 
 
-# path = "data/skin"
-# path = "data/skin_oct_motion"
-# path = "data/skin_octa_static"
+if __name__ == "__main__":
+    # path = "data/skin"
+    # path = "data/skin_oct_motion"
+    # path = "data/skin_octa_static"
 
-# path = "data/3d_not_aligned"
-# path = "data/3d_aligned"
-path = "data/skin_oct"
-# path = "data/skin_octa"
+    # path = "data/3d_not_aligned"
+    # path = "data/3d_aligned"
+    # path = "data/skin_oct"
+    # path = "data/skin_octa"
+    path = "data/no_background"
 
-save_path = "data/result"
-interval = 4
-main(path, save_path, interval)
+    save_path = "data/result"
+    interval = 4
+    main(path, save_path, interval)
