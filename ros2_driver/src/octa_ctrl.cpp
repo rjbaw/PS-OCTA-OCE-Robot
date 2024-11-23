@@ -251,10 +251,10 @@ Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
 
 class dds_publisher : public rclcpp::Node {
   public:
-    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false, false) {}
+    dds_publisher() : dds_publisher("", 0.0, 1, true, false, false, false) {}
 
     dds_publisher(std::string msg = "", double angle = 0.0,
-                  int circle_state = 1, bool fast_axis = false,
+                  int circle_state = 1, bool fast_axis = true,
                   bool apply_config = false, bool end_state = false,
                   bool scan_3d = false)
         : Node("pub_robot_data"), msg(msg), angle(angle),
@@ -636,6 +636,7 @@ int main(int argc, char *argv[]) {
 
         end_state = false;
         apply_config = false;
+        fast_axis = true;
         autofocus = subscriber_node->autofocus();
         freedrive = subscriber_node->freedrive();
         robot_vel = subscriber_node->robot_vel();
@@ -652,7 +653,6 @@ int main(int argc, char *argv[]) {
         next = subscriber_node->next();
         home = subscriber_node->home();
         reset = subscriber_node->reset();
-        fast_axis = subscriber_node->fast_axis();
         scan_3d = subscriber_node->scan_3d();
 
         if (freedrive) {
@@ -733,6 +733,7 @@ int main(int argc, char *argv[]) {
                                     z_tolerance, scale_factor)) {
                         planning = false;
                         scan_3d = false;
+			apply_config = true;
                         end_state = true;
                         msg = "Autofocus complete";
                     } else {
@@ -835,8 +836,8 @@ int main(int argc, char *argv[]) {
         publisher_node->set_end_state(end_state);
         publisher_node->set_scan_3d(scan_3d);
 
-        if (apply_config && !end_state) {
-            rclcpp::sleep_for(std::chrono::milliseconds(1500));
+        if (apply_config && !end_state && scan_3d) {
+            rclcpp::sleep_for(std::chrono::milliseconds(4000));
         }
 
         if (planning) {
@@ -851,6 +852,10 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+	if (scan_3d && !autofocus) {
+            publisher_node->set_apply_config(true);
+            publisher_node->set_scan_3d(false);
+	}
     }
 
     executor.cancel();

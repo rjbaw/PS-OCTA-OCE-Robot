@@ -466,7 +466,7 @@ int main(int argc, char *argv[]) {
                     msg = "Autofocus complete";
                 } else {
                     planning = true;
-                    pitch += -drot;
+                    roll += drot;
                     target_pose.position.x +=
                         radius * std::cos(to_radian(angle));
                     target_pose.position.y +=
