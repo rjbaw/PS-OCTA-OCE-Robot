@@ -733,7 +733,7 @@ int main(int argc, char *argv[]) {
                                     z_tolerance, scale_factor)) {
                         planning = false;
                         scan_3d = false;
-			apply_config = true;
+                        apply_config = true;
                         end_state = true;
                         msg = "Autofocus complete";
                     } else {
@@ -837,6 +837,8 @@ int main(int argc, char *argv[]) {
         publisher_node->set_scan_3d(scan_3d);
 
         if (apply_config && !end_state && scan_3d) {
+            apply_config = false;
+            publisher_node->set_apply_config(apply_config);
             rclcpp::sleep_for(std::chrono::milliseconds(4000));
         }
 
@@ -852,10 +854,14 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
-	if (scan_3d && !autofocus) {
-            publisher_node->set_apply_config(true);
-            publisher_node->set_scan_3d(false);
-	}
+        if (scan_3d && !autofocus) {
+            scan_3d = false;
+            apply_config = true;
+            publisher_node->set_apply_config(apply_config);
+            publisher_node->set_scan_3d(scan_3d);
+            apply_config = false;
+            publisher_node->set_apply_config(apply_config);
+        }
     }
 
     executor.cancel();

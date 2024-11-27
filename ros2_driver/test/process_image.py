@@ -311,10 +311,42 @@ def detect_lines(image_path, save_dir):
     # img = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
     cv2.imwrite(base_name + "_raw.jpg", img_raw)
 
-    denoised_image = cv2.medianBlur(img_raw, 5)
+    # fourier = cv2.dft(np.float32(img_raw))
 
-    img = denoised_image
+    img = cv2.medianBlur(img_raw, 5)
+    f = np.fft.fft2(img)
+    fshift = np.fft.fftshift(f)
+    magnitude_spectrum = 20 * np.log(np.abs(fshift))
+    rows, cols = img_raw.shape
+    crow, ccol = rows // 2, cols // 2
+    mask = np.zeros((rows, cols), np.float32)
+    sigma = 50
+    for i in range(rows):
+        for j in range(cols):
+            mask[i, j] = np.exp(-((i - crow) ** 2 + (j - ccol) ** 2) / (2 * sigma**2))
+    fshift_filtered = fshift * mask
+    f_ishift = np.fft.ifftshift(fshift_filtered)
+    fourier = np.abs(np.fft.ifft2(f_ishift))
+    fourier = cv2.normalize(fourier, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    cv2.imwrite(base_name + "_magnitude.jpg", magnitude_spectrum)
+    cv2.imwrite(base_name + "_fourier.jpg", fourier)
+
+    img = fourier
+
+    plt.figure()
+    plt.plot(magnitude_spectrum.reshape(-1))
+    plt.plot((20 * np.log(np.abs(fshift_filtered))).reshape(-1))
+    plt.close()
+
+    plt.figure()
+    plt.plot(np.mean(magnitude_spectrum, axis=1))
+    plt.plot(np.mean(20 * np.log(np.abs(fshift_filtered)), axis=1))
+    plt.savefig(base_name + "_plot2.jpg")
+    plt.close()
+    # denoised_image = cv2.medianBlur(img, 5)
+    # img = denoised_image
     img = img.copy() - np.mean(img, axis=1, keepdims=True)
+
     # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
     # cv2.imwrite(base_name + "_sub.jpg", img)
 
@@ -724,6 +756,7 @@ if __name__ == "__main__":
     # path = "data/skin_oct"
     # path = "data/skin_octa"
     path = "data/no_background"
+    # path = "data/current"
 
     save_path = "data/result"
     interval = 4
