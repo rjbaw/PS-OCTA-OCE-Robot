@@ -646,9 +646,6 @@ int main(int argc, char *argv[]) {
         radius = subscriber_node->radius();
         angle_limit = subscriber_node->angle_limit();
         num_pt = subscriber_node->num_pt();
-        dz = subscriber_node->dz();
-        drot = subscriber_node->drot();
-        drot *= scale_factor;
         previous = subscriber_node->previous();
         next = subscriber_node->next();
         home = subscriber_node->home();
@@ -718,7 +715,7 @@ int main(int argc, char *argv[]) {
                         pcd_lines.GetMinimalOrientedBoundingBox(false);
                     Eigen::Vector3d center = boundbox.GetCenter();
                     double z_height = center[2];
-                    dz = (z_height - 190) / 150 * 1.2 / 1000;
+                    dz = -(z_height - 190) / 150 * 1.2 / 1000;
                     rotmat_eigen = align_to_direction(boundbox.R_);
                     tf2::Matrix3x3 rotmat_tf(
                         rotmat_eigen(0, 0), rotmat_eigen(0, 1),
@@ -749,7 +746,7 @@ int main(int argc, char *argv[]) {
                             radius * std::cos(to_radian(angle));
                         target_pose.position.y +=
                             radius * std::sin(to_radian(angle));
-                        target_pose.position.z += -dz;
+                        target_pose.position.z += dz;
                         RCLCPP_INFO(
                             logger,
                             std::format("Target Pose: "
