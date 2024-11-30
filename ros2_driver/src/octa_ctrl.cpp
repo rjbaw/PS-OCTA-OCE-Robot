@@ -197,7 +197,6 @@ SegmentResult detect_lines(const cv::Mat &img) {
 
     cv::Mat detected_image = img.clone();
     draw_line(detected_image, ret_coords);
-    cv::imwrite("detected_image.jpg", detected_image);
 
     result.image = detected_image;
     result.coordinates = ret_coords;
@@ -215,6 +214,7 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     for (size_t i = 0; i < img_array.size(); ++i) {
         cv::Mat img = img_array[i];
         SegmentResult pc = detect_lines(img);
+    	cv::imwrite(std::format("detected_image{}.jpg",i).c_str(), pc.image);
         assert(!pc.coordinates.empty());
 
         int idx = static_cast<int>(i) % interval;
@@ -834,9 +834,9 @@ int main(int argc, char *argv[]) {
         publisher_node->set_scan_3d(scan_3d);
 
         if (apply_config && !end_state && scan_3d) {
+            rclcpp::sleep_for(std::chrono::milliseconds(1000));
             apply_config = false;
             publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(4000));
         }
 
         if (planning) {
@@ -856,6 +856,7 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_apply_config(apply_config);
             publisher_node->set_scan_3d(scan_3d);
+            rclcpp::sleep_for(std::chrono::milliseconds(1000));
             apply_config = false;
             publisher_node->set_apply_config(apply_config);
         }
