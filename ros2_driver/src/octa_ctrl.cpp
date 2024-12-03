@@ -479,10 +479,19 @@ end
 double to_radian(const double degree) {
     return (std::numbers::pi / 180 * degree);
 }
-bool tol_measure(Eigen::Matrix3d &drot, double &dz, double &angle_tolerance,
+
+double to_degree(const double radian) {
+    return (180 / std::numbers::pi * radian);
+}
+
+bool tol_measure(tf2::Matrix3x3 &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
-    return ((std::abs((1 / scale_factor * std::abs(drot.trace() - 3))) <
-             to_radian(angle_tolerance)) &&
+    double roll;
+    double pitch;
+    double yaw;
+    drot.getRPY(roll, pitch, yaw);
+    return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
+	    (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)) &&
             (std::abs(dz) < (z_tolerance / 1000.0)));
 }
 
@@ -605,7 +614,7 @@ int main(int argc, char *argv[]) {
     std::vector<Eigen::Vector3d> pc_lines;
 
     // Subscriber Parameters
-    double robot_vel, robot_acc, radius, angle_limit, dz, drot;
+    double robot_vel, robot_acc, radius, angle_limit, dz;
     double z_tolerance, angle_tolerance;
     int num_pt;
     bool autofocus, freedrive, previous, next, home, reset, fast_axis;
@@ -715,7 +724,8 @@ int main(int argc, char *argv[]) {
                         pcd_lines.GetMinimalOrientedBoundingBox(false);
                     Eigen::Vector3d center = boundbox.GetCenter();
                     double z_height = center[2];
-                    dz = -(z_height - 190) / 150 * 1.2 / 1000;
+                    //dz = -(z_height - 190) / 150 * 1.2 / 1000;
+                    dz = 0;
                     rotmat_eigen = align_to_direction(boundbox.R_);
                     tf2::Matrix3x3 rotmat_tf(
                         rotmat_eigen(0, 0), rotmat_eigen(0, 1),
@@ -723,10 +733,20 @@ int main(int argc, char *argv[]) {
                         rotmat_eigen(1, 1), rotmat_eigen(1, 2),
                         rotmat_eigen(2, 0), rotmat_eigen(2, 1),
                         rotmat_eigen(2, 2));
-                    std::cout << "Aligned Rotation Matrix:\n"
-                              << rotmat_eigen << std::endl;
+                    RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
+                              << rotmat_eigen);
+		    double t_roll;
+		    double t_pitch;
+		    double t_yaw;
+		    rotmat_tf.getRPY(t_roll, t_pitch, t_yaw);
+		    RCLCPP_INFO(logger, std::format("Calculated R:{}, P:{}, Y:{}", 
+		    			to_degree(t_roll), 
+		    			to_degree(t_pitch), 
+		    			to_degree(t_yaw))
+		    		.c_str());
+		    rotmat_tf.setRPY(t_yaw, -t_roll, t_pitch);
 
-                    if (tol_measure(rotmat_eigen, dz, angle_tolerance,
+                    if (tol_measure(rotmat_tf, dz, angle_tolerance,
                                     z_tolerance, scale_factor)) {
                         planning = false;
                         scan_3d = false;
@@ -842,21 +862,22 @@ int main(int argc, char *argv[]) {
         if (planning) {
             planning = false;
             while (!subscriber_node->changed()) {
-                if (tol_measure(rotmat_eigen, dz, angle_tolerance, z_tolerance,
-                                scale_factor)) {
-                    break;
-                }
+                //if (tol_measure(rotmat_tf, dz, angle_tolerance, z_tolerance,
+                //                scale_factor)) {
+                //    break;
+                //}
                 if (!subscriber_node->autofocus()) {
                     break;
                 }
             }
+	    // end_state = true;
         }
         if (scan_3d && !autofocus) {
             scan_3d = false;
             apply_config = true;
-            publisher_node->set_apply_config(apply_config);
             publisher_node->set_scan_3d(scan_3d);
-            rclcpp::sleep_for(std::chrono::milliseconds(1000));
+            publisher_node->set_apply_config(apply_config);
+            //rclcpp::sleep_for(std::chrono::milliseconds(1000));
             apply_config = false;
             publisher_node->set_apply_config(apply_config);
         }
