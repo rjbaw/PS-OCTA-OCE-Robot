@@ -489,7 +489,7 @@ int main(int argc, char *argv[]) {
                 if (home) {
                     planning = true;
                     yaw += to_radian(-angle);
-                    circle_state = 0;
+                    circle_state = 1;
                     angle = 0.0;
                 }
             }

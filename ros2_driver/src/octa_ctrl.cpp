@@ -373,9 +373,15 @@ class dds_publisher : public rclcpp::Node {
                         std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - apply_config_time_)
                             .count();
+                    if (elapsed >= 30) {
+                        this->apply_config = false;
+                    } 
+		    if (elapsed >= 60) {
+                        this->apply_config = true;
+		    }
                     if (elapsed >= 100) {
                         this->apply_config = false;
-                    }
+		    }
                 }
 
                 old_message = message;
@@ -576,12 +582,8 @@ double to_degree(const double radian) {
     return (180 / std::numbers::pi * radian);
 }
 
-bool tol_measure(tf2::Matrix3x3 &drot, double &dz, double &angle_tolerance,
+bool tol_measure(double &roll, double &pitch, double &dz, double &angle_tolerance,
                  double &z_tolerance) {
-    double roll;
-    double pitch;
-    double yaw;
-    drot.getRPY(roll, pitch, yaw);
     return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)) &&
             (std::abs(dz) < (z_tolerance / 1000.0)));
@@ -739,6 +741,7 @@ int main(int argc, char *argv[]) {
     int num_pt;
     bool fast_axis = true;
     bool success = false;
+    bool auto_mode = true;
 
     auto const move_group_node =
         std::make_shared<rclcpp::Node>("node_moveit", node_options);
@@ -827,6 +830,7 @@ int main(int argc, char *argv[]) {
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
             img_array.clear();
+            //rclcpp::sleep_for(std::chrono::milliseconds(1000));
             for (int i = 0; i < interval; i++) {
                 while (true) {
                     img = img_subscriber_node->get_img();
@@ -862,19 +866,25 @@ int main(int argc, char *argv[]) {
                 rotmat_eigen(2, 0), rotmat_eigen(2, 1), rotmat_eigen(2, 2));
             RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
                                            << rotmat_eigen);
-            rotmat_tf.getRPY(roll, pitch, yaw);
+	    double tmp_roll;
+	    double tmp_pitch;
+	    double tmp_yaw;
+            rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
+	    roll = tmp_yaw;
+	    pitch = -tmp_roll;
+	    yaw = tmp_pitch;
             msg = std::format("Calculated R:{}, P:{}, Y:{}", to_degree(roll),
                               to_degree(pitch), to_degree(yaw));
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
-            rotmat_tf.setRPY(yaw, -roll, pitch);
-
-            if (tol_measure(rotmat_tf, dz, angle_tolerance, z_tolerance)) {
+            rotmat_tf.setRPY(roll, pitch, yaw);
+            if (tol_measure(roll, pitch, dz, angle_tolerance, z_tolerance)) {
                 // planning = false;
                 end_state = true;
-                msg = "Within tolerance";
+                msg += "\nWithin tolerance";
                 publisher_node->set_msg(msg);
                 publisher_node->set_end_state(end_state);
+                rclcpp::sleep_for(std::chrono::milliseconds(200));
                 continue;
             } else {
                 // planning = true;
@@ -896,8 +906,14 @@ int main(int argc, char *argv[]) {
                 } else {
                     msg = "Planning failed!";
                     RCLCPP_ERROR(logger, msg.c_str());
+                    publisher_node->set_msg(msg);
                 }
-                publisher_node->set_msg(msg);
+		if (!auto_mode) {
+		    end_state = true;
+                    publisher_node->set_end_state(end_state);
+                    rclcpp::sleep_for(std::chrono::milliseconds(200));
+		    continue;
+		}
             }
         } else {
             angle_increment = angle_limit / num_pt;
@@ -918,7 +934,7 @@ int main(int argc, char *argv[]) {
             if (subscriber_node->home()) {
                 planning = true;
                 yaw += to_radian(-angle);
-                circle_state = 0;
+                circle_state = 1;
                 angle = 0.0;
             }
             publisher_node->set_angle(angle);
@@ -926,8 +942,7 @@ int main(int argc, char *argv[]) {
 
             if (planning) {
                 planning = false;
-                tf2::Quaternion q;
-                tf2::Quaternion target_q;
+                target_pose = move_group_interface.getCurrentPose().pose;
                 tf2::fromMsg(target_pose.orientation, target_q);
                 q.setRPY(roll, pitch, yaw);
                 q.normalize();
@@ -942,8 +957,8 @@ int main(int argc, char *argv[]) {
                 } else {
                     msg = "Planning failed!";
                     RCLCPP_ERROR(logger, msg.c_str());
+                    publisher_node->set_msg(msg);
                 }
-                publisher_node->set_msg(msg);
             }
         }
 
@@ -956,7 +971,7 @@ int main(int argc, char *argv[]) {
         //     }
         // }
 
-        if (subscriber_node->scan_3d() && subscriber_node->autofocus()) {
+        if (subscriber_node->scan_3d() && !subscriber_node->autofocus()) {
             scan_3d = false;
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);

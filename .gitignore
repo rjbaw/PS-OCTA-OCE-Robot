@@ -25,3 +25,5 @@ install/
 # Emacs
 *~
 *#*
+
+detected_image*
