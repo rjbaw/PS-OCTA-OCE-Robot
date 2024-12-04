@@ -320,7 +320,7 @@ def detect_lines(image_path, save_dir):
     rows, cols = img_raw.shape
     crow, ccol = rows // 2, cols // 2
     mask = np.zeros((rows, cols), np.float32)
-    sigma = 50
+    sigma = 40
     for i in range(rows):
         for j in range(cols):
             mask[i, j] = np.exp(-((i - crow) ** 2 + (j - ccol) ** 2) / (2 * sigma**2))
@@ -343,9 +343,12 @@ def detect_lines(image_path, save_dir):
     plt.plot(np.mean(20 * np.log(np.abs(fshift_filtered)), axis=1))
     plt.savefig(base_name + "_plot2.jpg")
     plt.close()
+
+    # ref_img = cv2.imread("data/ref.jpg", cv2.IMREAD_GRAYSCALE)
     # denoised_image = cv2.medianBlur(img, 5)
     # img = denoised_image
     img = img.copy() - np.mean(img, axis=1, keepdims=True)
+    # img = img.copy() - np.mean(ref_img, axis=1, keepdims=True)
 
     # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
     # cv2.imwrite(base_name + "_sub.jpg", img)
@@ -370,7 +373,7 @@ def detect_lines(image_path, save_dir):
     observations = ret_coords[:, 1]
 
     obs_length = len(observations)
-    window = max(1, int(obs_length / 20))
+    window = max(1, int(obs_length / 10))
     old_val = 0
     for i, pt in enumerate(observations):
         start = max(0, i - window)
