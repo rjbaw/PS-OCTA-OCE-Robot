@@ -14,7 +14,7 @@
     <link name="${prefix}end_effector_link">
       <visual>
         <geometry>
-          <sphere radius="0.05"/>
+          <sphere radius="0.06"/>
         </geometry>
 	<material name="green">
           <color rgba="0 0 1 1"/>

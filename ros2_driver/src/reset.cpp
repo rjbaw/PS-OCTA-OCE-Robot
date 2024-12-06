@@ -149,17 +149,17 @@ int main(int argc, char *argv[]) {
             target_pose.orientation.w)
             .c_str());
 
-    move_group_interface.setJointValueTarget("shoulder_pan_joint",
-                                             to_radian(0.0));
-    move_group_interface.setJointValueTarget("shoulder_lift_joint",
-                                             -to_radian(60.0));
-    move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
-    move_group_interface.setJointValueTarget("wrist_1_joint",
-                                             to_radian(-120.0));
-    move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
-    move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
+    while (running) {
+        move_group_interface.setJointValueTarget("shoulder_pan_joint",
+                                                 to_radian(0.0));
+        move_group_interface.setJointValueTarget("shoulder_lift_joint",
+                                                 -to_radian(60.0));
+        move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
+        move_group_interface.setJointValueTarget("wrist_1_joint",
+                                                 to_radian(-120.0));
+        move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
+        move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
 
-    if (running) {
         auto const [success, plan] = [&move_group_interface] {
             moveit::planning_interface::MoveGroupInterface::Plan msg;
             auto const ok = static_cast<bool>(move_group_interface.plan(msg));

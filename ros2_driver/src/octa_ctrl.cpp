@@ -373,15 +373,9 @@ class dds_publisher : public rclcpp::Node {
                         std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - apply_config_time_)
                             .count();
-                    if (elapsed >= 30) {
-                        this->apply_config = false;
-                    } 
-		    if (elapsed >= 60) {
-                        this->apply_config = true;
-		    }
                     if (elapsed >= 100) {
                         this->apply_config = false;
-		    }
+                    } 
                 }
 
                 old_message = message;
@@ -719,7 +713,7 @@ int main(int argc, char *argv[]) {
     std::string msg;
     double angle = 0.0;
     int circle_state = 1;
-    bool apply_config = false;
+    bool apply_config = true;
     bool end_state = false;
     bool scan_3d = false;
 
@@ -742,6 +736,9 @@ int main(int argc, char *argv[]) {
     bool fast_axis = true;
     bool success = false;
     bool auto_mode = true;
+    bool next = false;
+    bool previous = false;
+    bool home = false;
 
     auto const move_group_node =
         std::make_shared<rclcpp::Node>("node_moveit", node_options);
@@ -773,6 +770,9 @@ int main(int argc, char *argv[]) {
         publisher_node->set_fast_axis(fast_axis);
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
+        next = subscriber_node->next();
+        previous = subscriber_node->previous();
+        home = subscriber_node->home();
 
         z_tolerance = subscriber_node->z_tolerance();
         angle_tolerance = subscriber_node->angle_tolerance();
@@ -820,24 +820,31 @@ int main(int argc, char *argv[]) {
             publisher_node->set_msg(msg);
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
-            continue;
         }
         if (subscriber_node->autofocus()) {
+            apply_config = true;
+            publisher_node->set_apply_config(apply_config);
             scan_3d = true;
             apply_config = true;
-            msg = "Starting 3D Scan";
+            //msg = "Starting 3D Scan";
             publisher_node->set_msg(msg);
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
             img_array.clear();
-            //rclcpp::sleep_for(std::chrono::milliseconds(1000));
             for (int i = 0; i < interval; i++) {
                 while (true) {
                     img = img_subscriber_node->get_img();
                     if (!img.empty()) {
                         break;
                     }
-                    // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                    rclcpp::sleep_for(std::chrono::milliseconds(6000));
                 }
                 img_array.push_back(img);
                 RCLCPP_INFO(logger, "Collected image %d", i + 1);
@@ -848,6 +855,13 @@ int main(int argc, char *argv[]) {
             publisher_node->set_msg(msg);
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
 
             pc_lines = lines_3d(img_array, interval, single_interval);
             open3d::geometry::PointCloud pcd_lines;
@@ -871,23 +885,25 @@ int main(int argc, char *argv[]) {
 	    double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
 	    roll = tmp_yaw;
-	    pitch = -tmp_roll;
+	    pitch = tmp_roll;
 	    yaw = tmp_pitch;
-            msg = std::format("Calculated R:{}, P:{}, Y:{}", to_degree(roll),
-                              to_degree(pitch), to_degree(yaw));
+            msg = std::format("Calculated R:{:.2f}, P:{:.2f}, Y:{:.2f}", 
+			    to_degree(roll), to_degree(pitch), to_degree(yaw));
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
             rotmat_tf.setRPY(roll, pitch, yaw);
             if (tol_measure(roll, pitch, dz, angle_tolerance, z_tolerance)) {
-                // planning = false;
+                planning = false;
                 end_state = true;
                 msg += "\nWithin tolerance";
                 publisher_node->set_msg(msg);
                 publisher_node->set_end_state(end_state);
-                rclcpp::sleep_for(std::chrono::milliseconds(200));
-                continue;
+                move_group_interface.setStartStateToCurrentState();
+                target_pose = move_group_interface.getCurrentPose().pose;
+                while (subscriber_node->autofocus()) {
+                }
             } else {
-                // planning = true;
+                planning = true;
                 rotmat_tf.getRotation(q);
                 target_pose = move_group_interface.getCurrentPose().pose;
                 tf2::fromMsg(target_pose.orientation, target_q);
@@ -901,7 +917,7 @@ int main(int argc, char *argv[]) {
                 move_group_interface.setPoseTarget(target_pose);
                 success = move_to_target(move_group_interface);
                 if (success) {
-                    msg = "Planning Success!";
+                    //msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());
                 } else {
                     msg = "Planning failed!";
@@ -919,29 +935,22 @@ int main(int argc, char *argv[]) {
             angle_increment = angle_limit / num_pt;
             roll = 0.0, pitch = 0.0, yaw = 0.0;
 
-            if (subscriber_node->next()) {
+            if (next) {
                 planning = true;
-                angle += angle_increment;
-                circle_state++;
                 yaw += to_radian(angle_increment);
             }
-            if (subscriber_node->previous()) {
+            if (previous) {
                 planning = true;
-                angle -= angle_increment;
-                circle_state--;
                 yaw += to_radian(-angle_increment);
             }
-            if (subscriber_node->home()) {
+            if (home) {
                 planning = true;
                 yaw += to_radian(-angle);
-                circle_state = 1;
-                angle = 0.0;
             }
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
 
             if (planning) {
-                planning = false;
                 target_pose = move_group_interface.getCurrentPose().pose;
                 tf2::fromMsg(target_pose.orientation, target_q);
                 q.setRPY(roll, pitch, yaw);
@@ -954,6 +963,18 @@ int main(int argc, char *argv[]) {
                 if (success) {
                     msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());
+                    if (next) {
+                        angle += angle_increment;
+                        circle_state++;
+                    }
+                    if (previous) {
+                        angle -= angle_increment;
+                        circle_state--;
+                    }
+                    if (home) {
+                        circle_state = 1;
+                        angle = 0.0;
+                    }
                 } else {
                     msg = "Planning failed!";
                     RCLCPP_ERROR(logger, msg.c_str());
@@ -962,14 +983,16 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // if (planning) {
-        //     planning = false;
-        //     while (!subscriber_node->changed()) {
-        //         if (!subscriber_node->autofocus()) {
-        //             break;
-        //         }
-        //     }
-        // }
+        if (planning) {
+            planning = false;
+            while (!subscriber_node->changed()) {
+                if (!subscriber_node->autofocus()) {
+                    //rclcpp::sleep_for(std::chrono::milliseconds(100));
+                    break;
+                }
+            }
+            //rclcpp::sleep_for(std::chrono::milliseconds(1000));
+        }
 
         if (subscriber_node->scan_3d() && !subscriber_node->autofocus()) {
             scan_3d = false;
