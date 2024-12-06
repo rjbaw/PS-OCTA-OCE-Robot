@@ -844,7 +844,7 @@ int main(int argc, char *argv[]) {
                     if (!img.empty()) {
                         break;
                     }
-                    rclcpp::sleep_for(std::chrono::milliseconds(6000));
+                    rclcpp::sleep_for(std::chrono::milliseconds(10000));
                 }
                 img_array.push_back(img);
                 RCLCPP_INFO(logger, "Collected image %d", i + 1);
