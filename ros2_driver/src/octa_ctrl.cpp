@@ -910,8 +910,9 @@ int main(int argc, char *argv[]) {
 		if (std::abs(dz) < (z_tolerance/1000.0)) {
 		    z_focused = true;
                     msg += "\nHeight focused";
-                publisher_node->set_msg(msg);
+                    publisher_node->set_msg(msg);
 		} else {
+		    planning = true;
                     target_pose = move_group_interface.getCurrentPose().pose;
                     target_pose.position.z += dz;
                     print_target(logger, target_pose);
@@ -928,19 +929,6 @@ int main(int argc, char *argv[]) {
 		}
 	    }
 
-            if (angle_focused && z_focused) {
-		angle_focused = false;
-		z_focused = false;
-                planning = false;
-                end_state = true;
-                msg += "\nWithin tolerance";
-                publisher_node->set_msg(msg);
-                publisher_node->set_end_state(end_state);
-                move_group_interface.setStartStateToCurrentState();
-                target_pose = move_group_interface.getCurrentPose().pose;
-                while (subscriber_node->autofocus()) {
-                }
-            } 
 	    if (!angle_focused) {
                 planning = true;
                 rotmat_tf.getRotation(q);
@@ -970,6 +958,20 @@ int main(int argc, char *argv[]) {
 		    continue;
 		}
             }
+
+            if (angle_focused && z_focused) {
+		angle_focused = false;
+		z_focused = false;
+                planning = false;
+                end_state = true;
+                msg += "\nWithin tolerance";
+                publisher_node->set_msg(msg);
+                publisher_node->set_end_state(end_state);
+                move_group_interface.setStartStateToCurrentState();
+                target_pose = move_group_interface.getCurrentPose().pose;
+                while (subscriber_node->autofocus()) {
+                }
+            } 
 
         } else {
             angle_increment = angle_limit / num_pt;
