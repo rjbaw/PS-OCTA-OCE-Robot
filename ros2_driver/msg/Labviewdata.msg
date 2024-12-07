@@ -15,4 +15,5 @@ bool home
 bool reset
 bool fast_axis
 bool scan_3d
+float64 z_height
 

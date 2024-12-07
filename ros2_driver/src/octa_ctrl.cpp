@@ -436,6 +436,7 @@ class dds_subscriber : public rclcpp::Node {
                 reset_ = msg->reset;
                 fast_axis_ = msg->fast_axis;
                 scan_3d_ = msg->scan_3d;
+		z_height_ = msg->z_height;
                 if (old_msg != *msg) {
                     RCLCPP_INFO(this->get_logger(),
                                 std::format("[SUBSCRIBING] "
@@ -455,13 +456,14 @@ class dds_subscriber : public rclcpp::Node {
                                             " home: {},"
                                             " reset: {},"
                                             " fast_axis: {},"
-                                            " scan_3d: {}",
+                                            " scan_3d: {}"
+					    " z_height: {}",
                                             robot_vel_, robot_acc_,
                                             z_tolerance_, angle_tolerance_,
                                             radius_, angle_limit_, num_pt_, dz_,
                                             drot_, autofocus_, freedrive_,
                                             previous_, next_, home_, reset_,
-                                            fast_axis_, scan_3d_)
+                                            fast_axis_, scan_3d_, z_height_)
                                     .c_str());
                     changed_ = true;
                 } else {
@@ -488,12 +490,13 @@ class dds_subscriber : public rclcpp::Node {
     bool fast_axis() { return fast_axis_; };
     bool changed() { return changed_; };
     bool scan_3d() { return scan_3d_; };
+    bool z_height() { return z_height_; };
 
   private:
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
     double robot_vel_ = 0, robot_acc_ = 0, z_tolerance_ = 0,
            angle_tolerance_ = 0, radius_ = 0, angle_limit_ = 0, dz_ = 0,
-           drot_ = 0;
+           drot_ = 0, z_height_;
     int num_pt_ = 0;
     bool autofocus_ = false, freedrive_ = false, previous_ = false,
          next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
@@ -576,11 +579,9 @@ double to_degree(const double radian) {
     return (180 / std::numbers::pi * radian);
 }
 
-bool tol_measure(double &roll, double &pitch, double &dz, double &angle_tolerance,
-                 double &z_tolerance) {
+bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
     return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
-            (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)) &&
-            (std::abs(dz) < (z_tolerance / 1000.0)));
+            (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
 }
 
 void add_collision_obj(auto &move_group_interface) {
@@ -731,7 +732,7 @@ int main(int argc, char *argv[]) {
 
     // Subscriber Parameters
     double robot_vel, robot_acc, radius, angle_limit, dz;
-    double z_tolerance, angle_tolerance;
+    double z_tolerance, angle_tolerance, z_height;
     int num_pt;
     bool fast_axis = true;
     bool success = false;
@@ -739,6 +740,8 @@ int main(int argc, char *argv[]) {
     bool next = false;
     bool previous = false;
     bool home = false;
+    bool z_focused = false;
+    bool angle_focused = false;
 
     auto const move_group_node =
         std::make_shared<rclcpp::Node>("node_moveit", node_options);
@@ -811,7 +814,7 @@ int main(int argc, char *argv[]) {
             move_group_interface.setJointValueTarget("wrist_2_joint",
                                                      to_radian(-90.0));
             move_group_interface.setJointValueTarget("wrist_3_joint",
-                                                     to_radian(45.0));
+                                                     to_radian(-135.0));
             success = move_to_target(move_group_interface);
             if (!success) {
                 msg = "Planning failed!";
@@ -870,9 +873,10 @@ int main(int argc, char *argv[]) {
             }
             auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
-            double z_height = center[2];
-            dz = -(z_height - 190) / 150 * 1.2 / 1000;
-            dz = 0;
+            z_height = subscriber_node->z_height();
+            //dz = -(center[2] - z_height) / 150 * 1.2 / 1000.0;
+            //dz = -(center[1] - z_height) / 512.0 * 1/1000.0 * 1/1.0;
+	    RCLCPP_INFO(logger, "center: %f", center[1]);
             rotmat_eigen = align_to_direction(boundbox.R_);
             tf2::Matrix3x3 rotmat_tf(
                 rotmat_eigen(0, 0), rotmat_eigen(0, 1), rotmat_eigen(0, 2),
@@ -892,7 +896,41 @@ int main(int argc, char *argv[]) {
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
             rotmat_tf.setRPY(roll, pitch, yaw);
-            if (tol_measure(roll, pitch, dz, angle_tolerance, z_tolerance)) {
+
+            if (tol_measure(roll, pitch, angle_tolerance)) {
+		angle_focused = true;
+                msg += "\nAngle focused";
+                publisher_node->set_msg(msg);
+	    }
+
+	    if (angle_focused && !z_focused) {
+                dz = (z_height - center[1]) / (256.0 * 1000.0);
+		dz = 0;
+	        RCLCPP_INFO(logger, "dz: %f", dz);
+		if (std::abs(dz) < (z_tolerance/1000.0)) {
+		    z_focused = true;
+                    msg += "\nHeight focused";
+                publisher_node->set_msg(msg);
+		} else {
+                    target_pose = move_group_interface.getCurrentPose().pose;
+                    target_pose.position.z += dz;
+                    print_target(logger, target_pose);
+                    move_group_interface.setPoseTarget(target_pose);
+                    success = move_to_target(move_group_interface);
+                    if (success) {
+                        //msg = "Planning Success!";
+                        RCLCPP_INFO(logger, msg.c_str());
+                    } else {
+                        msg = "Planning failed!";
+                        RCLCPP_ERROR(logger, msg.c_str());
+                        publisher_node->set_msg(msg);
+                    }
+		}
+	    }
+
+            if (angle_focused && z_focused) {
+		angle_focused = false;
+		z_focused = false;
                 planning = false;
                 end_state = true;
                 msg += "\nWithin tolerance";
@@ -902,7 +940,8 @@ int main(int argc, char *argv[]) {
                 target_pose = move_group_interface.getCurrentPose().pose;
                 while (subscriber_node->autofocus()) {
                 }
-            } else {
+            } 
+	    if (!angle_focused) {
                 planning = true;
                 rotmat_tf.getRotation(q);
                 target_pose = move_group_interface.getCurrentPose().pose;
@@ -931,6 +970,7 @@ int main(int argc, char *argv[]) {
 		    continue;
 		}
             }
+
         } else {
             angle_increment = angle_limit / num_pt;
             roll = 0.0, pitch = 0.0, yaw = 0.0;
