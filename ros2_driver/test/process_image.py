@@ -302,6 +302,90 @@ def get_max_coor(img):
     return np.array(ret_coords)
 
 
+def detect_lines2(image_path, save_dir):
+    from scipy.ndimage import median_filter, gaussian_filter, uniform_filter1d
+    from scipy.signal import savgol_filter
+
+    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if img_raw is None:
+        print("Error: Could not load image.")
+        return
+
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    base_name = os.path.join(save_dir, base_name)
+    # img = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite(base_name + "_raw.jpg", img_raw)
+    img = cv2.medianBlur(img_raw, 5)
+    # img = img_raw.astype(np.float32)
+    img = img.copy() - np.mean(img, axis=1, keepdims=True)
+
+    cv2.imwrite(base_name + "_sub.jpg", img)
+
+
+    img = median_filter(img, size=(3, 11))
+    img = gaussian_filter(img, sigma=3)
+
+    # np.gradient returns (dIMG/drow, dIMG/dcol) for a 2D array
+    gy, gx = np.gradient(img)
+    surface = np.argmax(gy, axis=0)
+
+    cv2.imwrite(
+        base_name + "_max.jpg",
+        draw_line(img_raw.copy(), np.column_stack([np.arange(500),surface])),
+    )
+
+
+    observations = surface
+
+    x_k = np.median(observations[:50])
+    P_k = 1
+    Q = 0.01
+    R = 0.5
+    x_k_estimates = []
+    P_k_values = []
+    for z_k in observations:
+        x_k_pred = x_k
+        P_k_pred = P_k + Q
+        K_k = P_k_pred / (P_k_pred + R)
+        x_k = x_k_pred + K_k * (z_k - x_k_pred)
+        P_k = (1 - K_k) * P_k_pred
+        x_k_estimates.append(x_k)
+        P_k_values.append(P_k)
+    surface[:] = x_k_estimates
+
+    obs_length = len(observations)
+    window = max(1, int(obs_length / 10))
+    old_val = 0
+    for i, pt in enumerate(observations):
+        start = max(0, i - window)
+        end = min(obs_length, i + window + 1)
+        mu = np.mean(observations[start:end])
+        sigma = np.std(observations[start:end])
+        med = np.median(observations[start:end])
+        if sigma != 0:
+            z = (pt - mu) / sigma
+        else:
+            z = pt - mu
+        if z > 0.5:
+            if ((med - mu) / sigma) > 3:
+                observations[i] = mu
+            else:
+                observations[i] = med
+            # observations[i] = med
+    surface[:] = observations
+
+    surface_smooth = savgol_filter(surface + 1, window_length=15, polyorder=3)
+    ret_coords = surface_smooth
+    ret_coords = np.column_stack([np.arange(500), ret_coords])
+
+    cv2.imwrite(
+        base_name + "_detected.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    return ret_coords
+
+
 def detect_lines(image_path, save_dir):
     img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img_raw is None:
@@ -583,7 +667,7 @@ def align_to_direction(rot_matrix):
 def test_basic(file_list, data_path, result_path, interval):
     print("\n******************** TEST simple ********************\n")
     pc_lines = lines_3d(
-        file_list, data_path, result_path, interval, detect_lines, acq_interval=False
+        file_list, data_path, result_path, interval, detect_lines2, acq_interval=False
     )
     pc_lines = np.vstack(pc_lines)
 

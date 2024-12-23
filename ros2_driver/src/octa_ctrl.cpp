@@ -145,7 +145,7 @@ void shiftDFT(cv::Mat &fImage) {
     cv::merge(planes, fImage);
 }
 
-SegmentResult detect_lines(const cv::Mat &img) {
+SegmentResult detect_lines_backup(const cv::Mat &img) {
     SegmentResult result;
 
     cv::Mat denoised_image;
@@ -281,6 +281,110 @@ SegmentResult detect_lines(const cv::Mat &img) {
     return result;
 }
 
+std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
+                                   double Q = 0.01, double R = 0.5) {
+    std::vector<double> x_k_estimates;
+    x_k_estimates.reserve(observations.size());
+    double x_k = (observations.empty()) ? 0.0 : observations[0];
+    double P_k = 1.0;
+    for (double z_k : observations) {
+        double x_k_pred = x_k;
+        double P_k_pred = P_k + Q;
+        double K_k = P_k_pred / (P_k_pred + R);
+        x_k = x_k_pred + K_k * (z_k - x_k_pred);
+        P_k = (1.0 - K_k) * P_k_pred;
+        x_k_estimates.push_back(x_k);
+    }
+    return x_k_estimates;
+}
+
+void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
+    if (vals.empty())
+        return;
+    size_t obs_length = vals.size();
+    int window = std::max(1, (int)obs_length / 10);
+    for (size_t i = 0; i < obs_length; ++i) {
+        int start = std::max(0, (int)i - window);
+        int end = std::min((int)obs_length, (int)i + window + 1);
+        std::vector<double> local(vals.begin() + start, vals.begin() + end);
+        double mu =
+            std::accumulate(local.begin(), local.end(), 0.0) / local.size();
+        double accum = 0.0;
+        for (double val : local) {
+            accum += (val - mu) * (val - mu);
+        }
+        double sigma = std::sqrt(accum / local.size());
+        std::nth_element(local.begin(), local.begin() + local.size() / 2,
+                         local.end());
+        double med = local[local.size() / 2];
+        double z = (sigma != 0.0) ? (vals[i] - mu) / sigma : 0.0;
+        if (z > z_threshold) {
+            vals[i] = med;
+        }
+    }
+}
+
+SegmentResult detect_lines(const cv::Mat &inputImg) {
+    CV_Assert(!inputImg.empty());
+    cv::Mat gray;
+    if (inputImg.channels() == 3) {
+        cv::cvtColor(inputImg, gray, cv::COLOR_BGR2GRAY);
+    } else {
+        gray = inputImg.clone();
+    }
+    cv::Mat denoised;
+    cv::medianBlur(gray, denoised, 5);
+    denoised.convertTo(denoised, CV_32F);
+    for (int r = 0; r < denoised.rows; ++r) {
+        cv::Scalar rowMean = cv::mean(denoised.row(r));
+        for (int c = 0; c < denoised.cols; ++c) {
+            denoised.at<float>(r, c) -= rowMean[0];
+        }
+    }
+    cv::Mat medianed;
+    denoised.convertTo(medianed, CV_8U, 1.0, 128.0);
+    cv::medianBlur(medianed, medianed, 3);
+    medianed.convertTo(medianed, CV_32F, 1.0, -128.0);
+    cv::Mat gaussed;
+    cv::GaussianBlur(medianed, gaussed, cv::Size(0, 0), 3.0, 3.0);
+    cv::Mat sobely;
+    cv::Sobel(gaussed, sobely, CV_32F, 0, 1, 3);
+    std::vector<cv::Point> rawCoords(sobely.cols);
+    for (int c = 0; c < sobely.cols; ++c) {
+        double maxVal = -1e9;
+        int maxIdx = 0;
+        for (int r = 0; r < sobely.rows; ++r) {
+            float val = sobely.at<float>(r, c);
+            if (val > maxVal) {
+                maxVal = val;
+                maxIdx = r;
+            }
+        }
+        rawCoords[c] = cv::Point(c, maxIdx);
+    }
+    std::vector<double> observations;
+    observations.reserve(rawCoords.size());
+    for (auto &pt : rawCoords) {
+        observations.push_back(static_cast<double>(pt.y));
+    }
+    removeOutliers(observations, 0.5);
+    std::vector<double> x_est = kalmanFilter1D(observations, 0.01, 0.5);
+    std::vector<cv::Point> finalCoords(rawCoords.size());
+    for (size_t i = 0; i < x_est.size(); ++i) {
+        // Column = i, Row = x_est[i]
+        finalCoords[i] = cv::Point(static_cast<int>(i),
+                                   static_cast<int>(std::round(x_est[i])));
+    }
+    cv::Mat outImg;
+    gray.convertTo(outImg, CV_8U);
+    draw_line(outImg, finalCoords);
+
+    SegmentResult result;
+    result.image = outImg;
+    result.coordinates = finalCoords;
+    return result;
+}
+
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       const int interval,
                                       const bool acq_interval = false) {
@@ -375,7 +479,7 @@ class dds_publisher : public rclcpp::Node {
                             .count();
                     if (elapsed >= 100) {
                         this->apply_config = false;
-                    } 
+                    }
                 }
 
                 old_message = message;
@@ -436,7 +540,7 @@ class dds_subscriber : public rclcpp::Node {
                 reset_ = msg->reset;
                 fast_axis_ = msg->fast_axis;
                 scan_3d_ = msg->scan_3d;
-		z_height_ = msg->z_height;
+                z_height_ = msg->z_height;
                 if (old_msg != *msg) {
                     RCLCPP_INFO(this->get_logger(),
                                 std::format("[SUBSCRIBING] "
@@ -457,7 +561,7 @@ class dds_subscriber : public rclcpp::Node {
                                             " reset: {},"
                                             " fast_axis: {},"
                                             " scan_3d: {}"
-					    " z_height: {}",
+                                            " z_height: {}",
                                             robot_vel_, robot_acc_,
                                             z_tolerance_, angle_tolerance_,
                                             radius_, angle_limit_, num_pt_, dz_,
@@ -805,7 +909,7 @@ int main(int argc, char *argv[]) {
             circle_state = 1;
             angle = 0.0;
             publisher_node->set_angle(angle);
-            publisher_node->set_circle_state(angle);
+            publisher_node->set_circle_state(circle_state);
             urscript_node->activate_freedrive();
             while (subscriber_node->freedrive()) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
@@ -818,7 +922,9 @@ int main(int argc, char *argv[]) {
         move_group_interface.setStartStateToCurrentState();
 
         if (subscriber_node->reset()) {
-            msg = "Reset to default position", angle = 0.0, circle_state = 1;
+            msg = "Reset to default position";
+            angle = 0.0;
+            circle_state = 1;
             move_group_interface.setJointValueTarget("shoulder_pan_joint",
                                                      to_radian(0.0));
             move_group_interface.setJointValueTarget("shoulder_lift_joint",
@@ -845,7 +951,7 @@ int main(int argc, char *argv[]) {
             publisher_node->set_apply_config(apply_config);
             scan_3d = true;
             apply_config = true;
-            //msg = "Starting 3D Scan";
+            // msg = "Starting 3D Scan";
             publisher_node->set_msg(msg);
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
@@ -890,9 +996,9 @@ int main(int argc, char *argv[]) {
             auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
             z_height = subscriber_node->z_height();
-            //dz = -(center[2] - z_height) / 150 * 1.2 / 1000.0;
-            //dz = -(center[1] - z_height) / 512.0 * 1/1000.0 * 1/1.0;
-	    RCLCPP_INFO(logger, "center: %f", center[1]);
+            // dz = -(center[2] - z_height) / 150 * 1.2 / 1000.0;
+            // dz = -(center[1] - z_height) / 512.0 * 1/1000.0 * 1/1.0;
+            RCLCPP_INFO(logger, "center: %f", center[1]);
             rotmat_eigen = align_to_direction(boundbox.R_);
             tf2::Matrix3x3 rotmat_tf(
                 rotmat_eigen(0, 0), rotmat_eigen(0, 1), rotmat_eigen(0, 2),
@@ -900,52 +1006,55 @@ int main(int argc, char *argv[]) {
                 rotmat_eigen(2, 0), rotmat_eigen(2, 1), rotmat_eigen(2, 2));
             RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
                                            << rotmat_eigen);
-	    double tmp_roll;
-	    double tmp_pitch;
-	    double tmp_yaw;
+            double tmp_roll;
+            double tmp_pitch;
+            double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
-	    roll = tmp_yaw;
-	    pitch = tmp_roll;
-	    yaw = tmp_pitch;
-            msg = std::format("Calculated R:{:.2f}, P:{:.2f}, Y:{:.2f}", 
-			    to_degree(roll), to_degree(pitch), to_degree(yaw));
+            roll = tmp_yaw;
+            pitch = tmp_roll;
+            yaw = tmp_pitch;
+            msg =
+                std::format("Calculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
+                            to_degree(roll), to_degree(pitch), to_degree(yaw));
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
             rotmat_tf.setRPY(roll, pitch, yaw);
 
             if (tol_measure(roll, pitch, angle_tolerance)) {
-		angle_focused = true;
+                angle_focused = true;
                 msg += "\nAngle focused";
                 publisher_node->set_msg(msg);
-	    }
+            }
 
-	    if (angle_focused && !z_focused) {
+            if (angle_focused && !z_focused) {
                 dz = (z_height - center[1]) / (256.0 * 1000.0);
-		dz = 0;
-	        RCLCPP_INFO(logger, "dz: %f", dz);
-		if (std::abs(dz) < (z_tolerance/1000.0)) {
-		    z_focused = true;
+                // dz = 0;
+                msg += std::format("\ndz = {}", dz).c_str();
+                publisher_node->set_msg(msg);
+                RCLCPP_INFO(logger, "dz: %f", dz);
+                if (std::abs(dz) < (z_tolerance / 1000.0)) {
+                    z_focused = true;
                     msg += "\nHeight focused";
                     publisher_node->set_msg(msg);
-		} else {
-		    planning = true;
+                } else {
+                    planning = true;
                     target_pose = move_group_interface.getCurrentPose().pose;
                     target_pose.position.z += dz;
                     print_target(logger, target_pose);
                     move_group_interface.setPoseTarget(target_pose);
                     success = move_to_target(move_group_interface);
                     if (success) {
-                        //msg = "Planning Success!";
+                        // msg = "Planning Success!";
                         RCLCPP_INFO(logger, msg.c_str());
                     } else {
                         msg = "Planning failed!";
                         RCLCPP_ERROR(logger, msg.c_str());
                         publisher_node->set_msg(msg);
                     }
-		}
-	    }
+                }
+            }
 
-	    if (!angle_focused) {
+            if (!angle_focused) {
                 planning = true;
                 rotmat_tf.getRotation(q);
                 target_pose = move_group_interface.getCurrentPose().pose;
@@ -960,24 +1069,24 @@ int main(int argc, char *argv[]) {
                 move_group_interface.setPoseTarget(target_pose);
                 success = move_to_target(move_group_interface);
                 if (success) {
-                    //msg = "Planning Success!";
+                    // msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());
                 } else {
                     msg = "Planning failed!";
                     RCLCPP_ERROR(logger, msg.c_str());
                     publisher_node->set_msg(msg);
                 }
-		if (!auto_mode) {
-		    end_state = true;
+                if (!auto_mode) {
+                    end_state = true;
                     publisher_node->set_end_state(end_state);
                     rclcpp::sleep_for(std::chrono::milliseconds(200));
-		    continue;
-		}
+                    continue;
+                }
             }
 
             if (angle_focused && z_focused) {
-		angle_focused = false;
-		z_focused = false;
+                angle_focused = false;
+                z_focused = false;
                 planning = false;
                 end_state = true;
                 msg += "\nWithin tolerance";
@@ -987,7 +1096,7 @@ int main(int argc, char *argv[]) {
                 target_pose = move_group_interface.getCurrentPose().pose;
                 while (subscriber_node->autofocus()) {
                 }
-            } 
+            }
 
         } else {
             angle_increment = angle_limit / num_pt;
@@ -1045,11 +1154,11 @@ int main(int argc, char *argv[]) {
             planning = false;
             while (!subscriber_node->changed()) {
                 if (!subscriber_node->autofocus()) {
-                    //rclcpp::sleep_for(std::chrono::milliseconds(100));
+                    // rclcpp::sleep_for(std::chrono::milliseconds(100));
                     break;
                 }
             }
-            //rclcpp::sleep_for(std::chrono::milliseconds(1000));
+            // rclcpp::sleep_for(std::chrono::milliseconds(1000));
         }
 
         if (subscriber_node->scan_3d() && !subscriber_node->autofocus()) {
