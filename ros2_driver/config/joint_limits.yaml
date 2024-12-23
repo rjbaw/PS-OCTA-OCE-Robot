@@ -18,16 +18,16 @@ joint_limits:
     has_acceleration_limits: true
     max_acceleration: 5.0
     # Adjusted to avoid crashing OCT/OCE equipment, min: -270, max: 0
-    has_position_limits: true
-    max_position: 0.0
-    min_position: -4.71
+    # has_position_limits: true
+    # max_position: 0.0
+    # min_position: -4.71
   wrist_2_joint:
     has_acceleration_limits: true
     max_acceleration: 5.0
     # Adjusted to avoid too much movement, min: -270, max: 90
-    has_position_limits: true
-    max_position: 1.57
-    min_position: -4.71
+    # has_position_limits: true
+    # max_position: 1.57
+    # min_position: -4.71
   wrist_3_joint:
     has_acceleration_limits: true
     max_acceleration: 5.0

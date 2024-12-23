@@ -1,3 +1,4 @@
+import enum
 import cv2
 import numpy as np
 import os
@@ -13,6 +14,7 @@ import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
+from torch.nn.modules.module import register_module_backward_hook
 
 
 # Patch Embedding Layer
@@ -314,58 +316,75 @@ def detect_lines(image_path, save_dir):
     # fourier = cv2.dft(np.float32(img_raw))
 
     img = cv2.medianBlur(img_raw, 5)
-    f = np.fft.fft2(img)
-    fshift = np.fft.fftshift(f)
-    magnitude_spectrum = 20 * np.log(np.abs(fshift))
-    rows, cols = img_raw.shape
-    crow, ccol = rows // 2, cols // 2
-    mask = np.zeros((rows, cols), np.float32)
-    sigma = 40
-    for i in range(rows):
-        for j in range(cols):
-            mask[i, j] = np.exp(-((i - crow) ** 2 + (j - ccol) ** 2) / (2 * sigma**2))
-    fshift_filtered = fshift * mask
-    f_ishift = np.fft.ifftshift(fshift_filtered)
-    fourier = np.abs(np.fft.ifft2(f_ishift))
-    fourier = cv2.normalize(fourier, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    cv2.imwrite(base_name + "_magnitude.jpg", magnitude_spectrum)
-    cv2.imwrite(base_name + "_fourier.jpg", fourier)
+    # f = np.fft.fft2(img)
+    # fshift = np.fft.fftshift(f)
+    # magnitude_spectrum = 20 * np.log(np.abs(fshift))
+    # rows, cols = img_raw.shape
+    # crow, ccol = rows // 2, cols // 2
+    # mask = np.zeros((rows, cols), np.float32)
+    # sigma = 40
+    # for i in range(rows):
+    #     for j in range(cols):
+    #         mask[i, j] = np.exp(-((i - crow) ** 2 + (j - ccol) ** 2) / (2 * sigma**2))
+    # fshift_filtered = fshift * mask
+    # f_ishift = np.fft.ifftshift(fshift_filtered)
+    # fourier = np.abs(np.fft.ifft2(f_ishift))
+    # fourier = cv2.normalize(fourier, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    # cv2.imwrite(base_name + "_magnitude.jpg", magnitude_spectrum)
+    # cv2.imwrite(base_name + "_fourier.jpg", fourier)
 
-    img = fourier
+    # plt.figure()
+    # plt.plot(magnitude_spectrum.reshape(-1))
+    # plt.plot((20 * np.log(np.abs(fshift_filtered))).reshape(-1))
+    # plt.close()
 
-    plt.figure()
-    plt.plot(magnitude_spectrum.reshape(-1))
-    plt.plot((20 * np.log(np.abs(fshift_filtered))).reshape(-1))
-    plt.close()
+    # plt.figure()
+    # plt.plot(np.mean(magnitude_spectrum, axis=1))
+    # plt.plot(np.mean(20 * np.log(np.abs(fshift_filtered)), axis=1))
+    # plt.savefig(base_name + "_plot2.jpg")
+    # plt.close()
 
-    plt.figure()
-    plt.plot(np.mean(magnitude_spectrum, axis=1))
-    plt.plot(np.mean(20 * np.log(np.abs(fshift_filtered)), axis=1))
-    plt.savefig(base_name + "_plot2.jpg")
-    plt.close()
+    # img = fourier
 
     # ref_img = cv2.imread("data/ref.jpg", cv2.IMREAD_GRAYSCALE)
     # denoised_image = cv2.medianBlur(img, 5)
     # img = denoised_image
-    img = img.copy() - np.mean(img, axis=1, keepdims=True)
+
+    # bool_sub = np.full(img.shape[0], True)
+    # for i in range(img.shape[0]):
+    #     init_val = img[i, 0]
+    #     for j in range(img.shape[1]):
+    #         if abs(init_val - img[i, j]) > 300:
+    #             bool_sub[i] = False
+    # for row, b in enumerate(bool_sub):
+    #     if b:
+    #         img[row, :] = 0
+
+    # img = img.copy() - np.mean(img, axis=1, keepdims=True)
     # img = img.copy() - np.mean(ref_img, axis=1, keepdims=True)
 
     # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
-    # cv2.imwrite(base_name + "_sub.jpg", img)
 
-    sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=9)
+    cv2.imwrite(base_name + "_sub.jpg", img)
+
+    sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=1)
     # cv2.imwrite(base_name + "_sobely.jpg", sobely)
     # cv2.imwrite(
     #     base_name + "_sobely_detected.jpg",
     #     draw_line(img_raw.copy(), get_max_coor(sobely)),
     # )
     img = sobely
+    sobelx = cv2.Sobel(img.T, cv2.CV_64F, 0, 1, ksize=1)
+    img = sobelx.T
+    # sobelx = cv2.Sobel(img.T, cv2.CV_64F, 1, 0, ksize=0)
+    # img = sobelx
+    cv2.imwrite(base_name + "_sobel.jpg", img)
 
     ret_coords = get_max_coor(img)
-    # cv2.imwrite(
-    #     base_name + "_max.jpg",
-    #     draw_line(img_raw.copy(), ret_coords),
-    # )
+    cv2.imwrite(
+        base_name + "_max.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
 
     # from scipy.signal import medfilt
     # ret_coords[:, 1] = medfilt(ret_coords[:, 1], kernel_size=15)
@@ -392,7 +411,7 @@ def detect_lines(image_path, save_dir):
             #     observations[i] = med
             observations[i] = med
 
-    x_k = observations[0]
+    x_k = np.median(observations[:50])
     P_k = 1
     Q = 0.01
     R = 5.0
@@ -407,6 +426,28 @@ def detect_lines(image_path, save_dir):
         x_k_estimates.append(x_k)
         P_k_values.append(P_k)
     ret_coords[:, 1] = x_k_estimates
+
+    cv2.imwrite(
+        base_name + "_detected_pre.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    observations = ret_coords[:, 1][::-1]
+    x_k = observations[0]
+    P_k = 1
+    Q = 0.01
+    R = 5.0
+    x_k_estimates = []
+    P_k_values = []
+    for z_k in observations:
+        x_k_pred = x_k
+        P_k_pred = P_k + Q
+        K_k = P_k_pred / (P_k_pred + R)
+        x_k = x_k_pred + K_k * (z_k - x_k_pred)
+        P_k = (1 - K_k) * P_k_pred
+        x_k_estimates.append(x_k)
+        P_k_values.append(P_k)
+    ret_coords[:, 1] = x_k_estimates[::-1]
 
     cv2.imwrite(
         base_name + "_detected.jpg",

@@ -48,7 +48,7 @@
   <xacro:arg name="tool_device_name" default="/tmp/ttyUR" />
   <xacro:arg name="tool_tcp_port" default="54321" />
 
-    <!-- Simulation parameters -->
+  <!-- Simulation parameters -->
   <xacro:arg name="use_mock_hardware" default="false" />
   <xacro:arg name="mock_sensor_commands" default="false" />
   <xacro:arg name="simulation_controllers" default="" />
@@ -63,55 +63,73 @@
   <link name="world" />
 
   <xacro:ur_robot
-    name="$(arg name)"
-    tf_prefix="$(arg tf_prefix)"
-    parent="world"
-    joint_limits_parameters_file="$(arg joint_limit_params)"
-    kinematics_parameters_file="$(arg kinematics_params)"
-    physical_parameters_file="$(arg physical_params)"
-    visual_parameters_file="$(arg visual_params)"
-    safety_limits="$(arg safety_limits)"
-    safety_pos_margin="$(arg safety_pos_margin)"
-    safety_k_position="$(arg safety_k_position)"
-    >
-     <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
+      name="$(arg name)"
+      tf_prefix="$(arg tf_prefix)"
+      parent="world"
+      joint_limits_parameters_file="$(arg joint_limit_params)"
+      kinematics_parameters_file="$(arg kinematics_params)"
+      physical_parameters_file="$(arg physical_params)"
+      visual_parameters_file="$(arg visual_params)"
+      safety_limits="$(arg safety_limits)"
+      safety_pos_margin="$(arg safety_pos_margin)"
+      safety_k_position="$(arg safety_k_position)"
+      >
+    <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
   </xacro:ur_robot>
 
   <!-- ros2 control instance -->
   <xacro:ur_ros2_control
-    name="$(arg name)"
-    tf_prefix="$(arg tf_prefix)"
-    kinematics_parameters_file="$(arg kinematics_params)"
-    transmission_hw_interface="$(arg transmission_hw_interface)"
-    use_mock_hardware="$(arg use_mock_hardware)"
-    mock_sensor_commands="$(arg mock_sensor_commands)"
-    headless_mode="$(arg headless_mode)"
-    initial_positions="${xacro.load_yaml(initial_positions_file)}"
-    use_tool_communication="$(arg use_tool_communication)"
-    tool_voltage="$(arg tool_voltage)"
-    tool_parity="$(arg tool_parity)"
-    tool_baud_rate="$(arg tool_baud_rate)"
-    tool_stop_bits="$(arg tool_stop_bits)"
-    tool_rx_idle_chars="$(arg tool_rx_idle_chars)"
-    tool_tx_idle_chars="$(arg tool_tx_idle_chars)"
-    tool_device_name="$(arg tool_device_name)"
-    tool_tcp_port="$(arg tool_tcp_port)"
-    robot_ip="$(arg robot_ip)"
-    script_filename="$(arg script_filename)"
-    output_recipe_filename="$(arg output_recipe_filename)"
-    input_recipe_filename="$(arg input_recipe_filename)"
-    reverse_ip="$(arg reverse_ip)"
-    script_command_port="$(arg script_command_port)"
-    reverse_port="$(arg reverse_port)"
-    script_sender_port="$(arg script_sender_port)"
-    trajectory_port="$(arg trajectory_port)"
-  />
+      name="$(arg name)"
+      tf_prefix="$(arg tf_prefix)"
+      kinematics_parameters_file="$(arg kinematics_params)"
+      transmission_hw_interface="$(arg transmission_hw_interface)"
+      use_mock_hardware="$(arg use_mock_hardware)"
+      mock_sensor_commands="$(arg mock_sensor_commands)"
+      headless_mode="$(arg headless_mode)"
+      initial_positions="${xacro.load_yaml(initial_positions_file)}"
+      use_tool_communication="$(arg use_tool_communication)"
+      tool_voltage="$(arg tool_voltage)"
+      tool_parity="$(arg tool_parity)"
+      tool_baud_rate="$(arg tool_baud_rate)"
+      tool_stop_bits="$(arg tool_stop_bits)"
+      tool_rx_idle_chars="$(arg tool_rx_idle_chars)"
+      tool_tx_idle_chars="$(arg tool_tx_idle_chars)"
+      tool_device_name="$(arg tool_device_name)"
+      tool_tcp_port="$(arg tool_tcp_port)"
+      robot_ip="$(arg robot_ip)"
+      script_filename="$(arg script_filename)"
+      output_recipe_filename="$(arg output_recipe_filename)"
+      input_recipe_filename="$(arg input_recipe_filename)"
+      reverse_ip="$(arg reverse_ip)"
+      script_command_port="$(arg script_command_port)"
+      reverse_port="$(arg reverse_port)"
+      script_sender_port="$(arg script_sender_port)"
+      trajectory_port="$(arg trajectory_port)"
+      />
 
-  <link name="$(arg tf_prefix)tcp"/>
-  <joint name="$(arg tf_prefix)tool0-tcp" type="fixed">
-    <!-- origin xyz="0.0103658864 0.00843977204 0.132806" rpy="0 0 ${-3*pi/4.0}"/ -->
+  <link name="$(arg tf_prefix)oct"/>
+
+  <link name="$(arg tf_prefix)tcp">
+    <inertial>
+      <origin xyz="0 0 0.051" rpy="0 0 0" />
+      <mass value="2.0" />
+      <inertia
+          ixx="0.0005" ixy="0" ixz="0"
+          iyy="0.0005" iyz="0"
+          izz="0.0005"
+          />
+    </inertial>
+  </link>
+
+  <joint name="$(arg tf_prefix)tool0-oct" type="fixed">
     <origin xyz="0.0104474865 0.00835817192 0.132806" rpy="0 0 ${-3*pi/4.0}"/>
     <parent link="$(arg tf_prefix)tool0"/>
+    <child link="$(arg tf_prefix)oct"/>
+  </joint>
+
+  <joint name="$(arg tf_prefix)oct-tcp" type="fixed">
+    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
+    <parent link="$(arg tf_prefix)oct"/>
     <child link="$(arg tf_prefix)tcp"/>
   </joint>
 

@@ -755,6 +755,22 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
+    // tf2::Quaternion q_down;
+    // q_down.setRPY(0, M_PI, 0);
+    // q_down.normalize();
+    moveit_msgs::msg::Constraints path_constr;
+    moveit_msgs::msg::OrientationConstraint ocm;
+    ocm.link_name = "tcp";
+    ocm.header.frame_id = "base_link";
+    // ocm.orientation = tf2::toMsg(q_down);
+    ocm.absolute_x_axis_tolerance = 0.5;
+    ocm.absolute_y_axis_tolerance = 0.5;
+    ocm.absolute_z_axis_tolerance = 0.5;
+    ocm.weight = 1.0;
+
+    path_constr.orientation_constraints.push_back(ocm);
+    move_group_interface.setPathConstraints(path_constr);
+
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(move_group_node);
     executor.add_node(subscriber_node);

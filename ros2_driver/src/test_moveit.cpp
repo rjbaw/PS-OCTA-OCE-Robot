@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
 
     tf2::Quaternion q;
     tf2::Quaternion target_q;
-    q.setRPY(to_radian(0),to_radian(0),to_radian(20));
+    q.setRPY(to_radian(0),to_radian(0),to_radian(300));
     q.normalize();
     tf2::fromMsg(target_pose.orientation, target_q);
     target_q = target_q * q;
