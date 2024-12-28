@@ -464,6 +464,8 @@ def launch_setup():
             moveit_config.joint_limits,
             warehouse_ros_config,
         ],
+        respawn=True,
+        respawn_delay=5,
     )
 
     nodes_after_driver = RegisterEventHandler(
