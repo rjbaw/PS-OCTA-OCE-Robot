@@ -46,22 +46,22 @@ double to_degree(const double radian) {
     return (180 / std::numbers::pi * radian);
 }
 
-std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
-    std::vector<cv::Point> ret_coords;
-    // int height = img.rows;
-    int width = img.cols;
+// std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
+//     std::vector<cv::Point> ret_coords;
+//     // int height = img.rows;
+//     int width = img.cols;
 
-    for (int x = 0; x < width; ++x) {
-        cv::Mat intensity = img.col(x);
-        double minVal, maxVal;
-        int minIndex, maxIndex; // use int, not cv::Point
-        cv::minMaxIdx(intensity, &minVal, &maxVal, &minIndex, &maxIndex);
+//     for (int x = 0; x < width; ++x) {
+//         cv::Mat intensity = img.col(x);
+//         double minVal, maxVal;
+//         int minIndex, maxIndex; // use int, not cv::Point
+//         cv::minMaxIdx(intensity, &minVal, &maxVal, &minIndex, &maxIndex);
 
-        int detected_y = maxIndex;
-        ret_coords.emplace_back(cv::Point(x, detected_y));
-    }
-    return ret_coords;
-}
+//         int detected_y = maxIndex;
+//         ret_coords.emplace_back(cv::Point(x, detected_y));
+//     }
+//     return ret_coords;
+// }
 
 void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
@@ -113,6 +113,23 @@ void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
         }
     }
 }
+
+std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
+    std::vector<cv::Point> ret_coords;
+    // int height = img.rows;
+    int width = img.cols;
+
+    for (int x = 0; x < width; ++x) {
+        cv::Mat intensity = img.col(x);
+        double minVal, maxVal;
+        cv::Point minLoc, maxLoc;
+        cv::minMaxLoc(intensity, &minVal, &maxVal, &minLoc, &maxLoc);
+        int detected_y = maxLoc.y;
+        ret_coords.emplace_back(x, detected_y);
+    }
+    return ret_coords;
+}
+
 
 void shiftDFT(cv::Mat &fImage) {
     std::vector<cv::Mat> planes;
@@ -1071,6 +1088,8 @@ int main(int argc, char *argv[]) {
             auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
             z_height = subscriber_node->z_height();
+            msg = std::format("Center: {}", center[1]);
+            publisher_node->set_msg(msg.c_str());
             RCLCPP_INFO(logger, "center: %f", center[1]);
             rotmat_eigen = align_to_direction(boundbox.R_);
             tf2::Matrix3x3 rotmat_tf(
