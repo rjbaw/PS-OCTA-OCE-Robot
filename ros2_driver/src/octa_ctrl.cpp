@@ -114,62 +114,226 @@ void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
     }
 }
 
-SegmentResult detect_lines(const cv::Mat &inputImg) {
-    CV_Assert(!inputImg.empty());
-    cv::Mat gray;
-    if (inputImg.channels() == 3) {
-        cv::cvtColor(inputImg, gray, cv::COLOR_BGR2GRAY);
-    } else {
-        gray = inputImg.clone();
+void shiftDFT(cv::Mat &fImage) {
+    std::vector<cv::Mat> planes;
+    cv::split(fImage, planes);
+
+    for (auto &plane : planes) {
+        plane = plane(cv::Rect(0, 0, plane.cols & -2, plane.rows & -2));
+
+        int cx = plane.cols / 2;
+        int cy = plane.rows / 2;
+
+        cv::Mat q0(plane, cv::Rect(0, 0, cx, cy));
+        cv::Mat q1(plane, cv::Rect(cx, 0, cx, cy));
+        cv::Mat q2(plane, cv::Rect(0, cy, cx, cy));
+        cv::Mat q3(plane, cv::Rect(cx, cy, cx, cy));
+
+        cv::Mat tmp;
+
+        q0.copyTo(tmp);
+        q3.copyTo(q0);
+        tmp.copyTo(q3);
+
+        q1.copyTo(tmp);
+        q2.copyTo(q1);
+        tmp.copyTo(q2);
+    }
+    cv::merge(planes, fImage);
+}
+
+SegmentResult detect_lines(const cv::Mat &img) {
+    SegmentResult result;
+
+    cv::Mat denoised_image;
+    cv::medianBlur(img, denoised_image, 5);
+
+    cv::Mat padded;
+    int m = cv::getOptimalDFTSize(denoised_image.rows);
+    int n = cv::getOptimalDFTSize(denoised_image.cols);
+    cv::copyMakeBorder(denoised_image, padded, 0, m - denoised_image.rows, 0,
+                       n - denoised_image.cols, cv::BORDER_CONSTANT,
+                       cv::Scalar::all(0));
+
+    padded.convertTo(padded, CV_32F);
+
+    cv::Mat planes[] = {padded, cv::Mat::zeros(padded.size(), CV_32F)};
+    cv::Mat complexI;
+    cv::merge(planes, 2, complexI);
+
+    cv::dft(complexI, complexI);
+
+    shiftDFT(complexI);
+
+    int rows = complexI.rows;
+    int cols = complexI.cols;
+    int crow = rows / 2;
+    int ccol = cols / 2;
+    cv::Mat mask = cv::Mat::zeros(rows, cols, CV_32F);
+    float sigma = 40.0f;
+
+    for (int i = 0; i < rows; i++) {
+        float *mask_row = mask.ptr<float>(i);
+        for (int j = 0; j < cols; j++) {
+            float val =
+                std::exp(-((i - crow) * (i - crow) + (j - ccol) * (j - ccol)) /
+                         (2 * sigma * sigma));
+            mask_row[j] = val;
+        }
     }
 
-    cv::Mat denoised;
-    cv::Mat denoised_f;
-    cv::medianBlur(gray, denoised, 5);
-    denoised.convertTo(denoised_f, CV_32F);
+    cv::split(complexI, planes);
+    planes[0] = planes[0].mul(mask);
+    planes[1] = planes[1].mul(mask);
+    cv::merge(planes, 2, complexI);
+
+    shiftDFT(complexI);
+
+    cv::Mat inverseTransform;
+    cv::idft(complexI, inverseTransform, cv::DFT_REAL_OUTPUT | cv::DFT_SCALE);
+
+    inverseTransform = inverseTransform(cv::Rect(0, 0, img.cols, img.rows));
+
+    cv::Mat processed_img = inverseTransform.clone();
+    processed_img.convertTo(processed_img, CV_64F);
 
     cv::Mat row_means;
-    cv::reduce(denoised_f, row_means, 1, cv::REDUCE_AVG, CV_32F);
+    cv::reduce(processed_img, row_means, 1, cv::REDUCE_AVG, CV_64F);
     cv::Mat mean_mat;
-    cv::repeat(row_means, 1, denoised_f.cols, mean_mat);
-    denoised_f -= mean_mat;
+    cv::repeat(row_means, 1, processed_img.cols, mean_mat);
+    processed_img -= mean_mat;
 
-    cv::Mat img_median1d;
-    denoised_f.convertTo(img_median1d, CV_8U, 1.0, 128.0);
-    cv::medianBlur(img_median1d, img_median1d, 3);
-    img_median1d.convertTo(img_median1d, CV_32F, 1.0, -128.0);
-
-    cv::Mat img_gauss;
-    cv::GaussianBlur(img_median1d, img_gauss, cv::Size(0, 0), 3.0, 3.0);
+    cv::normalize(processed_img, processed_img, 0, 255, cv::NORM_MINMAX);
+    processed_img.convertTo(processed_img, CV_8U);
 
     cv::Mat sobely;
-    cv::Sobel(img_gauss, sobely, CV_32F, 0, 1, 3);
+    cv::Sobel(processed_img, sobely, CV_64F, 0, 1, 9);
 
-    std::vector<cv::Point> rawCoords = get_max_coor(sobely);
+    std::vector<cv::Point> ret_coords = get_max_coor(sobely);
 
     std::vector<double> observations;
-    observations.reserve(rawCoords.size());
-    for (const auto &pt : rawCoords) {
-        observations.push_back(static_cast<double>(pt.y));
+    for (const auto &pt : ret_coords) {
+        observations.push_back(pt.y);
     }
 
-    removeOutliers(observations, 0.5);
-    std::vector<double> x_est = kalmanFilter1D(observations, 0.01, 0.5);
-    std::vector<cv::Point> ret_coords(rawCoords.size());
-    for (size_t i = 0; i < x_est.size(); ++i) {
-        ret_coords[i] = cv::Point(static_cast<int>(i),
-                                  static_cast<int>(std::round(x_est[i])));
+    size_t obs_length = observations.size();
+    int window = std::max(1, static_cast<int>(obs_length / 20));
+
+    for (size_t i = 0; i < obs_length; ++i) {
+        int start = std::max(0, static_cast<int>(i) - window);
+        int end = std::min(static_cast<int>(obs_length),
+                           static_cast<int>(i) + window + 1);
+        std::vector<double> window_vals(observations.begin() + start,
+                                        observations.begin() + end);
+
+        double mu =
+            std::accumulate(window_vals.begin(), window_vals.end(), 0.0) /
+            window_vals.size();
+
+        double accum = 0.0;
+        for (double val : window_vals) {
+            accum += (val - mu) * (val - mu);
+        }
+        double sigma = std::sqrt(accum / window_vals.size());
+
+        std::vector<double> sorted_vals = window_vals;
+        std::nth_element(sorted_vals.begin(),
+                         sorted_vals.begin() + sorted_vals.size() / 2,
+                         sorted_vals.end());
+        double med = sorted_vals[sorted_vals.size() / 2];
+
+        double z = (sigma != 0.0) ? (observations[i] - mu) / sigma
+                                  : observations[i] - mu;
+
+        if (z > 0.5) {
+            observations[i] = med;
+        }
     }
 
-    cv::Mat detected_img;
-    gray.convertTo(detected_img, CV_8U);
-    draw_line(detected_img, ret_coords);
+    double x_k = observations[0];
+    double P_k = 1.0;
+    double Q = 0.01;
+    double R = 5.0;
+    std::vector<double> x_k_estimates;
 
-    SegmentResult result;
-    result.image = detected_img;
+    for (double z_k : observations) {
+        double x_k_pred = x_k;
+        double P_k_pred = P_k + Q;
+        double K_k = P_k_pred / (P_k_pred + R);
+        x_k = x_k_pred + K_k * (z_k - x_k_pred);
+        P_k = (1 - K_k) * P_k_pred;
+        x_k_estimates.push_back(x_k);
+    }
+
+    for (size_t i = 0; i < ret_coords.size(); ++i) {
+        ret_coords[i].y = static_cast<int>(x_k_estimates[i]);
+    }
+
+    cv::Mat detected_image = img.clone();
+    draw_line(detected_image, ret_coords);
+
+    result.image = detected_image;
     result.coordinates = ret_coords;
+
     return result;
 }
+
+// SegmentResult detect_lines(const cv::Mat &inputImg) {
+//     CV_Assert(!inputImg.empty());
+//     cv::Mat gray;
+//     if (inputImg.channels() == 3) {
+//         cv::cvtColor(inputImg, gray, cv::COLOR_BGR2GRAY);
+//     } else {
+//         gray = inputImg.clone();
+//     }
+
+//     cv::Mat denoised;
+//     cv::Mat denoised_f;
+//     cv::medianBlur(gray, denoised, 5);
+//     denoised.convertTo(denoised_f, CV_32F);
+
+//     cv::Mat row_means;
+//     cv::reduce(denoised_f, row_means, 1, cv::REDUCE_AVG, CV_32F);
+//     cv::Mat mean_mat;
+//     cv::repeat(row_means, 1, denoised_f.cols, mean_mat);
+//     denoised_f -= mean_mat;
+
+//     cv::Mat img_median1d;
+//     denoised_f.convertTo(img_median1d, CV_8U, 1.0, 128.0);
+//     cv::medianBlur(img_median1d, img_median1d, 3);
+//     img_median1d.convertTo(img_median1d, CV_32F, 1.0, -128.0);
+
+//     cv::Mat img_gauss;
+//     cv::GaussianBlur(img_median1d, img_gauss, cv::Size(0, 0), 3.0, 3.0);
+
+//     cv::Mat sobely;
+//     cv::Sobel(img_gauss, sobely, CV_32F, 0, 1, 3);
+
+//     std::vector<cv::Point> rawCoords = get_max_coor(sobely);
+
+//     std::vector<double> observations;
+//     observations.reserve(rawCoords.size());
+//     for (const auto &pt : rawCoords) {
+//         observations.push_back(static_cast<double>(pt.y));
+//     }
+
+//     removeOutliers(observations, 0.5);
+//     std::vector<double> x_est = kalmanFilter1D(observations, 0.01, 0.5);
+//     std::vector<cv::Point> ret_coords(rawCoords.size());
+//     for (size_t i = 0; i < x_est.size(); ++i) {
+//         ret_coords[i] = cv::Point(static_cast<int>(i),
+//                                   static_cast<int>(std::round(x_est[i])));
+//     }
+
+//     cv::Mat detected_img;
+//     gray.convertTo(detected_img, CV_8U);
+//     draw_line(detected_img, ret_coords);
+
+//     SegmentResult result;
+//     result.image = detected_img;
+//     result.coordinates = ret_coords;
+//     return result;
+// }
 
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       const int interval,
