@@ -67,6 +67,7 @@ target_link_libraries(
   single_axis_ctrl "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
+
 add_executable(octa_ctrl src/octa_ctrl.cpp)
 ament_target_dependencies(
   octa_ctrl
@@ -110,10 +111,18 @@ ament_target_dependencies(rot_cal rclcpp std_msgs OpenCV Open3D Eigen3)
 target_link_libraries(rot_cal "${cpp_typesupport_target}" "${OpenCV_LIBS}"
                       Open3D::Open3D Eigen3::Eigen)
 
-# add_executable(subscribers src/subscribers.cpp)
-# ament_target_dependencies(subscribers rclcpp std_msgs OpenCV)
-# target_link_libraries(rot_cal "${cpp_typesupport_target}" "${OpenCV_LIBS}"
-#                       Open3D::Open3D)
+# add_executable(img_subscriber src/img_subscriber.cpp)
+# ament_target_dependencies(
+#   img_subscriber
+#   rclcpp
+#   std_msgs
+#   OpenCV
+#   Eigen3)
+# target_link_libraries(
+#   octa_ctrl
+#   "${cpp_typesupport_target}"
+#   "${OpenCV_LIBS}"
+#   Eigen3::Eigen)
 
 install(
   TARGETS sub_img
@@ -127,6 +136,7 @@ install(
           single_axis_ctrl
           reset
           rot_cal
+          # img_subscriber
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})

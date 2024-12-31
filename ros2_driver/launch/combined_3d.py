@@ -448,6 +448,8 @@ def launch_setup():
         executable="joint_state_listener",
         name="joint_state_listener",
         output="screen",
+        respawn=True,
+        respawn_delay=5,
     )
 
     octa_node = Node(
