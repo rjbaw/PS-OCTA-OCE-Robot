@@ -728,32 +728,30 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    auto client =
-        publisher_node->create_client<moveit_msgs::srv::GetStateValidity>(
-            "/check_state_validity");
-    auto request =
-        std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
-    request->group_name = "ur_manipulator";
-
-    auto current_state = move_group_interface.getCurrentState(10);
-    moveit_msgs::msg::RobotState current_state_msg;
-    moveit::core::robotStateToRobotStateMsg(*current_state, current_state_msg);
-    request->robot_state = current_state_msg;
-
-    auto future = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(publisher_node, future) ==
-        rclcpp::FutureReturnCode::SUCCESS) {
-        auto response = future.get();
-        if (response->valid) {
-            msg = "No errors with setup";
-            publisher_node->set_msg(msg);
-            RCLCPP_WARN(logger, msg.c_str());
-        } else {
-            msg = "Robot Start State is in collision with setup!";
-            publisher_node->set_msg(msg);
-            RCLCPP_WARN(logger, msg.c_str());
-        }
-    }
+    // auto client =
+    //     publisher_node->create_client<moveit_msgs::srv::GetStateValidity>(
+    //         "/check_state_validity");
+    // auto request =
+    //     std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
+    // request->group_name = "ur_manipulator";
+    // auto current_state = move_group_interface.getCurrentState(10);
+    // moveit_msgs::msg::RobotState current_state_msg;
+    // moveit::core::robotStateToRobotStateMsg(*current_state, current_state_msg);
+    // request->robot_state = current_state_msg;
+    // auto future = client->async_send_request(request);
+    // if (rclcpp::spin_until_future_complete(publisher_node, future) ==
+    //     rclcpp::FutureReturnCode::SUCCESS) {
+    //     auto response = future.get();
+    //     if (response->valid) {
+    //         msg = "No errors with setup";
+    //         publisher_node->set_msg(msg);
+    //         RCLCPP_WARN(logger, msg.c_str());
+    //     } else {
+    //         msg = "Robot Start State is in collision with setup!";
+    //         publisher_node->set_msg(msg);
+    //         RCLCPP_WARN(logger, msg.c_str());
+    //     }
+    // }
 
     while (rclcpp::ok() && running) {
 
@@ -791,12 +789,12 @@ int main(int argc, char *argv[]) {
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
 
-        current_state = move_group_interface.getCurrentState(10.0);
-        bool is_valid = current_state->satisfiesBounds();
-        msg = std::format("Current Robot state is {}",
-                          (is_valid ? "VALID" : "INVALID"));
-        RCLCPP_INFO(logger, msg.c_str());
-        publisher_node->set_msg(msg);
+        // current_state = move_group_interface.getCurrentState(10.0);
+        // bool is_valid = current_state->satisfiesBounds();
+        // msg = std::format("Current Robot state is {}",
+        //                   (is_valid ? "VALID" : "INVALID"));
+        // RCLCPP_INFO(logger, msg.c_str());
+        // publisher_node->set_msg(msg);
 
         if (x_tol > 2.0 || y_tol > 2.0 || z_tol > 2.0 || path_enforce <= 0.0) {
             end_state = true;
