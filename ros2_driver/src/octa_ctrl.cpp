@@ -891,7 +891,7 @@ int main(int argc, char *argv[]) {
     double z_tol = 0.5;
     double path_enforce = 1.0;
     int attempt = 0;
-    int max_attempt = 5;
+    int max_attempt = 20;
     ocm.absolute_x_axis_tolerance = x_tol;
     ocm.absolute_y_axis_tolerance = y_tol;
     ocm.absolute_z_axis_tolerance = z_tol;
@@ -977,12 +977,12 @@ int main(int argc, char *argv[]) {
         // RCLCPP_INFO(logger, msg.c_str());
         // publisher_node->set_msg(msg);
 
-        if (x_tol > 2.0 || y_tol > 2.0 || z_tol > 2.0 || path_enforce <= 0.0) {
-            end_state = true;
-            msg = "Unrecoverable Error. Please restart";
-            publisher_node->set_msg(msg);
-            publisher_node->set_end_state(end_state);
-        }
+        // if (x_tol > 2.0 || y_tol > 2.0 || z_tol > 2.0 || path_enforce <= 0.0) {
+        //     end_state = true;
+        //     msg = "Unrecoverable Error. Please restart";
+        //     publisher_node->set_msg(msg);
+        //     publisher_node->set_end_state(end_state);
+        // }
 
         if (subscriber_node->reset()) {
             angle = 0.0;
