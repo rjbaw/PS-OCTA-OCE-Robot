@@ -797,7 +797,7 @@ int main(int argc, char *argv[]) {
         // RCLCPP_INFO(logger, msg.c_str());
         // publisher_node->set_msg(msg);
 
-        // if (x_tol > 2.0 || y_tol > 2.0 || z_tol > 2.0 || path_enforce <= 0.0)
+        // if (x_tol > 3.0 || y_tol > 3.0 || z_tol > 3.0 || path_enforce <= 0.0)
         // {
         //     end_state = true;
         //     msg = "Unrecoverable Error. Please restart";
@@ -859,19 +859,21 @@ int main(int argc, char *argv[]) {
         if (subscriber_node->autofocus()) {
             apply_config = true;
             publisher_node->set_apply_config(apply_config);
-            scan_3d = true;
-            apply_config = true;
-            // msg = "Starting 3D Scan";
-            publisher_node->set_msg(msg);
-            publisher_node->set_scan_3d(scan_3d);
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            if (!scan_3d) {
+                scan_3d = true;
+                apply_config = true;
+                // msg = "Starting 3D Scan";
+                publisher_node->set_msg(msg);
+                publisher_node->set_scan_3d(scan_3d);
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+            }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
                 while (true) {
@@ -887,19 +889,19 @@ int main(int argc, char *argv[]) {
                 img_array.push_back(img);
                 RCLCPP_INFO(logger, "Collected image %d", i + 1);
             }
-            scan_3d = false;
-            apply_config = true;
             msg = "Calculating Rotations";
             publisher_node->set_msg(msg);
-            publisher_node->set_scan_3d(scan_3d);
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            // scan_3d = false;
+            // apply_config = true;
+            // publisher_node->set_scan_3d(scan_3d);
+            // publisher_node->set_apply_config(apply_config);
+            // rclcpp::sleep_for(std::chrono::milliseconds(100));
+            // publisher_node->set_apply_config(apply_config);
+            // rclcpp::sleep_for(std::chrono::milliseconds(100));
+            // publisher_node->set_apply_config(apply_config);
+            // rclcpp::sleep_for(std::chrono::milliseconds(100));
+            // publisher_node->set_apply_config(apply_config);
+            // rclcpp::sleep_for(std::chrono::milliseconds(100));
 
             pc_lines = lines_3d(img_array, interval, single_interval);
             open3d::geometry::PointCloud pcd_lines;
@@ -937,6 +939,17 @@ int main(int argc, char *argv[]) {
                 angle_focused = true;
                 msg += "\nAngle focused";
                 publisher_node->set_msg(msg);
+                scan_3d = false;
+                apply_config = true;
+                publisher_node->set_scan_3d(scan_3d);
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
 
             if (angle_focused && !z_focused) {
