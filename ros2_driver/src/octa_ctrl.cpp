@@ -4,10 +4,10 @@
 #include <csignal>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/planning_interface/planning_interface.h>
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
-#include <moveit/robot_state/conversions.h>
+#include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit/robot_state/conversions.hpp>
 #include <moveit_msgs/srv/get_state_validity.hpp>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>

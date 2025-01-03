@@ -13,6 +13,7 @@ response_adapters:
 planner_configs:
   RRTStar:
     type: geometric::RRTStar
+    use_approximate_solution: true
 
 ur_manipulator:
   planner_configs:
