@@ -27,4 +27,6 @@ install/
 *#*
 
 detected_image*
+raw_image*
 experimental.py
+

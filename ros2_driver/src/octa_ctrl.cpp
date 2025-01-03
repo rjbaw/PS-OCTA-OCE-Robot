@@ -705,9 +705,9 @@ int main(int argc, char *argv[]) {
     ocm.link_name = "tcp";
     ocm.header.frame_id = "base_link";
     // ocm.orientation = tf2::toMsg(q_down);
-    double x_tol = 0.5;
-    double y_tol = 0.5;
-    double z_tol = 0.5;
+    double x_tol = 1.0;
+    double y_tol = 1.0;
+    double z_tol = 1.0;
     double path_enforce = 1.0;
     int attempt = 0;
     int max_attempt = 20;
