@@ -373,18 +373,28 @@ def launch_setup():
         arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
     )
 
-    # moveit_config = (
-    #     MoveItConfigsBuilder(robot_name="ur", package_name="ur_moveit_config")
-    #     .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-    #     .to_moveit_configs()
-    # )
+    #moveit_config = (
+    #    MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
+    #    .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
+    #    
+    #    .to_moveit_configs()
+    #)
 
+    planning_yaml = load_yaml(package_name="octa_ros", file_path="ompl_planning.yaml")
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
         #.robot_description(Path("urdf") / "ur.urdf.xacro")
         #.robot_description(mappings={"robot_description": robot_description_content})
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
+        .robot_description_kinematics(file_path="config/kinematics.yaml")
+        .trajectory_execution(file_path="config/moveit_controllers.yaml")
+        .planning_pipelines(pipelines=planning_yaml)
+        .planning_scene_monitor(
+            publish_robot_description=True,
+            publish_robot_description_semantic=True
+        )
+        .sensors_3d()
         .to_moveit_configs()
     )
 

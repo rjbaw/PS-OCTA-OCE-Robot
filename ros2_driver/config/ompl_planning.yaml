@@ -4,8 +4,8 @@ planning_plugins:
 request_adapters:
   - default_planning_request_adapters/ResolveConstraintFrames
   - default_planning_request_adapters/ValidateWorkspaceBounds
-  - default_planning_request_adapters/CheckStartStateBounds
-  - default_planning_request_adapters/CheckStartStateCollision
+    #  - default_planning_request_adapters/CheckStartStateBounds
+    #  - default_planning_request_adapters/CheckStartStateCollision
 response_adapters:
   - default_planning_response_adapters/AddTimeOptimalParameterization
   - default_planning_response_adapters/ValidateSolution
@@ -20,4 +20,4 @@ ur_manipulator:
     - RRTStar
   projection_evaluator: joints(shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint)
 
-start_state_max_bounds_error: 0.20
+start_state_max_bounds_error: 0.50

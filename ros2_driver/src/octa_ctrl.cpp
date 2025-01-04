@@ -697,26 +697,26 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
-    // tf2::Quaternion q_down;
-    // q_down.setRPY(0, M_PI, 0);
-    // q_down.normalize();
-    moveit_msgs::msg::Constraints path_constr;
-    moveit_msgs::msg::OrientationConstraint ocm;
-    ocm.link_name = "tcp";
-    ocm.header.frame_id = "base_link";
+    tf2::Quaternion q_down;
+    q_down.setRPY(0, M_PI, 0);
+    q_down.normalize();
+    // moveit_msgs::msg::Constraints path_constr;
+    // moveit_msgs::msg::OrientationConstraint ocm;
+    // ocm.link_name = "tcp";
+    // ocm.header.frame_id = "base_link";
     // ocm.orientation = tf2::toMsg(q_down);
-    double x_tol = 1.0;
-    double y_tol = 1.0;
-    double z_tol = 1.0;
-    double path_enforce = 1.0;
+    // double x_tol = 3.00;
+    // double y_tol = 3.00;
+    // double z_tol = 3.00;
+    // double path_enforce = 1.0;
     int attempt = 0;
     int max_attempt = 20;
-    ocm.absolute_x_axis_tolerance = x_tol;
-    ocm.absolute_y_axis_tolerance = y_tol;
-    ocm.absolute_z_axis_tolerance = z_tol;
-    ocm.weight = path_enforce;
-    path_constr.orientation_constraints.push_back(ocm);
-    move_group_interface.setPathConstraints(path_constr);
+    // ocm.absolute_x_axis_tolerance = x_tol;
+    // ocm.absolute_y_axis_tolerance = y_tol;
+    // ocm.absolute_z_axis_tolerance = z_tol;
+    // ocm.weight = path_enforce;
+    // path_constr.orientation_constraints.push_back(ocm);
+    // move_group_interface.setPathConstraints(path_constr);
 
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(move_group_node);
@@ -786,8 +786,8 @@ int main(int argc, char *argv[]) {
             urscript_node->deactivate_freedrive();
         }
 
-        move_group_interface.setMaxVelocityScalingFactor(robot_vel);
-        move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
+        //move_group_interface.setMaxVelocityScalingFactor(robot_vel);
+        //move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
 
         // current_state = move_group_interface.getCurrentState(10.0);
@@ -834,19 +834,19 @@ int main(int argc, char *argv[]) {
                         "Reset Planning Failed! \nAttempt[{}] Retrying....",
                         attempt);
                     publisher_node->set_msg(msg);
-                    x_tol += 0.1;
-                    y_tol += 0.1;
-                    z_tol += 0.1;
-                    path_enforce -= 0.1;
-                    ocm.absolute_x_axis_tolerance = x_tol;
-                    ocm.absolute_y_axis_tolerance = y_tol;
-                    ocm.absolute_z_axis_tolerance = z_tol;
-                    ocm.weight = path_enforce;
-                    path_constr.orientation_constraints.clear();
-                    path_constr.orientation_constraints.push_back(ocm);
-                    move_group_interface.setPathConstraints(path_constr);
-                    attempt++;
+                    // x_tol += 0.1;
+                    // y_tol += 0.1;
+                    // z_tol += 0.1;
+                    // path_enforce -= 0.1;
+                    // ocm.absolute_x_axis_tolerance = x_tol;
+                    // ocm.absolute_y_axis_tolerance = y_tol;
+                    // ocm.absolute_z_axis_tolerance = z_tol;
+                    // ocm.weight = path_enforce;
+                    // path_constr.orientation_constraints.clear();
+                    // path_constr.orientation_constraints.push_back(ocm);
+                    // move_group_interface.setPathConstraints(path_constr);
                 }
+                attempt++;
             }
             if (!success) {
                 msg = std::format(
@@ -954,8 +954,8 @@ int main(int argc, char *argv[]) {
 
             if (angle_focused && !z_focused) {
                 // dz = 0;
-                dz = -(center[1] - z_height) / 150 * 1.2 / 1000.0;
-                // dz = (z_height - center[1]) / (256.0 * 1000.0);
+                // dz = -(center[1] - z_height) / 150 * 1.2 / 1000.0;
+                dz = (z_height - center[1]) / (256.0 * 1000.0);
                 msg += std::format("\ndz = {}", dz).c_str();
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
@@ -981,20 +981,20 @@ int main(int argc, char *argv[]) {
                                               attempt);
                             RCLCPP_ERROR(logger, msg.c_str());
                             publisher_node->set_msg(msg);
-                            x_tol += 0.1;
-                            y_tol += 0.1;
-                            z_tol += 0.1;
-                            path_enforce -= 0.1;
-                            ocm.absolute_x_axis_tolerance = x_tol;
-                            ocm.absolute_y_axis_tolerance = y_tol;
-                            ocm.absolute_z_axis_tolerance = z_tol;
-                            ocm.weight = path_enforce;
-                            path_constr.orientation_constraints.clear();
-                            path_constr.orientation_constraints.push_back(ocm);
-                            move_group_interface.setPathConstraints(
-                                path_constr);
-                            attempt++;
+                            // x_tol += 0.1;
+                            // y_tol += 0.1;
+                            // z_tol += 0.1;
+                            // path_enforce -= 0.1;
+                            // ocm.absolute_x_axis_tolerance = x_tol;
+                            // ocm.absolute_y_axis_tolerance = y_tol;
+                            // ocm.absolute_z_axis_tolerance = z_tol;
+                            // ocm.weight = path_enforce;
+                            // path_constr.orientation_constraints.clear();
+                            // path_constr.orientation_constraints.push_back(ocm);
+                            // move_group_interface.setPathConstraints(
+                            //     path_constr);
                         }
+                        attempt++;
                     }
                     if (!success) {
                         msg = std::format("Z-height Planning Failed! Maximum "
@@ -1113,16 +1113,16 @@ int main(int argc, char *argv[]) {
                                           attempt);
                         RCLCPP_ERROR(logger, msg.c_str());
                         publisher_node->set_msg(msg);
-                        x_tol += 0.1;
-                        y_tol += 0.1;
-                        z_tol += 0.1;
-                        path_enforce -= 0.1;
-                        ocm.absolute_x_axis_tolerance = x_tol;
-                        ocm.absolute_y_axis_tolerance = y_tol;
-                        ocm.absolute_z_axis_tolerance = z_tol;
-                        ocm.weight = path_enforce;
-                        path_constr.orientation_constraints.push_back(ocm);
-                        move_group_interface.setPathConstraints(path_constr);
+                        // x_tol += 0.1;
+                        // y_tol += 0.1;
+                        // z_tol += 0.1;
+                        // path_enforce -= 0.1;
+                        // ocm.absolute_x_axis_tolerance = x_tol;
+                        // ocm.absolute_y_axis_tolerance = y_tol;
+                        // ocm.absolute_z_axis_tolerance = z_tol;
+                        // ocm.weight = path_enforce;
+                        // path_constr.orientation_constraints.push_back(ocm);
+                        // move_group_interface.setPathConstraints(path_constr);
                     }
                     attempt++;
                 }

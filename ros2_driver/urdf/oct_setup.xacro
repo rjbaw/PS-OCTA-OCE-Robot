@@ -107,8 +107,6 @@
       trajectory_port="$(arg trajectory_port)"
       />
 
-  <link name="$(arg tf_prefix)oct"/>
-
   <link name="$(arg tf_prefix)tcp">
     <inertial>
       <origin xyz="0 0 0.051" rpy="0 0 0" />
@@ -121,15 +119,9 @@
     </inertial>
   </link>
 
-  <joint name="$(arg tf_prefix)tool0-oct" type="fixed">
+  <joint name="$(arg tf_prefix)tool0-tcp" type="fixed">
     <origin xyz="0.0104474865 0.00835817192 0.132806" rpy="0 0 ${-3*pi/4.0}"/>
     <parent link="$(arg tf_prefix)tool0"/>
-    <child link="$(arg tf_prefix)oct"/>
-  </joint>
-
-  <joint name="$(arg tf_prefix)oct-tcp" type="fixed">
-    <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
-    <parent link="$(arg tf_prefix)oct"/>
     <child link="$(arg tf_prefix)tcp"/>
   </joint>
 
