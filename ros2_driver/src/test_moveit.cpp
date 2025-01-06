@@ -8,9 +8,9 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-std::atomic<bool> running(true); // Atomic flag to control the shutdown
+std::atomic<bool> running(true);
 moveit::planning_interface::MoveGroupInterface *move_group_ptr =
-    nullptr; // Pointer to control the move group
+    nullptr;
 
 void signal_handler(int signum) {
     RCLCPP_INFO(rclcpp::get_logger("signal_handler"),

@@ -25,6 +25,8 @@ while getopts ":hs" option; do
 done
 
 pkill ros
+ros2 daemon stop
+ros2 daemon start
 rm -f core*
 #source ur_driver/install/setup.bash
 source install/setup.bash

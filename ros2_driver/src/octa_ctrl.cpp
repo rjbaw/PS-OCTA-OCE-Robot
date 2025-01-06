@@ -1,4 +1,3 @@
-#include "octa_ros/msg/img.hpp"
 #include <Eigen/Dense>
 #include <chrono>
 #include <csignal>
@@ -9,19 +8,19 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit/robot_state/conversions.hpp>
 #include <moveit_msgs/srv/get_state_validity.hpp>
-#include <octa_ros/msg/labviewdata.hpp>
-#include <octa_ros/msg/robotdata.hpp>
 #include <open3d/Open3D.h>
-#include <opencv2/img_hash.hpp>
 #include <opencv2/opencv.hpp>
-#include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/string.hpp>
-#include <std_srvs/srv/trigger.hpp>
-#include <string>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
 #include <vector>
+
+#include <rclcpp/rclcpp.hpp>
+#include "dds_publisher.hpp"
+#include "dds_subscriber.hpp"
+#include "urscript_publisher.hpp"
+#include "img_subscriber.hpp"
+#include "utils.hpp"
 
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
@@ -37,14 +36,6 @@ struct SegmentResult {
     cv::Mat image;
     std::vector<cv::Point> coordinates;
 };
-
-double to_radian(const double degree) {
-    return (std::numbers::pi / 180 * degree);
-}
-
-double to_degree(const double radian) {
-    return (180 / std::numbers::pi * radian);
-}
 
 void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
@@ -221,92 +212,6 @@ bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
 }
 
-void add_collision_obj(auto &move_group_interface) {
-
-    auto const collision_floor = [frame_id =
-                                      move_group_interface.getPlanningFrame()] {
-        moveit_msgs::msg::CollisionObject collision_floor;
-        collision_floor.header.frame_id = frame_id;
-        collision_floor.id = "floor";
-        shape_msgs::msg::SolidPrimitive primitive;
-
-        primitive.type = primitive.BOX;
-        primitive.dimensions.resize(3);
-        primitive.dimensions[primitive.BOX_X] = 10.0;
-        primitive.dimensions[primitive.BOX_Y] = 10.0;
-        primitive.dimensions[primitive.BOX_Z] = 0.01;
-
-        geometry_msgs::msg::Pose box_pose;
-        box_pose.orientation.w = 1.0;
-        box_pose.position.x = 0.0;
-        box_pose.position.y = 0.0;
-        box_pose.position.z = -0.0855;
-
-        collision_floor.primitives.push_back(primitive);
-        collision_floor.primitive_poses.push_back(box_pose);
-        collision_floor.operation = collision_floor.ADD;
-
-        return collision_floor;
-    }();
-
-    auto const collision_base = [frame_id =
-                                     move_group_interface.getPlanningFrame()] {
-        moveit_msgs::msg::CollisionObject collision_base;
-        collision_base.header.frame_id = frame_id;
-        collision_base.id = "robot_base";
-        shape_msgs::msg::SolidPrimitive primitive;
-
-        primitive.type = primitive.BOX;
-        primitive.dimensions.resize(3);
-        primitive.dimensions[primitive.BOX_X] = 0.27;
-        primitive.dimensions[primitive.BOX_Y] = 0.27;
-        primitive.dimensions[primitive.BOX_Z] = 0.085;
-
-        geometry_msgs::msg::Pose box_pose;
-        box_pose.orientation.w = 1.0;
-        box_pose.position.x = 0.0;
-        box_pose.position.y = 0.0;
-        box_pose.position.z = -0.043;
-
-        collision_base.primitives.push_back(primitive);
-        collision_base.primitive_poses.push_back(box_pose);
-        collision_base.operation = collision_base.ADD;
-
-        return collision_base;
-    }();
-
-    auto const collision_monitor =
-        [frame_id = move_group_interface.getPlanningFrame()] {
-            moveit_msgs::msg::CollisionObject collision_monitor;
-            collision_monitor.header.frame_id = frame_id;
-            collision_monitor.id = "monitor";
-            shape_msgs::msg::SolidPrimitive primitive;
-
-            primitive.type = primitive.BOX;
-            primitive.dimensions.resize(3);
-            primitive.dimensions[primitive.BOX_X] = 0.25;
-            primitive.dimensions[primitive.BOX_Y] = 0.6;
-            primitive.dimensions[primitive.BOX_Z] = 0.6;
-
-            geometry_msgs::msg::Pose box_pose;
-            box_pose.orientation.w = 1.0;
-            box_pose.position.x = -0.2;
-            box_pose.position.y = 0.435;
-            box_pose.position.z = 0.215;
-
-            collision_monitor.primitives.push_back(primitive);
-            collision_monitor.primitive_poses.push_back(box_pose);
-            collision_monitor.operation = collision_monitor.ADD;
-
-            return collision_monitor;
-        }();
-
-    moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
-    planning_scene_interface.applyCollisionObject(collision_floor);
-    planning_scene_interface.applyCollisionObject(collision_base);
-    planning_scene_interface.applyCollisionObject(collision_monitor);
-}
-
 void print_target(auto &logger, geometry_msgs::msg::Pose target_pose) {
     RCLCPP_INFO(logger,
                 std::format("Target Pose: "
@@ -337,307 +242,6 @@ bool move_to_target(auto &move_group_interface, auto &logger) {
     return success;
 }
 
-// Classes
-
-class img_subscriber : public rclcpp::Node {
-
-  public:
-    img_subscriber()
-        : Node("img_subscriber"),
-          best_effort(rclcpp::QoS(rclcpp::KeepLast(10)).best_effort()) {
-        subscription_ = this->create_subscription<octa_ros::msg::Img>(
-            "oct_image", best_effort,
-            std::bind(&img_subscriber::imageCallback, this,
-                      std::placeholders::_1));
-    }
-
-    cv::Mat get_img() {
-        std::unique_lock<std::mutex> lock(img_mutex_);
-        img_status_.wait(lock, [this] { return new_img_; });
-        cv::Mat img_copy = img_.clone();
-        new_img_ = false;
-        return img_copy;
-    }
-
-  private:
-    void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        RCLCPP_INFO(
-            this->get_logger(),
-            std::format("Subscribing to image, length: {}", msg->img.size())
-                .c_str());
-        cv::Mat img(height_, width_, CV_8UC1);
-        std::copy(msg->img.begin(), msg->img.end(), img.data);
-
-        cv::Mat current_hash;
-        cv::img_hash::AverageHash::create()->compute(img, current_hash);
-        {
-            std::lock_guard<std::mutex> lock(img_mutex_);
-            if (img_.empty() || cv::norm(img_hash_, current_hash) > 0) {
-                img_ = img.clone();
-                img_hash_ = current_hash;
-                new_img_ = true;
-                img_status_.notify_one();
-            }
-        }
-    }
-
-    const int width_ = 500;
-    const int height_ = 512;
-
-    cv::Mat img_;
-    cv::Mat img_hash_;
-    std::mutex img_mutex_;
-    std::condition_variable img_status_;
-    bool new_img_ = false;
-
-    rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr subscription_;
-    rclcpp::QoS best_effort;
-};
-
-class dds_publisher : public rclcpp::Node {
-  public:
-    dds_publisher() : dds_publisher("", 0.0, 1, true, false, false, false) {}
-
-    dds_publisher(std::string msg = "", double angle = 0.0,
-                  int circle_state = 1, bool fast_axis = true,
-                  bool apply_config = false, bool end_state = false,
-                  bool scan_3d = false)
-        : Node("pub_robot_data"), msg(msg), angle(angle),
-          circle_state(circle_state), fast_axis(fast_axis),
-          apply_config(apply_config), end_state(end_state), scan_3d(scan_3d) {
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-        publisher_ =
-            this->create_publisher<octa_ros::msg::Robotdata>("robot_data", qos);
-
-        timer_ =
-            this->create_wall_timer(std::chrono::milliseconds(10), [this]() {
-                auto message = octa_ros::msg::Robotdata();
-                message.msg = this->msg;
-                message.angle = this->angle;
-                message.circle_state = this->circle_state;
-                message.fast_axis = this->fast_axis;
-                message.apply_config = this->apply_config;
-                message.end_state = this->end_state;
-                message.scan_3d = this->scan_3d;
-
-                if (old_message != message) {
-                    RCLCPP_INFO(
-                        this->get_logger(),
-                        "[PUBLISHING] msg: %s, angle: %f, circle_state: %d, "
-                        "fast_axis: %s, apply_config: %s, end_state: %s, "
-                        "scan_3d: %s",
-                        this->msg.c_str(), this->angle, this->circle_state,
-                        this->fast_axis ? "true" : "false",
-                        this->apply_config ? "true" : "false",
-                        this->end_state ? "true" : "false",
-                        this->scan_3d ? "true" : "false");
-                }
-
-                publisher_->publish(message);
-
-                if (this->apply_config) {
-                    auto now = std::chrono::steady_clock::now();
-                    auto elapsed =
-                        std::chrono::duration_cast<std::chrono::milliseconds>(
-                            now - apply_config_time_)
-                            .count();
-                    if (elapsed >= 100) {
-                        this->apply_config = false;
-                    }
-                }
-
-                old_message = message;
-            });
-    }
-
-    void set_msg(const std::string &new_msg) { msg = new_msg; }
-    void set_angle(double new_angle) { angle = new_angle; }
-    void set_circle_state(int new_circle_state) {
-        circle_state = new_circle_state;
-    }
-    void set_fast_axis(bool new_fast_axis) { fast_axis = new_fast_axis; }
-    void set_apply_config(bool new_apply_config) {
-        if (new_apply_config) {
-            apply_config_time_ = std::chrono::steady_clock::now();
-        }
-        apply_config = new_apply_config;
-    }
-    void set_end_state(bool new_end_state) { end_state = new_end_state; }
-    void set_scan_3d(bool new_scan_3d) { scan_3d = new_scan_3d; }
-
-  private:
-    rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr publisher_;
-    std::string msg;
-    double angle;
-    int circle_state;
-    bool fast_axis, apply_config, end_state, scan_3d;
-    octa_ros::msg::Robotdata old_message = octa_ros::msg::Robotdata();
-    std::chrono::steady_clock::time_point apply_config_time_;
-};
-
-class dds_subscriber : public rclcpp::Node {
-  public:
-    dds_subscriber()
-        : Node("sub_labview")
-
-    {
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-        subscription_ = this->create_subscription<octa_ros::msg::Labviewdata>(
-            "labview_data", qos,
-            [this](const octa_ros::msg::Labviewdata::SharedPtr msg) {
-                std::lock_guard<std::mutex> lock(data_mutex_);
-                robot_vel_ = msg->robot_vel;
-                robot_acc_ = msg->robot_acc;
-                z_tolerance_ = msg->z_tolerance;
-                angle_tolerance_ = msg->angle_tolerance;
-                radius_ = msg->radius;
-                angle_limit_ = msg->angle_limit;
-                num_pt_ = msg->num_pt;
-                dz_ = msg->dz;
-                drot_ = msg->drot;
-                autofocus_ = msg->autofocus;
-                freedrive_ = msg->freedrive;
-                previous_ = msg->previous;
-                next_ = msg->next;
-                home_ = msg->home;
-                reset_ = msg->reset;
-                fast_axis_ = msg->fast_axis;
-                scan_3d_ = msg->scan_3d;
-                z_height_ = msg->z_height;
-                if (old_msg != *msg) {
-                    RCLCPP_INFO(this->get_logger(),
-                                std::format("[SUBSCRIBING] "
-                                            " robot_vel: {},"
-                                            " robot_acc: {},"
-                                            " z_tolerance: {},"
-                                            " angle_tolerance: {},"
-                                            " radius: {},"
-                                            " angle_limit: {},"
-                                            " num_pt: {},"
-                                            " dz: {},"
-                                            " drot: {},"
-                                            " autofocus: {},"
-                                            " freedrive: {},"
-                                            " previous: {},"
-                                            " next: {},"
-                                            " home: {},"
-                                            " reset: {},"
-                                            " fast_axis: {},"
-                                            " scan_3d: {}"
-                                            " z_height: {}",
-                                            robot_vel_, robot_acc_,
-                                            z_tolerance_, angle_tolerance_,
-                                            radius_, angle_limit_, num_pt_, dz_,
-                                            drot_, autofocus_, freedrive_,
-                                            previous_, next_, home_, reset_,
-                                            fast_axis_, scan_3d_, z_height_)
-                                    .c_str());
-                    changed_ = true;
-                } else {
-                    changed_ = false;
-                }
-                old_msg = *msg;
-            });
-    };
-    double robot_vel() { return robot_vel_; };
-    double robot_acc() { return robot_acc_; };
-    double z_tolerance() { return z_tolerance_; };
-    double angle_tolerance() { return angle_tolerance_; };
-    double radius() { return radius_; };
-    double angle_limit() { return angle_limit_; };
-    int num_pt() { return num_pt_; };
-    double dz() { return dz_; };
-    double drot() { return drot_; };
-    double z_height() { return z_height_; };
-    bool autofocus() { return autofocus_; };
-    bool freedrive() { return freedrive_; };
-    bool previous() { return previous_; };
-    bool next() { return next_; };
-    bool home() { return home_; };
-    bool reset() { return reset_; };
-    bool fast_axis() { return fast_axis_; };
-    bool changed() { return changed_; };
-    bool scan_3d() { return scan_3d_; };
-
-  private:
-    rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
-    double robot_vel_ = 0, robot_acc_ = 0, z_tolerance_ = 0,
-           angle_tolerance_ = 0, radius_ = 0, angle_limit_ = 0, dz_ = 0,
-           drot_ = 0, z_height_;
-    int num_pt_ = 0;
-    bool autofocus_ = false, freedrive_ = false, previous_ = false,
-         next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
-         changed_ = false, scan_3d_ = false;
-    octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
-    std::mutex data_mutex_;
-};
-
-class urscript_publisher : public rclcpp::Node {
-  public:
-    urscript_publisher()
-        : Node("urscript_publisher"), freedrive(false), executed(true) {
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-        trigger_client = this->create_client<std_srvs::srv::Trigger>(
-            "/io_and_status_controller/resend_robot_program");
-        publisher_ = this->create_publisher<std_msgs::msg::String>(
-            "/urscript_interface/script_command", qos);
-        timer_ = this->create_wall_timer(
-            std::chrono::seconds(1),
-            std::bind(&urscript_publisher::publish_to_robot, this));
-    }
-    void activate_freedrive() {
-        freedrive = true;
-        executed = false;
-    }
-    void deactivate_freedrive() {
-        freedrive = false;
-        executed = false;
-    }
-
-  private:
-    rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr trigger_client;
-    bool freedrive, executed;
-    void publish_to_robot() {
-        if (!executed) {
-            executed = true;
-            auto message = std_msgs::msg::String();
-            if (freedrive) {
-                message.data = R"(
-def program():
- global check = "Made it"
- while(True):
-  freedrive_mode()
- end
-end
-            )";
-            } else {
-                message.data = R"(
-def program():
- end_freedrive_mode()
-end
-            )";
-            }
-            publisher_->publish(message);
-            RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
-                        message.data.c_str());
-            if (!freedrive) {
-                // ros2 service call
-                // /io_and_status_controller/resend_robot_program
-                // std_srvs/srv/Trigger;
-                while (!trigger_client->wait_for_service(
-                    std::chrono::seconds(1))) {
-                    RCLCPP_INFO(this->get_logger(), "Waiting for service...");
-                }
-                auto request =
-                    std::make_shared<std_srvs::srv::Trigger::Request>();
-                auto future = trigger_client->async_send_request(request);
-            }
-        }
-    }
-};
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
@@ -697,26 +301,23 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
-    tf2::Quaternion q_down;
-    q_down.setRPY(0, M_PI, 0);
-    q_down.normalize();
     // moveit_msgs::msg::Constraints path_constr;
     // moveit_msgs::msg::OrientationConstraint ocm;
     // ocm.link_name = "tcp";
     // ocm.header.frame_id = "base_link";
-    // ocm.orientation = tf2::toMsg(q_down);
     // double x_tol = 3.00;
     // double y_tol = 3.00;
     // double z_tol = 3.00;
     // double path_enforce = 1.0;
-    int attempt = 0;
-    int max_attempt = 20;
     // ocm.absolute_x_axis_tolerance = x_tol;
     // ocm.absolute_y_axis_tolerance = y_tol;
     // ocm.absolute_z_axis_tolerance = z_tol;
     // ocm.weight = path_enforce;
     // path_constr.orientation_constraints.push_back(ocm);
     // move_group_interface.setPathConstraints(path_constr);
+
+    int attempt = 0;
+    int max_attempt = 5;
 
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(move_group_node);
@@ -727,32 +328,6 @@ int main(int argc, char *argv[]) {
     std::thread spinner([&executor]() { executor.spin(); });
 
     add_collision_obj(move_group_interface);
-
-    // auto client =
-    //     publisher_node->create_client<moveit_msgs::srv::GetStateValidity>(
-    //         "/check_state_validity");
-    // auto request =
-    //     std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
-    // request->group_name = "ur_manipulator";
-    // did not work due to getCurrentState not working -> cannot get joint
-    // auto current_state = move_group_interface.getCurrentState(10);
-    // moveit_msgs::msg::RobotState current_state_msg;
-    // moveit::core::robotStateToRobotStateMsg(*current_state,
-    // current_state_msg); request->robot_state = current_state_msg; auto future
-    // = client->async_send_request(request); if
-    // (rclcpp::spin_until_future_complete(publisher_node, future) ==
-    //     rclcpp::FutureReturnCode::SUCCESS) {
-    //     auto response = future.get();
-    //     if (response->valid) {
-    //         msg = "No errors with setup";
-    //         publisher_node->set_msg(msg);
-    //         RCLCPP_WARN(logger, msg.c_str());
-    //     } else {
-    //         msg = "Robot Start State is in collision with setup!";
-    //         publisher_node->set_msg(msg);
-    //         RCLCPP_WARN(logger, msg.c_str());
-    //     }
-    // }
 
     while (rclcpp::ok() && running) {
 
@@ -773,6 +348,7 @@ int main(int argc, char *argv[]) {
         num_pt = subscriber_node->num_pt();
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
+        z_height = subscriber_node->z_height();
         robot_vel = 0.1;
         robot_acc = 0.1;
 
@@ -791,13 +367,6 @@ int main(int argc, char *argv[]) {
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
-
-        // current_state = move_group_interface.getCurrentState(10.0);
-        // bool is_valid = current_state->satisfiesBounds();
-        // msg = std::format("Current Robot state is {}",
-        //                   (is_valid ? "VALID" : "INVALID"));
-        // RCLCPP_INFO(logger, msg.c_str());
-        // publisher_node->set_msg(msg);
 
         // if (x_tol > 3.0 || y_tol > 3.0 || z_tol > 3.0 || path_enforce <= 0.0)
         // {
@@ -865,16 +434,10 @@ int main(int argc, char *argv[]) {
                 scan_3d = true;
                 apply_config = true;
                 // msg = "Starting 3D Scan";
-                publisher_node->set_msg(msg);
+                // publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
@@ -893,15 +456,10 @@ int main(int argc, char *argv[]) {
             }
             msg = "Calculating Rotations";
             publisher_node->set_msg(msg);
+
             // scan_3d = false;
             // apply_config = true;
             // publisher_node->set_scan_3d(scan_3d);
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
             // publisher_node->set_apply_config(apply_config);
             // rclcpp::sleep_for(std::chrono::milliseconds(100));
 
@@ -912,17 +470,20 @@ int main(int argc, char *argv[]) {
             }
             auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
-            z_height = subscriber_node->z_height();
+
             msg = std::format("Center: {}", center[1]);
             publisher_node->set_msg(msg.c_str());
             RCLCPP_INFO(logger, "center: %f", center[1]);
+
             rotmat_eigen = align_to_direction(boundbox.R_);
+
             tf2::Matrix3x3 rotmat_tf(
                 rotmat_eigen(0, 0), rotmat_eigen(0, 1), rotmat_eigen(0, 2),
                 rotmat_eigen(1, 0), rotmat_eigen(1, 1), rotmat_eigen(1, 2),
                 rotmat_eigen(2, 0), rotmat_eigen(2, 1), rotmat_eigen(2, 2));
             RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
                                            << rotmat_eigen);
+
             double tmp_roll;
             double tmp_pitch;
             double tmp_yaw;
@@ -935,6 +496,7 @@ int main(int argc, char *argv[]) {
                             to_degree(roll), to_degree(pitch), to_degree(yaw));
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
+
             rotmat_tf.setRPY(roll, pitch, yaw);
 
             if (tol_measure(roll, pitch, angle_tolerance)) {
@@ -943,15 +505,15 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 scan_3d = false;
                 apply_config = true;
-                publisher_node->set_scan_3d(scan_3d);
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_scan_3d(scan_3d);
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
 
             if (angle_focused && !z_focused) {
