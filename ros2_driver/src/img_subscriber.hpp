@@ -13,6 +13,7 @@ public:
 
 private:
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg);
+    void timerCallback();
 
     const int width_ = 500;
     const int height_ = 512;
@@ -25,6 +26,8 @@ private:
 
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr subscription_;
     rclcpp::QoS best_effort;
+
+    rclcpp::TimerBase::SharedPtr timer_;
 };
 
 #endif // IMG_SUBSCRIBER_HPP_
