@@ -1,7 +1,7 @@
 #include <atomic>
 #include <csignal>
 #include <memory>
-#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/move_group_interface/move_group_interface.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <geometry_msgs/msg/quaternion.hpp>
@@ -23,6 +23,71 @@ void signal_handler(int signum) {
 }
 
 double to_radian(double angle) { return (std::numbers::pi / 180 * angle); }
+
+void test_plan(auto const& logger, auto& move_group_interface, int xpos, int ypos, int zpos, int r, int p, int y) {
+    geometry_msgs::msg::Pose target_pose =
+        move_group_interface.getCurrentPose().pose;
+
+    RCLCPP_INFO(
+        logger,
+        std::format(
+            "[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+            target_pose.position.x, target_pose.position.y,
+            target_pose.position.z, target_pose.orientation.x,
+            target_pose.orientation.y, target_pose.orientation.z,
+            target_pose.orientation.w)
+            .c_str());
+
+    target_pose.position.x += xpos;
+    target_pose.position.y += ypos;
+    target_pose.position.z += zpos;
+
+    tf2::Quaternion q;
+    tf2::Quaternion target_q;
+    q.setRPY(to_radian(r),to_radian(p),to_radian(y));
+    q.normalize();
+    tf2::fromMsg(target_pose.orientation, target_q);
+    target_q = target_q * q;
+    target_pose.orientation = tf2::toMsg(target_q);
+
+    // target_pose.orientation.x = -0.7071068;
+    // target_pose.orientation.y = 0.7071068;
+    // target_pose.orientation.z = 0.0;
+    // target_pose.orientation.w = 0.0;
+    // target_pose.position.x = 0.4;
+    // target_pose.position.y = 0.0;
+    // target_pose.position.z = 0.0;
+
+    move_group_interface.setPoseTarget(target_pose);
+    // move_group_interface.setPoseTarget(target_pose, reference_frame);
+
+    RCLCPP_INFO(
+        logger,
+        std::format(
+            "[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
+            target_pose.position.x, target_pose.position.y,
+            target_pose.position.z, target_pose.orientation.x,
+            target_pose.orientation.y, target_pose.orientation.z,
+            target_pose.orientation.w)
+            .c_str());
+
+    if (running) {
+        auto const [success, plan] = [&move_group_interface] {
+            moveit::planning_interface::MoveGroupInterface::Plan msg;
+            auto const ok = static_cast<bool>(move_group_interface.plan(msg));
+            return std::make_pair(ok, msg);
+        }();
+
+        if (success && running) {
+            move_group_interface.execute(plan);
+        } else if (!running) {
+            RCLCPP_INFO(logger, "Execution was cancelled!");
+        } else {
+            RCLCPP_ERROR(logger, "Planning failed!");
+        }
+    }
+    move_group_interface.setStartStateToCurrentState();
+}
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
@@ -69,67 +134,12 @@ int main(int argc, char *argv[]) {
     // geometry_msgs::msg::Pose target_pose =
     //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    geometry_msgs::msg::Pose target_pose =
-        move_group_interface.getCurrentPose().pose;
-
-    RCLCPP_INFO(
-        logger,
-        std::format(
-            "[Current Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
-            target_pose.position.x, target_pose.position.y,
-            target_pose.position.z, target_pose.orientation.x,
-            target_pose.orientation.y, target_pose.orientation.z,
-            target_pose.orientation.w)
-            .c_str());
-
-    target_pose.position.x += 0;
-    target_pose.position.y += 0;
-    target_pose.position.z += 0;
-
-    tf2::Quaternion q;
-    tf2::Quaternion target_q;
-    q.setRPY(to_radian(0),to_radian(0),to_radian(300));
-    q.normalize();
-    tf2::fromMsg(target_pose.orientation, target_q);
-    target_q = target_q * q;
-    target_pose.orientation = tf2::toMsg(target_q);
-
-    // target_pose.orientation.x = -0.7071068;
-    // target_pose.orientation.y = 0.7071068;
-    // target_pose.orientation.z = 0.0;
-    // target_pose.orientation.w = 0.0;
-    // target_pose.position.x = 0.4;
-    // target_pose.position.y = 0.0;
-    // target_pose.position.z = 0.0;
-
-    move_group_interface.setPoseTarget(target_pose);
-    // move_group_interface.setPoseTarget(target_pose, reference_frame);
-
-    RCLCPP_INFO(
-        logger,
-        std::format(
-            "[Target Position] x: {}, y:{}, z:{}, qx:{}, qy:{}, qz:{}, qw:{}",
-            target_pose.position.x, target_pose.position.y,
-            target_pose.position.z, target_pose.orientation.x,
-            target_pose.orientation.y, target_pose.orientation.z,
-            target_pose.orientation.w)
-            .c_str());
-
-    if (running) {
-        auto const [success, plan] = [&move_group_interface] {
-            moveit::planning_interface::MoveGroupInterface::Plan msg;
-            auto const ok = static_cast<bool>(move_group_interface.plan(msg));
-            return std::make_pair(ok, msg);
-        }();
-
-        if (success && running) {
-            move_group_interface.execute(plan);
-        } else if (!running) {
-            RCLCPP_INFO(logger, "Execution was cancelled!");
-        } else {
-            RCLCPP_ERROR(logger, "Planning failed!");
-        }
-    }
+    test_plan(logger, move_group_interface, 0, 0, 1.0, 0, 0, 30);
+    test_plan(logger, move_group_interface, 0, 0, -1.0, 0, 0, -30);
+    test_plan(logger, move_group_interface, 1.0, 0, 0, 30, 0, 0);
+    test_plan(logger, move_group_interface, -1.0, 0, 0, -30, 0, 0);
+    test_plan(logger, move_group_interface, 0, 1.0, 0, 0, 30, 0);
+    test_plan(logger, move_group_interface, 0, -1.0, 0, 0, -30, 0);
 
     rclcpp::shutdown();
     return 0;

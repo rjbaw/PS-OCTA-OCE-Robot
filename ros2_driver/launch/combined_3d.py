@@ -8,7 +8,7 @@ from launch_ros.parameter_descriptions import ParameterFile
 from launch_ros.substitutions import FindPackageShare
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler, Shutdown
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -373,28 +373,28 @@ def launch_setup():
         arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
     )
 
-    #moveit_config = (
-    #    MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
-    #    .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-    #    
-    #    .to_moveit_configs()
-    #)
+    # planning_yaml = load_yaml(package_name="octa_ros", file_path="ompl_planning.yaml")
+    # moveit_config = (
+    #     MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
+    #     #.robot_description(Path("urdf") / "ur.urdf.xacro")
+    #     #.robot_description(mappings={"robot_description": robot_description_content})
+    #     .robot_description()
+    #     .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
+    #     .robot_description_kinematics(file_path="config/kinematics.yaml")
+    #     .trajectory_execution(file_path="config/moveit_controllers.yaml")
+    #     .planning_pipelines(pipelines=planning_yaml)
+    #     .planning_scene_monitor(
+    #         publish_robot_description=True,
+    #         publish_robot_description_semantic=True
+    #     )
+    #     .sensors_3d()
+    #     .to_moveit_configs()
+    # )
 
-    planning_yaml = load_yaml(package_name="octa_ros", file_path="ompl_planning.yaml")
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
-        #.robot_description(Path("urdf") / "ur.urdf.xacro")
-        #.robot_description(mappings={"robot_description": robot_description_content})
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-        .robot_description_kinematics(file_path="config/kinematics.yaml")
-        .trajectory_execution(file_path="config/moveit_controllers.yaml")
-        .planning_pipelines(pipelines=planning_yaml)
-        .planning_scene_monitor(
-            publish_robot_description=True,
-            publish_robot_description_semantic=True
-        )
-        .sensors_3d()
         .to_moveit_configs()
     )
 
@@ -458,8 +458,6 @@ def launch_setup():
         executable="joint_state_listener",
         name="joint_state_listener",
         output="screen",
-        respawn=True,
-        respawn_delay=5,
     )
 
     octa_node = Node(
@@ -476,8 +474,6 @@ def launch_setup():
             moveit_config.joint_limits,
             warehouse_ros_config,
         ],
-        respawn=True,
-        respawn_delay=5,
     )
 
     nodes_after_driver = RegisterEventHandler(
@@ -492,6 +488,32 @@ def launch_setup():
             ]
         )
     )
+
+    robot_state_exit_handler = RegisterEventHandler(
+        OnProcessExit(
+            target_action=robot_state_node,
+            on_exit=[Shutdown()]
+        )
+    )
+    move_group_exit_handler = RegisterEventHandler(
+        OnProcessExit(
+            target_action=move_group_node,
+            on_exit=[Shutdown()]
+        )
+    )
+    servo_exit_handler = RegisterEventHandler(
+        OnProcessExit(
+            target_action=servo_node,
+            on_exit=[Shutdown()]
+        )
+    )
+    octa_handler = RegisterEventHandler(
+        OnProcessExit(
+            target_action=octa_node,
+            on_exit=[Shutdown()]
+        )
+    )
+
     nodes_to_start = [
         control_node,
         dashboard_client_node,
@@ -503,7 +525,13 @@ def launch_setup():
         initial_joint_controller_spawner_stopped,
         initial_joint_controller_spawner_started,
         wait_robot_description,
-    ] + controller_spawners + [nodes_after_driver]
+    ] + controller_spawners + [nodes_after_driver] + \
+    [
+        robot_state_exit_handler,
+        move_group_exit_handler,
+        servo_exit_handler,
+        octa_handler
+    ]
 
     return nodes_to_start
 

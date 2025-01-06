@@ -114,6 +114,20 @@ target_link_libraries(rot_cal "${cpp_typesupport_target}" "${OpenCV_LIBS}"
 add_executable(test_detect src/test_detect.cpp)
 target_link_libraries(test_detect ${OpenCV_LIBS})
 
+
+# add_executable(img_subscriber src/img_subscriber.cpp)
+# ament_target_dependencies(
+#   img_subscriber
+#   rclcpp
+#   std_msgs
+#   OpenCV
+#   Eigen3)
+# target_link_libraries(
+#   octa_ctrl
+#   "${cpp_typesupport_target}"
+#   "${OpenCV_LIBS}"
+#   Eigen3::Eigen)
+
 # add_executable(img_subscriber src/img_subscriber.cpp)
 # ament_target_dependencies(
 #   img_subscriber

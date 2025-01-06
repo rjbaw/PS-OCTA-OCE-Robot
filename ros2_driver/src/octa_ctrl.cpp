@@ -773,6 +773,8 @@ int main(int argc, char *argv[]) {
         num_pt = subscriber_node->num_pt();
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
+        robot_vel = 0.1;
+        robot_acc = 0.1;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -786,8 +788,8 @@ int main(int argc, char *argv[]) {
             urscript_node->deactivate_freedrive();
         }
 
-        //move_group_interface.setMaxVelocityScalingFactor(robot_vel);
-        //move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
+        move_group_interface.setMaxVelocityScalingFactor(robot_vel);
+        move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
 
         // current_state = move_group_interface.getCurrentState(10.0);
@@ -954,8 +956,7 @@ int main(int argc, char *argv[]) {
 
             if (angle_focused && !z_focused) {
                 // dz = 0;
-                // dz = -(center[1] - z_height) / 150 * 1.2 / 1000.0;
-                dz = (z_height - center[1]) / (256.0 * 1000.0);
+                dz = (z_height - center[1]) / (1000.0);
                 msg += std::format("\ndz = {}", dz).c_str();
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
