@@ -667,11 +667,12 @@ int main(int argc, char *argv[]) {
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
                 success = move_to_target(move_group_interface, logger);
-                // if (!success) {
-                //     msg = std::format("Angle Focus Planning Failed!");
-                //     publisher_node->set_msg(msg);
-                //     RCLCPP_ERROR(logger, msg.c_str());
-                // }
+                if (!success) {
+                    // msg = std::format("Angle Focus Planning Failed!");
+                    msg = "Angle Focus Planning Failed!";
+                    publisher_node->set_msg(msg);
+                    RCLCPP_ERROR(logger, msg.c_str());
+                }
             }
 
             if (angle_focused && z_focused) {
@@ -717,27 +718,28 @@ int main(int argc, char *argv[]) {
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
                 success = move_to_target(move_group_interface, logger);
-                // if (success) {
-                //     msg = "Planning Success!";
-                //     RCLCPP_INFO(logger, msg.c_str());
-                //     if (next) {
-                //         angle += angle_increment;
-                //         circle_state++;
-                //     }
-                //     if (previous) {
-                //         angle -= angle_increment;
-                //         circle_state--;
-                //     }
-                //     if (home) {
-                //         circle_state = 1;
-                //         angle = 0.0;
-                //     }
-                // } else {
-                //     msg = std::format("Z-axis Rotation Planning Failed! "
-                //                       "\nAttempt[{}] Retrying....");
-                //     RCLCPP_ERROR(logger, msg.c_str());
-                //     publisher_node->set_msg(msg);
-                // }
+                if (success) {
+                    msg = "Planning Success!";
+                    RCLCPP_INFO(logger, msg.c_str());
+                    if (next) {
+                        angle += angle_increment;
+                        circle_state++;
+                    }
+                    if (previous) {
+                        angle -= angle_increment;
+                        circle_state--;
+                    }
+                    if (home) {
+                        circle_state = 1;
+                        angle = 0.0;
+                    }
+                } else {
+                    // msg = std::format("Z-axis Rotation Planning Failed! "
+                    //                   "\nAttempt[{}] Retrying....");
+                    msg = "Z-axis Rotation Planning Failed!";
+                    RCLCPP_ERROR(logger, msg.c_str());
+                    publisher_node->set_msg(msg);
+                }
             }
         }
 
@@ -758,10 +760,10 @@ int main(int argc, char *argv[]) {
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
         }
-
-        executor.cancel();
-        spinner.join();
-        rclcpp::shutdown();
-        return 0;
     }
+
+    executor.cancel();
+    spinner.join();
+    rclcpp::shutdown();
+    return 0;
 }
