@@ -15,12 +15,12 @@
 #include <thread>
 #include <vector>
 
-#include <rclcpp/rclcpp.hpp>
 #include "dds_publisher.hpp"
 #include "dds_subscriber.hpp"
-#include "urscript_publisher.hpp"
 #include "img_subscriber.hpp"
+#include "urscript_publisher.hpp"
 #include "utils.hpp"
+#include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
@@ -244,184 +244,134 @@ bool move_to_target(auto &move_group_interface, auto &logger) {
 
 /// reconnect
 
-// #include <memory>
-// #include <chrono>
-
-// #include "rclcpp/rclcpp.hpp"
-// #include "rclcpp_action/rclcpp_action.hpp"
-
-// // The SetMode action definition from the UR driver (package name might differ)
-// #include "ur_dashboard_msgs/action/set_mode.hpp"
-
-// // Commonly used enumerations (adapt if your driver differs)
-// static const int8_t POWER_OFF = 3;
-// static const int8_t POWER_ON  = 4;
-// static const int8_t RUNNING   = 7;
-
-// using SetMode = ur_dashboard_msgs::action::SetMode;
-// using GoalHandleSetMode = rclcpp_action::ClientGoalHandle<SetMode>;
-
-// class SetModeActionClient : public rclcpp::Node
-// {
-// public:
-//   SetModeActionClient() : Node("set_mode_action_client")
-//   {
-//     // Adjust the action name if your driver uses a different topic
-//     client_ = rclcpp_action::create_client<SetMode>(this, "/dashboard_client/set_mode");
-//   }
-
-//   void send_goal(int8_t target_mode, bool stop_program = false, bool play_program = false)
-//   {
-//     // Wait until the action server is available
-//     if (!client_->wait_for_action_server(std::chrono::seconds(5))) {
-//       RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
-//       return;
+// class SetModeActionClient : public rclcpp::Node {
+//   public:
+//     SetModeActionClient() : Node("set_mode_action_client") {
+//         // Adjust the action name if your driver uses a different topic
+//         client_ = rclcpp_action::create_client<SetMode>(
+//             this, "/dashboard_client/set_mode");
 //     }
 
-//     // Create a goal
-//     auto goal_msg = SetMode::Goal();
-//     goal_msg.target_robot_mode = target_mode;
-//     goal_msg.stop_program = stop_program;
-//     goal_msg.play_program = play_program;
+//     void send_goal(int8_t target_mode, bool stop_program = false,
+//                    bool play_program = false) {
+//         // Wait until the action server is available
+//         if (!client_->wait_for_action_server(std::chrono::seconds(5))) {
+//       RCLCPP_ERROR(this->get_logger(), "Action server not available after
+//       waiting"); return;
+//         }
 
-//     RCLCPP_INFO(this->get_logger(), "Sending goal: target_mode=%d stop_program=%s play_program=%s",
-//                 target_mode, stop_program ? "true" : "false", play_program ? "true" : "false");
+//         // Create a goal
+//         auto goal_msg = SetMode::Goal();
+//         goal_msg.target_robot_mode = target_mode;
+//         goal_msg.stop_program = stop_program;
+//         goal_msg.play_program = play_program;
 
-//     // Send goal
-//     auto send_goal_options = rclcpp_action::Client<SetMode>::SendGoalOptions();
-//     send_goal_options.feedback_callback =
-//       std::bind(&SetModeActionClient::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
-//     send_goal_options.result_callback =
-//       std::bind(&SetModeActionClient::result_callback, this, std::placeholders::_1);
+//         RCLCPP_INFO(this->get_logger(),
+//                     "Sending goal: target_mode=%d
+//                     stop_program = % s play_program = % s ",
+//                                                       target_mode,
+//                     stop_program ? "true" : "false",
+//                     play_program ? "true" : "false");
 
-//     client_->async_send_goal(goal_msg, send_goal_options);
-//   }
+//         // Send goal
+//         auto send_goal_options =
+//             rclcpp_action::Client<SetMode>::SendGoalOptions();
+//         send_goal_options.feedback_callback =
+//             std::bind(&SetModeActionClient::feedback_callback, this,
+//                       std::placeholders::_1, std::placeholders::_2);
+//         send_goal_options.result_callback = std::bind(
+//             &SetModeActionClient::result_callback, this,
+//             std::placeholders::_1);
 
-// private:
-//   void feedback_callback(
-//     GoalHandleSetMode::SharedPtr,
-//     const std::shared_ptr<const SetMode::Feedback> feedback)
-//   {
-//     RCLCPP_INFO(this->get_logger(),
-//                 "Feedback - current_robot_mode: %d, current_safety_mode: %d",
-//                 feedback->current_robot_mode, feedback->current_safety_mode);
-//   }
-
-//   void result_callback(const GoalHandleSetMode::WrappedResult &result)
-//   {
-//     switch (result.code) {
-//       case rclcpp_action::ResultCode::SUCCEEDED:
-//         RCLCPP_INFO(this->get_logger(), "Result received: success=%s, message=%s",
-//                     result.result->success ? "true" : "false",
-//                     result.result->message.c_str());
-//         break;
-//       case rclcpp_action::ResultCode::ABORTED:
-//         RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
-//         break;
-//       case rclcpp_action::ResultCode::CANCELED:
-//         RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
-//         break;
-//       default:
-//         RCLCPP_ERROR(this->get_logger(), "Unknown result code");
-//         break;
+//         client_->async_send_goal(goal_msg, send_goal_options);
 //     }
-//   }
 
-//   rclcpp_action::Client<SetMode>::SharedPtr client_;
+//   private:
+//     void
+//     feedback_callback(GoalHandleSetMode::SharedPtr,
+//                       const std::shared_ptr<const SetMode::Feedback>
+//                       feedback) {
+//         RCLCPP_INFO(
+//             this->get_logger(),
+//             "Feedback - current_robot_mode: %d, current_safety_mode: %d",
+//             feedback->current_robot_mode, feedback->current_safety_mode);
+//     }
+
+//     void result_callback(const GoalHandleSetMode::WrappedResult &result) {
+//         switch (result.code) {
+//         case rclcpp_action::ResultCode::SUCCEEDED:
+//             RCLCPP_INFO(this->get_logger(),
+//                         "Result received: success=%s,
+//                         message = % s ",
+//                                           result.result->success
+//                                       ? "true"
+//                                       : "false",
+//                         result.result->message.c_str());
+//             break;
+//         case rclcpp_action::ResultCode::ABORTED:
+//             RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+//             break;
+//         case rclcpp_action::ResultCode::CANCELED:
+//             RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
+//             break;
+//         default:
+//             RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+//             break;
+//         }
+//     }
+
+//     rclcpp_action::Client<SetMode>::SharedPtr client_;
 // };
-
-// int main(int argc, char** argv)
-// {
-//   rclcpp::init(argc, argv);
-//   auto node = std::make_shared<SetModeActionClient>();
-
-//   // 1) Power ON
-//   RCLCPP_INFO(node->get_logger(), "Requesting POWER_ON...");
-//   node->send_goal(POWER_ON);
-
-//   // Wait a bit for the action to complete
-//   // (Alternatively, you could spin or spin_once until the result arrives)
-//   rclcpp::spin_some(node);
-//   std::this_thread::sleep_for(std::chrono::seconds(4)); // just a small delay
-
-//   // 2) Now set the robot to RUNNING (External Control)
-//   RCLCPP_INFO(node->get_logger(), "Requesting RUNNING...");
-//   // Typically set stop_program=true to ensure no leftover motion resumes
-//   node->send_goal(RUNNING, /*stop_program=*/true, /*play_program=*/false);
-
-//   rclcpp::spin(node);
-//   rclcpp::shutdown();
-//   return 0;
-// }
-// #include <memory>
-// #include <chrono>
 
 // #include "rclcpp/rclcpp.hpp"
 // #include "ur_dashboard_msgs/srv/get_robot_mode.hpp"
 
-// using namespace std::chrono_literals;
+// static const int8_t POWER_OFF = 3;
+// static const int8_t POWER_ON = 4;
+// static const int8_t RUNNING = 7;
 
-// class GetRobotModeClient : public rclcpp::Node
-// {
-// public:
-//   GetRobotModeClient() : Node("get_robot_mode_client")
-//   {
-//     // Create a client for the get_robot_mode service
-//     client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>("/dashboard_client/get_robot_mode");
-//   }
+// using SetMode = ur_dashboard_msgs::action::SetMode;
+// using GoalHandleSetMode = rclcpp_action::ClientGoalHandle<SetMode>;
 
-//   void callService()
-//   {
-//     // Wait until the service is available
-//     if (!client_->wait_for_service(5s))
-//     {
-//       RCLCPP_ERROR(this->get_logger(), "Service /dashboard_client/get_robot_mode not available");
-//       return;
+// class GetRobotModeClient : public rclcpp::Node {
+//   public:
+//     GetRobotModeClient() : Node("get_robot_mode_client") {
+//         client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>(
+//             "/dashboard_client/get_robot_mode");
 //     }
 
-//     // Prepare an empty request (no fields in GetRobotMode.srv)
-//     auto request = std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
-
-//     // Call the service
-//     auto future_result = client_->async_send_request(request);
-
-//     // Option 1: Wait for the result synchronously
-//     // (In many cases, you might spin or use a callback instead.)
-//     if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), future_result, 5s)
-//         == rclcpp::FutureReturnCode::SUCCESS)
-//     {
-//       auto response = future_result.get();
-//       if (response->success)
-//       {
-//         RCLCPP_INFO(this->get_logger(), "Robot mode: %d, answer: %s", response->mode, response->answer.c_str());
-//       }
-//       else
-//       {
-//         RCLCPP_WARN(this->get_logger(), "Service call succeeded but reported failure: %s",
-//                     response->answer.c_str());
-//       }
+//     void callService() {
+//         if (!client_->wait_for_service(5s)) {
+//       RCLCPP_ERROR(this->get_logger(), "Service
+//       /dashboard_client/get_robot_mode not available"); return;
+//         }
+//         auto request =
+//             std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
+//         auto future_result = client_->async_send_request(request);
+//         if
+//         (rclcpp::spin_until_future_complete(this->get_node_base_interface(),
+//                                                future_result, 5s) ==
+//             rclcpp::FutureReturnCode::SUCCESS) {
+//             auto response = future_result.get();
+//             if (response->success) {
+//                 RCLCPP_INFO(this->get_logger(), "Robot mode: %d, answer: %s",
+//                             response->mode, response->answer.c_str());
+//             } else {
+//                 RCLCPP_WARN(this->get_logger(),
+//                             "Service call succeeded but reported
+//                                 failure : %
+//                                 s ",
+//                                 response->answer.c_str());
+//             }
+//         } else {
+//       RCLCPP_ERROR(this->get_logger(), "Failed to call get_robot_mode
+//       service");
+//         }
 //     }
-//     else
-//     {
-//       RCLCPP_ERROR(this->get_logger(), "Failed to call get_robot_mode service");
-//     }
-//   }
 
-// private:
-//   rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
+//   private:
+//     rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
 // };
-
-// int main(int argc, char **argv)
-// {
-//   rclcpp::init(argc, argv);
-//   auto node = std::make_shared<GetRobotModeClient>();
-
-//   // Invoke the service call
-//   node->callService();
-
-//   rclcpp::shutdown();
-//   return 0;
-// }
 
 /// reconnect
 
@@ -489,21 +439,6 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
-    // moveit_msgs::msg::Constraints path_constr;
-    // moveit_msgs::msg::OrientationConstraint ocm;
-    // ocm.link_name = "tcp";
-    // ocm.header.frame_id = "base_link";
-    // double x_tol = 3.00;
-    // double y_tol = 3.00;
-    // double z_tol = 3.00;
-    // double path_enforce = 1.0;
-    // ocm.absolute_x_axis_tolerance = x_tol;
-    // ocm.absolute_y_axis_tolerance = y_tol;
-    // ocm.absolute_z_axis_tolerance = z_tol;
-    // ocm.weight = path_enforce;
-    // path_constr.orientation_constraints.push_back(ocm);
-    // move_group_interface.setPathConstraints(path_constr);
-
     int attempt = 0;
     int max_attempt = 5;
 
@@ -516,6 +451,15 @@ int main(int argc, char *argv[]) {
     std::thread spinner([&executor]() { executor.spin(); });
 
     add_collision_obj(move_group_interface);
+
+    move_group_interface.setPlanningTime(20.0);
+    move_group_interface.setNumPlanningAttempts(30);
+    move_group_interface.setPlanningPipelineId("stomp");
+
+    // auto robot_mode_node = std::make_shared<GetRobotModeClient>();
+    // auto robot_set_node = std::make_shared<SetModeActionClient>();
+    // RCLCPP_INFO(node->get_logger(), "Requesting POWER_ON...");
+    // node->send_goal(POWER_ON);
 
     while (rclcpp::ok() && running) {
 
@@ -540,6 +484,17 @@ int main(int argc, char *argv[]) {
         robot_vel = 0.1;
         robot_acc = 0.1;
 
+        // if (!robot_mode_node->callService()) {
+        //     RCLCPP_INFO(node->get_logger(), "Requesting RUNNING...");
+        //     node->send_goal(RUNNING, /*stop_program=*/true,
+        //                     /*play_program=*/false);
+        //     trigger_client = this->create_client<std_srvs::srv::Trigger>(
+        //         "/io_and_status_controller/resend_robot_program");
+        //     auto request =
+        //     std::make_shared<std_srvs::srv::Trigger::Request>(); auto future
+        //     = trigger_client->async_send_request(request);
+        // };
+
         if (subscriber_node->freedrive()) {
             circle_state = 1;
             angle = 0.0;
@@ -555,14 +510,6 @@ int main(int argc, char *argv[]) {
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
-
-        // if (x_tol > 3.0 || y_tol > 3.0 || z_tol > 3.0 || path_enforce <= 0.0)
-        // {
-        //     end_state = true;
-        //     msg = "Unrecoverable Error. Please restart";
-        //     publisher_node->set_msg(msg);
-        //     publisher_node->set_end_state(end_state);
-        // }
 
         if (subscriber_node->reset()) {
             angle = 0.0;
@@ -584,35 +531,13 @@ int main(int argc, char *argv[]) {
                                                      to_radian(-90.0));
             move_group_interface.setJointValueTarget("wrist_3_joint",
                                                      to_radian(-135.0));
-            attempt = 0;
-            success = false;
-            while (!success && (attempt < max_attempt)) {
-                success = move_to_target(move_group_interface, logger);
-                if (!success) {
-                    msg = std::format(
-                        "Reset Planning Failed! \nAttempt[{}] Retrying....",
-                        attempt);
-                    publisher_node->set_msg(msg);
-                    // x_tol += 0.1;
-                    // y_tol += 0.1;
-                    // z_tol += 0.1;
-                    // path_enforce -= 0.1;
-                    // ocm.absolute_x_axis_tolerance = x_tol;
-                    // ocm.absolute_y_axis_tolerance = y_tol;
-                    // ocm.absolute_z_axis_tolerance = z_tol;
-                    // ocm.weight = path_enforce;
-                    // path_constr.orientation_constraints.clear();
-                    // path_constr.orientation_constraints.push_back(ocm);
-                    // move_group_interface.setPathConstraints(path_constr);
-                }
-                attempt++;
-            }
-            if (!success) {
-                msg = std::format(
-                    "Reset Planning Failed! Maximum Attempts Reached", attempt);
-                publisher_node->set_msg(msg);
-                RCLCPP_ERROR(logger, msg.c_str());
-            }
+
+            success = move_to_target(move_group_interface, logger);
+            // if (!success) {
+            //     msg = std::format("Reset Planning Failed!");
+            //     publisher_node->set_msg(msg);
+            //     RCLCPP_ERROR(logger, msg.c_str());
+            // }
         }
 
         if (subscriber_node->autofocus()) {
@@ -621,11 +546,12 @@ int main(int argc, char *argv[]) {
             if (!scan_3d) {
                 scan_3d = true;
                 apply_config = true;
-                // msg = "Starting 3D Scan";
-                // publisher_node->set_msg(msg);
+                msg = "Starting 3D Scan";
+                RCLCPP_INFO(logger, msg.c_str());
+                publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
@@ -644,6 +570,7 @@ int main(int argc, char *argv[]) {
             }
             msg = "Calculating Rotations";
             publisher_node->set_msg(msg);
+            RCLCPP_INFO(logger, msg.c_str());
 
             // scan_3d = false;
             // apply_config = true;
@@ -658,11 +585,10 @@ int main(int argc, char *argv[]) {
             }
             auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
-
-            msg = std::format("Center: {}", center[1]);
-            publisher_node->set_msg(msg.c_str());
-            RCLCPP_INFO(logger, "center: %f", center[1]);
-
+            msg += std::format("\n[Center] x:{} y:{} z:{}", center[0],
+                               center[1], center[2]);
+            publisher_node->set_msg(msg);
+            RCLCPP_INFO(logger, msg.c_str());
             rotmat_eigen = align_to_direction(boundbox.R_);
 
             tf2::Matrix3x3 rotmat_tf(
@@ -672,6 +598,7 @@ int main(int argc, char *argv[]) {
             RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
                                            << rotmat_eigen);
 
+            /// temporary fix for swapped axis ///
             double tmp_roll;
             double tmp_pitch;
             double tmp_yaw;
@@ -679,81 +606,50 @@ int main(int argc, char *argv[]) {
             roll = tmp_yaw;
             pitch = tmp_roll;
             yaw = tmp_pitch;
-            msg =
-                std::format("Calculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
-                            to_degree(roll), to_degree(pitch), to_degree(yaw));
-            RCLCPP_INFO(logger, msg.c_str());
-            publisher_node->set_msg(msg);
-
             rotmat_tf.setRPY(roll, pitch, yaw);
+            ///////////////////////
+
+            msg +=
+                std::format("\nCalculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
+                            to_degree(roll), to_degree(pitch), to_degree(yaw));
+            publisher_node->set_msg(msg);
+            RCLCPP_INFO(logger, msg.c_str());
 
             if (tol_measure(roll, pitch, angle_tolerance)) {
                 angle_focused = true;
                 msg += "\nAngle focused";
                 publisher_node->set_msg(msg);
+                RCLCPP_INFO(logger, msg.c_str());
                 scan_3d = false;
                 apply_config = true;
-                // publisher_node->set_scan_3d(scan_3d);
-                // publisher_node->set_apply_config(apply_config);
-                // rclcpp::sleep_for(std::chrono::milliseconds(100));
-                // publisher_node->set_apply_config(apply_config);
-                // rclcpp::sleep_for(std::chrono::milliseconds(100));
-                // publisher_node->set_apply_config(apply_config);
-                // rclcpp::sleep_for(std::chrono::milliseconds(100));
-                // publisher_node->set_apply_config(apply_config);
-                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_scan_3d(scan_3d);
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
 
             if (angle_focused && !z_focused) {
                 // dz = 0;
                 dz = (z_height - center[1]) / (1000.0);
-                msg += std::format("\ndz = {}", dz).c_str();
+                msg += std::format("\ndz = {}", dz);
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
                 if (std::abs(dz) < (z_tolerance / 1000.0)) {
                     z_focused = true;
                     msg += "\nHeight focused";
                     publisher_node->set_msg(msg);
+                    RCLCPP_INFO(logger, msg.c_str());
                 } else {
                     planning = true;
                     target_pose = move_group_interface.getCurrentPose().pose;
                     target_pose.position.z += dz;
                     print_target(logger, target_pose);
                     move_group_interface.setPoseTarget(target_pose);
-                    attempt = 0;
-                    success = false;
-                    while (!success && (attempt < max_attempt)) {
-                        success = move_to_target(move_group_interface, logger);
-                        if (success) {
-                            RCLCPP_INFO(logger, msg.c_str());
-                        } else {
-                            msg = std::format("Z-height Planning Failed! "
-                                              "\nAttempt[{}] Retrying....",
-                                              attempt);
-                            RCLCPP_ERROR(logger, msg.c_str());
-                            publisher_node->set_msg(msg);
-                            // x_tol += 0.1;
-                            // y_tol += 0.1;
-                            // z_tol += 0.1;
-                            // path_enforce -= 0.1;
-                            // ocm.absolute_x_axis_tolerance = x_tol;
-                            // ocm.absolute_y_axis_tolerance = y_tol;
-                            // ocm.absolute_z_axis_tolerance = z_tol;
-                            // ocm.weight = path_enforce;
-                            // path_constr.orientation_constraints.clear();
-                            // path_constr.orientation_constraints.push_back(ocm);
-                            // move_group_interface.setPathConstraints(
-                            //     path_constr);
-                        }
-                        attempt++;
-                    }
-                    if (!success) {
-                        msg = std::format("Z-height Planning Failed! Maximum "
-                                          "Attempts Reached",
-                                          attempt);
-                        publisher_node->set_msg(msg);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                    }
+                    success = move_to_target(move_group_interface, logger);
+                    // if (!success) {
+                    //     msg = std::format("Z-height Planning Failed!");
+                    //     RCLCPP_ERROR(logger, msg.c_str());
+                    //     publisher_node->set_msg(msg);
+                    // }
                 }
             }
 
@@ -770,29 +666,12 @@ int main(int argc, char *argv[]) {
                 target_pose.position.z += dz;
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
-
-                attempt = 0;
-                success = false;
-                while (!success && (attempt < max_attempt)) {
-                    success = move_to_target(move_group_interface, logger);
-                    if (success) {
-                        RCLCPP_INFO(logger, msg.c_str());
-                    } else {
-                        msg = std::format("Angle Focus Planning Failed! "
-                                          "\nAttempt[{}] Retrying....",
-                                          attempt);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                        publisher_node->set_msg(msg);
-                    }
-                    attempt++;
-                }
-                if (!success) {
-                    msg = std::format(
-                        "Angle Focus Planning Failed! Maximum Attempts Reached",
-                        attempt);
-                    publisher_node->set_msg(msg);
-                    RCLCPP_ERROR(logger, msg.c_str());
-                }
+                success = move_to_target(move_group_interface, logger);
+                // if (!success) {
+                //     msg = std::format("Angle Focus Planning Failed!");
+                //     publisher_node->set_msg(msg);
+                //     RCLCPP_ERROR(logger, msg.c_str());
+                // }
             }
 
             if (angle_focused && z_focused) {
@@ -809,7 +688,6 @@ int main(int argc, char *argv[]) {
                     rclcpp::sleep_for(std::chrono::milliseconds(50));
                 }
             }
-
         } else {
             angle_increment = angle_limit / num_pt;
             roll = 0.0, pitch = 0.0, yaw = 0.0;
@@ -838,52 +716,28 @@ int main(int argc, char *argv[]) {
                 target_pose.orientation = tf2::toMsg(target_q);
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
-
-                attempt = 0;
-                success = false;
-                while (!success && (attempt < max_attempt)) {
-                    success = move_to_target(move_group_interface, logger);
-                    if (success) {
-                        msg = "Planning Success!";
-                        RCLCPP_INFO(logger, msg.c_str());
-                        if (next) {
-                            angle += angle_increment;
-                            circle_state++;
-                        }
-                        if (previous) {
-                            angle -= angle_increment;
-                            circle_state--;
-                        }
-                        if (home) {
-                            circle_state = 1;
-                            angle = 0.0;
-                        }
-                    } else {
-                        msg = std::format("Z-axis Rotation Planning Failed! "
-                                          "\nAttempt[{}] Retrying....",
-                                          attempt);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                        publisher_node->set_msg(msg);
-                        // x_tol += 0.1;
-                        // y_tol += 0.1;
-                        // z_tol += 0.1;
-                        // path_enforce -= 0.1;
-                        // ocm.absolute_x_axis_tolerance = x_tol;
-                        // ocm.absolute_y_axis_tolerance = y_tol;
-                        // ocm.absolute_z_axis_tolerance = z_tol;
-                        // ocm.weight = path_enforce;
-                        // path_constr.orientation_constraints.push_back(ocm);
-                        // move_group_interface.setPathConstraints(path_constr);
-                    }
-                    attempt++;
-                }
-                if (!success) {
-                    msg = std::format("Z-axis Rotation Planning Failed! "
-                                      "Maximum Attempts Reached",
-                                      attempt);
-                    publisher_node->set_msg(msg);
-                    RCLCPP_ERROR(logger, msg.c_str());
-                }
+                success = move_to_target(move_group_interface, logger);
+                // if (success) {
+                //     msg = "Planning Success!";
+                //     RCLCPP_INFO(logger, msg.c_str());
+                //     if (next) {
+                //         angle += angle_increment;
+                //         circle_state++;
+                //     }
+                //     if (previous) {
+                //         angle -= angle_increment;
+                //         circle_state--;
+                //     }
+                //     if (home) {
+                //         circle_state = 1;
+                //         angle = 0.0;
+                //     }
+                // } else {
+                //     msg = std::format("Z-axis Rotation Planning Failed! "
+                //                       "\nAttempt[{}] Retrying....");
+                //     RCLCPP_ERROR(logger, msg.c_str());
+                //     publisher_node->set_msg(msg);
+                // }
             }
         }
 
@@ -904,10 +758,10 @@ int main(int argc, char *argv[]) {
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
         }
-    }
 
-    executor.cancel();
-    spinner.join();
-    rclcpp::shutdown();
-    return 0;
+        executor.cancel();
+        spinner.join();
+        rclcpp::shutdown();
+        return 0;
+    }
 }
