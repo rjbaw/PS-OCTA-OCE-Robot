@@ -12,4 +12,16 @@ response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
 
+planner_configs:
+  Chomp:
+    type: chomp_interface/CHOMPPlanner
+    smoothness_cost_weight: 10.0
+
+ur_manipulator:
+  default_planner_config: Chomp
+  planner_configs:
+    - Chomp
+  projection_evaluator: joints(shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint)
+
+start_state_max_bounds_error: 0.10
 ridge_factor: 0.01

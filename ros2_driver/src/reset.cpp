@@ -11,8 +11,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 std::atomic<bool> running(true);
-moveit::planning_interface::MoveGroupInterface *move_group_ptr =
-    nullptr; 
+moveit::planning_interface::MoveGroupInterface *move_group_ptr = nullptr;
 
 void signal_handler(int signum) {
     RCLCPP_INFO(rclcpp::get_logger("signal_handler"),
@@ -135,6 +134,7 @@ int main(int argc, char *argv[]) {
     move_group_interface.setPlanningTime(10.0);
     move_group_interface.setStartStateToCurrentState();
     move_group_ptr = &move_group_interface;
+    // move_group_interface.setPlanningPipelineId("stomp");
 
     geometry_msgs::msg::Pose target_pose =
         move_group_interface.getCurrentPose().pose;
@@ -149,29 +149,24 @@ int main(int argc, char *argv[]) {
             target_pose.orientation.w)
             .c_str());
 
+    move_group_interface.setJointValueTarget("shoulder_pan_joint",
+                                             to_radian(0.0));
+    move_group_interface.setJointValueTarget("shoulder_lift_joint",
+                                             -to_radian(60.0));
+    move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
+    move_group_interface.setJointValueTarget("wrist_1_joint",
+                                             to_radian(-120.0));
+    move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
+    move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
     while (running) {
-        move_group_interface.setJointValueTarget("shoulder_pan_joint",
-                                                 to_radian(0.0));
-        move_group_interface.setJointValueTarget("shoulder_lift_joint",
-                                                 -to_radian(60.0));
-        move_group_interface.setJointValueTarget("elbow_joint", to_radian(90.0));
-        move_group_interface.setJointValueTarget("wrist_1_joint",
-                                                 to_radian(-120.0));
-        move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
-        move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
-
-        auto const [success, plan] = [&move_group_interface] {
-            moveit::planning_interface::MoveGroupInterface::Plan msg;
-            auto const ok = static_cast<bool>(move_group_interface.plan(msg));
-            return std::make_pair(ok, msg);
-        }();
-
-        if (success && running) {
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        bool success = static_cast<bool>(move_group_interface.plan(plan));
+        if (success) {
             move_group_interface.execute(plan);
-        } else if (!running) {
-            RCLCPP_INFO(logger, "Execution was cancelled!");
+            break;
         } else {
             RCLCPP_ERROR(logger, "Planning failed!");
+            RCLCPP_INFO(logger, "Execution was cancelled!");
         }
     }
 

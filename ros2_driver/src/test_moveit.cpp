@@ -9,8 +9,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 std::atomic<bool> running(true);
-moveit::planning_interface::MoveGroupInterface *move_group_ptr =
-    nullptr;
+moveit::planning_interface::MoveGroupInterface *move_group_ptr = nullptr;
 
 void signal_handler(int signum) {
     RCLCPP_INFO(rclcpp::get_logger("signal_handler"),
@@ -24,7 +23,8 @@ void signal_handler(int signum) {
 
 double to_radian(double angle) { return (std::numbers::pi / 180 * angle); }
 
-void test_plan(auto const& logger, auto& move_group_interface, int xpos, int ypos, int zpos, int r, int p, int y) {
+void test_plan(auto const &logger, auto &move_group_interface, double xpos,
+               double ypos, double zpos, double r, double p, double y) {
     geometry_msgs::msg::Pose target_pose =
         move_group_interface.getCurrentPose().pose;
 
@@ -44,7 +44,7 @@ void test_plan(auto const& logger, auto& move_group_interface, int xpos, int ypo
 
     tf2::Quaternion q;
     tf2::Quaternion target_q;
-    q.setRPY(to_radian(r),to_radian(p),to_radian(y));
+    q.setRPY(to_radian(r), to_radian(p), to_radian(y));
     q.normalize();
     tf2::fromMsg(target_pose.orientation, target_q);
     target_q = target_q * q;
@@ -79,13 +79,21 @@ void test_plan(auto const& logger, auto& move_group_interface, int xpos, int ypo
         }();
 
         if (success && running) {
-            move_group_interface.execute(plan);
+            // Execute asynchronously
+            moveit::core::MoveItErrorCode exec_code =
+                move_group_interface.asyncExecute(plan);
+            if (exec_code != moveit::core::MoveItErrorCode::SUCCESS) {
+                RCLCPP_ERROR(logger, "Failed to start execution! Code: %d",
+                             exec_code.val);
+                return;
+            }
         } else if (!running) {
             RCLCPP_INFO(logger, "Execution was cancelled!");
         } else {
             RCLCPP_ERROR(logger, "Planning failed!");
         }
     }
+    rclcpp::sleep_for(std::chrono::milliseconds(3000));
     move_group_interface.setStartStateToCurrentState();
 }
 
@@ -108,19 +116,24 @@ int main(int argc, char *argv[]) {
 
     using moveit::planning_interface::MoveGroupInterface;
     auto move_group_interface = MoveGroupInterface(node, "ur_manipulator");
-    move_group_interface.setPlanningTime(10.0);
-    move_group_interface.setNumPlanningAttempts(5);
+    move_group_interface.setPlanningTime(20.0);
+    move_group_interface.setNumPlanningAttempts(20);
     move_group_interface.setStartStateToCurrentState();
 
-    RCLCPP_INFO(logger, "Planning Frame: %s", move_group_interface.getPlanningFrame().c_str());
+    move_group_interface.setPlanningPipelineId("stomp");
+    // move_group_interface.setPlannerId("Stomp");
+
+    RCLCPP_INFO(logger, "Planning Frame: %s",
+                move_group_interface.getPlanningFrame().c_str());
     auto current_state = move_group_interface.getCurrentState(10);
     if (!current_state) {
         RCLCPP_ERROR(logger, "Failed to get current robot state");
-        return 1; 
+        return 1;
     }
     if (!current_state->satisfiesBounds()) {
-        RCLCPP_ERROR(logger, "Current state is not within bounds, adjusting...");
-	current_state->enforceBounds();
+        RCLCPP_ERROR(logger,
+                     "Current state is not within bounds, adjusting...");
+        current_state->enforceBounds();
     }
     move_group_interface.setStartState(*current_state);
 
@@ -134,12 +147,19 @@ int main(int argc, char *argv[]) {
     // geometry_msgs::msg::Pose target_pose =
     //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    test_plan(logger, move_group_interface, 0, 0, 1.0, 0, 0, 30);
-    test_plan(logger, move_group_interface, 0, 0, -1.0, 0, 0, -30);
-    test_plan(logger, move_group_interface, 1.0, 0, 0, 30, 0, 0);
-    test_plan(logger, move_group_interface, -1.0, 0, 0, -30, 0, 0);
-    test_plan(logger, move_group_interface, 0, 1.0, 0, 0, 30, 0);
-    test_plan(logger, move_group_interface, 0, -1.0, 0, 0, -30, 0);
+    test_plan(logger, move_group_interface, 0, 0, 0, 0, 0, 45);
+    test_plan(logger, move_group_interface, 0, 0, 0, 0, 0, -45);
+    test_plan(logger, move_group_interface, 0, 0, 0, 45, 0, 0);
+    test_plan(logger, move_group_interface, 0, 0, 0, -45, 0, 0);
+    test_plan(logger, move_group_interface, 0, 0, 0, 0, 45, 0);
+    test_plan(logger, move_group_interface, 0, 0, 0, 0, -45, 0);
+
+    test_plan(logger, move_group_interface, 0, 0, 0.1, 0, 0, 0);
+    test_plan(logger, move_group_interface, 0, 0, -0.1, 0, 0, 0);
+    test_plan(logger, move_group_interface, 0.1, 0, 0, 0, 0, 0);
+    test_plan(logger, move_group_interface, -0.1, 0, 0, 0, 0, 0);
+    test_plan(logger, move_group_interface, 0, 0.1, 0, 0, 0, 0);
+    test_plan(logger, move_group_interface, 0, -0.1, 0, 0, 0, 0);
 
     rclcpp::shutdown();
     return 0;

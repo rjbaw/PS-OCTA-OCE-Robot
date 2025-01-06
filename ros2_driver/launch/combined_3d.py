@@ -391,10 +391,12 @@ def launch_setup():
     #     .to_moveit_configs()
     # )
 
+    # planner_yaml = load_yaml("octa_ros", "chomp_planning.yaml")
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
+        # .planning_pipelines(pipelines=planner_yaml)
         .to_moveit_configs()
     )
 
@@ -489,25 +491,13 @@ def launch_setup():
         )
     )
 
-    robot_state_exit_handler = RegisterEventHandler(
+    joint_listener_exit_handler = RegisterEventHandler(
         OnProcessExit(
             target_action=robot_state_node,
             on_exit=[Shutdown()]
         )
     )
-    move_group_exit_handler = RegisterEventHandler(
-        OnProcessExit(
-            target_action=move_group_node,
-            on_exit=[Shutdown()]
-        )
-    )
-    servo_exit_handler = RegisterEventHandler(
-        OnProcessExit(
-            target_action=servo_node,
-            on_exit=[Shutdown()]
-        )
-    )
-    octa_handler = RegisterEventHandler(
+    octa_exit_handler = RegisterEventHandler(
         OnProcessExit(
             target_action=octa_node,
             on_exit=[Shutdown()]
@@ -527,10 +517,8 @@ def launch_setup():
         wait_robot_description,
     ] + controller_spawners + [nodes_after_driver] + \
     [
-        robot_state_exit_handler,
-        move_group_exit_handler,
-        servo_exit_handler,
-        octa_handler
+        joint_listener_exit_handler,
+        octa_exit_handler
     ]
 
     return nodes_to_start

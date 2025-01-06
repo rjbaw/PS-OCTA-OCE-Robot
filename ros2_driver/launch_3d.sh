@@ -24,9 +24,12 @@ while getopts ":hs" option; do
    esac
 done
 
-pkill ros
-ros2 daemon stop
-ros2 daemon start
+pkill -f octa_ctrl
+pkill -f dashboard_client
+pkill -f urscript
+pkill -f controller
+#ros2 daemon stop
+#ros2 daemon start
 rm -f core*
 #source ur_driver/install/setup.bash
 source install/setup.bash
