@@ -7,7 +7,7 @@ img_subscriber::img_subscriber()
         "oct_image", best_effort,
         std::bind(&img_subscriber::imageCallback, this, std::placeholders::_1));
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(500),
+        std::chrono::milliseconds(1000),
         std::bind(&img_subscriber::timerCallback, this));
 }
 
@@ -51,8 +51,5 @@ void img_subscriber::timerCallback() {
     }
     cv::Mat current_hash;
     cv::img_hash::AverageHash::create()->compute(image_copy, current_hash);
-    RCLCPP_INFO(this->get_logger(),
-                "Timer triggered capture with hash norm: %f",
-                cv::norm(img_hash_, current_hash));
     img_hash_ = current_hash;
 };

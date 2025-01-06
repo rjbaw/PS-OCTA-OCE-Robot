@@ -452,9 +452,10 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    move_group_interface.setPlanningTime(20.0);
+    move_group_interface.setPlanningTime(10.0);
     move_group_interface.setNumPlanningAttempts(30);
-    move_group_interface.setPlanningPipelineId("stomp");
+    // move_group_interface.setPlanningPipelineId("stomp");
+    move_group_interface.setPlanningPipelineId("ompl");
 
     // auto robot_mode_node = std::make_shared<GetRobotModeClient>();
     // auto robot_set_node = std::make_shared<SetModeActionClient>();
@@ -551,7 +552,13 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                rclcpp::sleep_for(std::chrono::milliseconds(500));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(400));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
@@ -625,11 +632,18 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
                 rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
+                // publisher_node->set_apply_config(apply_config);
+                // rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
 
             if (angle_focused && !z_focused) {
                 // dz = 0;
-                dz = (z_height - center[1]) / (1000.0);
+                // dz = (z_height - center[1]) / (100 * 1000.0);
+                dz = (z_height - center[1]) / (50 * 1000.0);
                 msg += std::format("\ndz = {}", dz);
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
@@ -754,7 +768,7 @@ int main(int argc, char *argv[]) {
             // rclcpp::sleep_for(std::chrono::milliseconds(1000));
         }
 
-        if (subscriber_node->scan_3d() && !subscriber_node->autofocus()) {
+        if (scan_3d && !subscriber_node->autofocus()) {
             scan_3d = false;
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
