@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
     move_group_interface.setNumPlanningAttempts(20);
     move_group_interface.setStartStateToCurrentState();
 
-    move_group_interface.setPlanningPipelineId("stomp");
+    move_group_interface.setPlanningPipelineId("ompl");
     // move_group_interface.setPlannerId("Stomp");
 
     RCLCPP_INFO(logger, "Planning Frame: %s",

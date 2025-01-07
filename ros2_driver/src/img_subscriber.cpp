@@ -2,7 +2,8 @@
 
 img_subscriber::img_subscriber()
     : Node("img_subscriber"),
-      best_effort(rclcpp::QoS(rclcpp::KeepLast(10)).best_effort()) {
+      best_effort(rclcpp::QoS(rclcpp::KeepLast(10)).best_effort()),
+      last_store_time_(this->now()) {
     subscription_ = this->create_subscription<octa_ros::msg::Img>(
         "oct_image", best_effort,
         std::bind(&img_subscriber::imageCallback, this, std::placeholders::_1));
@@ -20,15 +21,26 @@ cv::Mat img_subscriber::get_img() {
 }
 
 void img_subscriber::imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-    RCLCPP_DEBUG(
+    auto now = this->now();
+    double elapsed = (now - last_store_time_).seconds();
+    if (elapsed < 0.4) {
+        RCLCPP_INFO(this->get_logger(),
+                    "Skipping frame (%.2f seconds since last stored image)",
+                    elapsed);
+        return;
+    }
+
+    RCLCPP_INFO(
         this->get_logger(),
-        std::format("Subscribing to image, length: {}", msg->img.size())
-            .c_str());
+        "Subscribing to image (length: %zu). Elapsed: %.2f sec, storing now.",
+        msg->img.size(), elapsed);
     cv::Mat new_img(height_, width_, CV_8UC1);
     std::copy(msg->img.begin(), msg->img.end(), new_img.data);
+
     {
         std::lock_guard<std::mutex> lock(img_mutex_);
         img_ = new_img;
+        last_store_time_ = now;
         new_img_ = true;
         img_status_.notify_one();
     }
@@ -38,10 +50,10 @@ void img_subscriber::timerCallback() {
     cv::Mat image_to_process;
     {
         std::lock_guard<std::mutex> lock(img_mutex_);
-
         if (img_.empty()) {
-            RCLCPP_DEBUG(this->get_logger(),
-                         "No new image to process at this timer tick");
+            RCLCPP_DEBUG(
+                this->get_logger(),
+                "No new image to process at this timer tick (img_ is empty)");
             return;
         }
         image_to_process = img_.clone();
@@ -50,7 +62,6 @@ void img_subscriber::timerCallback() {
     cv::img_hash::AverageHash::create()->compute(image_to_process,
                                                  current_hash);
     double diff = cv::norm(img_hash_, current_hash);
-
     RCLCPP_INFO(this->get_logger(),
                 "Timer triggered - processing image. Hash diff = %.2f", diff);
     img_hash_ = current_hash;

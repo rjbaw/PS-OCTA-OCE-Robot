@@ -28,6 +28,7 @@ private:
     rclcpp::QoS best_effort;
 
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Time last_store_time_;
 };
 
 #endif // IMG_SUBSCRIBER_HPP_

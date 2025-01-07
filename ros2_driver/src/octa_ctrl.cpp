@@ -452,7 +452,7 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    move_group_interface.setPlanningTime(20.0);
+    move_group_interface.setPlanningTime(2.0);
     move_group_interface.setNumPlanningAttempts(30);
     move_group_interface.setPlanningPipelineId("ompl");
 
@@ -563,7 +563,7 @@ int main(int argc, char *argv[]) {
                     if (!subscriber_node->autofocus()) {
                         break;
                     }
-                    rclcpp::sleep_for(std::chrono::milliseconds(10000));
+                    // rclcpp::sleep_for(std::chrono::milliseconds(10000));
                 }
                 img_array.push_back(img);
                 RCLCPP_INFO(logger, "Collected image %d", i + 1);

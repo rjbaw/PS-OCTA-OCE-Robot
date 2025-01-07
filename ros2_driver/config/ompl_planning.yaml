@@ -13,7 +13,9 @@ response_adapters:
 
 planner_configs:
   RRTstar:
-    #type: geometric::RRTstar
+    type: geometric::RRTstar
+    use_approximate_solution: true
+  RRTConnect:
     type: geometric::RRTConnect
     use_approximate_solution: true
 
@@ -21,6 +23,7 @@ ur_manipulator:
   default_planner_config: RRTstar
   planner_configs:
     - RRTstar
+    - RRTConnect
   projection_evaluator: joints(shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint)
 
 start_state_max_bounds_error: 0.20
