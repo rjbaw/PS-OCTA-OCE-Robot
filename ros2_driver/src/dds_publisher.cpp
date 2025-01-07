@@ -40,7 +40,7 @@ dds_publisher::dds_publisher(std::string msg, double angle, int circle_state,
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - apply_config_time_)
                     .count();
-            if (elapsed >= 10) {
+            if (elapsed >= 500) {
                 this->apply_config = false;
             }
         }
