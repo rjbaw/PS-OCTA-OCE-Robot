@@ -562,7 +562,15 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(500));
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {

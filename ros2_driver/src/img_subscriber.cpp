@@ -63,7 +63,7 @@ void img_subscriber::timerCallback() {
                     current_hash.rows, current_hash.cols);
         return;
     }
-    double diff = 0.0; // define early
+    double diff = 0.0;
     if (img_hash_.size == current_hash.size &&
         img_hash_.type() == current_hash.type()) {
         diff = cv::norm(img_hash_, current_hash);

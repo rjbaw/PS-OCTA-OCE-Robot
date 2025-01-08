@@ -20,7 +20,7 @@ planner_configs:
     use_approximate_solution: true
 
 ur_manipulator:
-  default_planner_config: RRTstar
+  default_planner_config: RRTConnect
   planner_configs:
     - RRTstar
     - RRTConnect
