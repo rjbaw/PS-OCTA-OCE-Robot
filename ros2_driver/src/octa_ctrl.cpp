@@ -243,7 +243,18 @@ bool move_to_target(auto &move_group_interface, auto &logger) {
 }
 
 /// reconnect
+// int8 NO_CONTROLLER=-1
+// int8 DISCONNECTED=0
+// int8 CONFIRM_SAFETY=1
+// int8 BOOTING=2
+// int8 POWER_OFF=3
+// int8 POWER_ON=4
+// int8 IDLE=5
+// int8 BACKDRIVE=6
+// int8 RUNNING=7
+// int8 UPDATING_FIRMWARE=8
 
+// int8 mode
 // class SetModeActionClient : public rclcpp::Node {
 //   public:
 //     SetModeActionClient() : Node("set_mode_action_client") {
