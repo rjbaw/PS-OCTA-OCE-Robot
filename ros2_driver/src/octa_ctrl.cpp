@@ -60,7 +60,7 @@ class SetModeActionClient : public rclcpp::Node {
 
     void send_goal(int8_t target_mode, bool stop_program = false,
                    bool play_program = false) {
-        if (!client_->wait_for_action_server(std::chrono::seconds(5))) {
+        if (!client_->wait_for_action_server(std::chrono::seconds(20))) {
             RCLCPP_ERROR(this->get_logger(),
                          "Action server not available after waiting");
             return;
@@ -146,7 +146,7 @@ class GetRobotModeClient : public rclcpp::Node {
 
         // Create a timer that calls timerCallback() every 500ms (2 Hz)
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(500),
+            std::chrono::milliseconds(5000),
             std::bind(&GetRobotModeClient::timerCallback, this));
     }
 
@@ -158,7 +158,7 @@ class GetRobotModeClient : public rclcpp::Node {
         using namespace std::chrono_literals;
 
         // Check if the service is up
-        if (!client_->wait_for_service(1s)) {
+        if (!client_->wait_for_service(10s)) {
             RCLCPP_WARN(this->get_logger(),
                         "[GetRobotModeClient] Service "
                         "/dashboard_client/get_robot_mode not available");
