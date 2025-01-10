@@ -18,8 +18,10 @@
 #include "dds_publisher.hpp"
 #include "dds_subscriber.hpp"
 #include "img_subscriber.hpp"
+#include "process_img.hpp"
 #include "urscript_publisher.hpp"
 #include "utils.hpp"
+
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
@@ -32,357 +34,183 @@ void signal_handler(int signum) {
     rclcpp::shutdown();
 }
 
-struct SegmentResult {
-    cv::Mat image;
-    std::vector<cv::Point> coordinates;
-};
-
-void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
-    for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
-        cv::Point pt1 = ret_coord[i];
-        cv::Point pt2 = ret_coord[i + 1];
-        cv::line(image, pt1, pt2, cv::Scalar(255, 0, 0), 2);
-    }
-}
-
-std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
-                                   double Q = 0.01, double R = 0.5) {
-    std::vector<double> x_k_estimates;
-    x_k_estimates.reserve(observations.size());
-    double x_k = (observations.empty()) ? 0.0 : observations[0];
-    double P_k = 1.0;
-    for (double z_k : observations) {
-        double x_k_pred = x_k;
-        double P_k_pred = P_k + Q;
-        double K_k = P_k_pred / (P_k_pred + R);
-        x_k = x_k_pred + K_k * (z_k - x_k_pred);
-        P_k = (1.0 - K_k) * P_k_pred;
-        x_k_estimates.push_back(x_k);
-    }
-    return x_k_estimates;
-}
-
-void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
-    if (vals.empty())
-        return;
-    size_t obs_length = vals.size();
-    int window = std::max(1, (int)obs_length / 10);
-    for (size_t i = 0; i < obs_length; ++i) {
-        int start = std::max(0, (int)i - window);
-        int end = std::min((int)obs_length, (int)i + window + 1);
-        std::vector<double> local(vals.begin() + start, vals.begin() + end);
-        double mu =
-            std::accumulate(local.begin(), local.end(), 0.0) / local.size();
-        double accum = 0.0;
-        for (double val : local) {
-            accum += (val - mu) * (val - mu);
-        }
-        double sigma = std::sqrt(accum / local.size());
-        std::nth_element(local.begin(), local.begin() + local.size() / 2,
-                         local.end());
-        double med = local[local.size() / 2];
-        double z = (sigma != 0.0) ? (vals[i] - mu) / sigma : 0.0;
-        if (z > z_threshold) {
-            vals[i] = med;
-        }
-    }
-}
-
-std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
-    std::vector<cv::Point> ret_coords;
-    // int height = img.rows;
-    int width = img.cols;
-
-    for (int x = 0; x < width; ++x) {
-        cv::Mat intensity = img.col(x);
-        double minVal, maxVal;
-        cv::Point minLoc, maxLoc;
-        cv::minMaxLoc(intensity, &minVal, &maxVal, &minLoc, &maxLoc);
-        int detected_y = maxLoc.y;
-        ret_coords.emplace_back(x, detected_y);
-    }
-    return ret_coords;
-}
-
-SegmentResult detect_lines(const cv::Mat &inputImg) {
-    CV_Assert(!inputImg.empty());
-    cv::Mat gray;
-    if (inputImg.channels() == 3) {
-        cv::cvtColor(inputImg, gray, cv::COLOR_BGR2GRAY);
-    } else {
-        gray = inputImg.clone();
-    }
-
-    cv::Mat denoised;
-    cv::Mat denoised_f;
-    cv::medianBlur(gray, denoised, 5);
-    denoised.convertTo(denoised_f, CV_32F);
-
-    cv::Mat row_means;
-    cv::reduce(denoised_f, row_means, 1, cv::REDUCE_AVG, CV_32F);
-    cv::Mat mean_mat;
-    cv::repeat(row_means, 1, denoised_f.cols, mean_mat);
-    denoised_f -= mean_mat;
-
-    cv::Mat img_median1d;
-    denoised_f.convertTo(img_median1d, CV_8U, 1.0, 128.0);
-    cv::medianBlur(img_median1d, img_median1d, 3);
-    img_median1d.convertTo(img_median1d, CV_32F, 1.0, -128.0);
-
-    cv::Mat img_gauss;
-    cv::GaussianBlur(img_median1d, img_gauss, cv::Size(0, 0), 3.0, 3.0);
-
-    cv::Mat sobely;
-    cv::Sobel(img_gauss, sobely, CV_32F, 0, 1, 3);
-
-    std::vector<cv::Point> rawCoords = get_max_coor(sobely);
-
-    std::vector<double> observations;
-    observations.reserve(rawCoords.size());
-    for (const auto &pt : rawCoords) {
-        observations.push_back(static_cast<double>(pt.y));
-    }
-
-    removeOutliers(observations, 0.5);
-    std::vector<double> x_est = kalmanFilter1D(observations, 0.01, 0.5);
-    std::vector<cv::Point> ret_coords(rawCoords.size());
-    for (size_t i = 0; i < x_est.size(); ++i) {
-        ret_coords[i] = cv::Point(static_cast<int>(i),
-                                  static_cast<int>(std::round(x_est[i])));
-    }
-
-    cv::Mat detected_img;
-    gray.convertTo(detected_img, CV_8U);
-    draw_line(detected_img, ret_coords);
-
-    SegmentResult result;
-    result.image = detected_img;
-    result.coordinates = ret_coords;
-    return result;
-}
-
-std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
-                                      const int interval,
-                                      const bool acq_interval = false) {
-    std::vector<Eigen::Vector3d> pc_3d;
-    int num_frames = interval > 1 ? interval : 2;
-    double increments = 499.0 / static_cast<double>(num_frames - 1);
-
-    for (size_t i = 0; i < img_array.size(); ++i) {
-        cv::Mat img = img_array[i];
-        cv::imwrite(std::format("raw_image{}.jpg", i).c_str(), img);
-        SegmentResult pc = detect_lines(img);
-        cv::imwrite(std::format("detected_image{}.jpg", i).c_str(), pc.image);
-        assert(!pc.coordinates.empty());
-
-        int idx = static_cast<int>(i) % interval;
-        double z_val = idx * increments;
-
-        for (size_t j = 0; j < pc.coordinates.size(); ++j) {
-            double x = static_cast<double>(pc.coordinates[j].x);
-            double y = static_cast<double>(pc.coordinates[j].y);
-            pc_3d.emplace_back(Eigen::Vector3d(x, y, z_val));
-        }
-
-        if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {
-            break;
-        }
-    }
-
-    return pc_3d;
-}
-
-Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
-    Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
-    for (int col = 0; col < 3; ++col) {
-        int max_idx;
-        rot_matrix.col(col).cwiseAbs().maxCoeff(&max_idx);
-        out_matrix.col(max_idx) = rot_matrix.col(col);
-    }
-    for (int col = 0; col < 3; ++col) {
-        if (out_matrix(col, col) < 0) {
-            out_matrix.col(col) *= -1.0;
-        }
-    }
-    return out_matrix;
-}
-
 bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
     return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
 }
 
-void print_target(auto &logger, geometry_msgs::msg::Pose target_pose) {
-    RCLCPP_INFO(logger,
-                std::format("Target Pose: "
-                            " x: {}, y: {}, z: {},"
-                            " qx: {}, qy: {}, qz: {}, qw: {}",
-                            target_pose.position.x, target_pose.position.y,
-                            target_pose.position.z, target_pose.orientation.x,
-                            target_pose.orientation.y,
-                            target_pose.orientation.z,
-                            target_pose.orientation.w)
-                    .c_str());
-}
-
-bool move_to_target(auto &move_group_interface, auto &logger) {
-    auto joint_values = move_group_interface.getCurrentJointValues();
-    for (size_t i = 0; i < joint_values.size(); ++i) {
-        RCLCPP_INFO(logger, "Joint[%zu]: %f", i, joint_values[i]);
-    }
-    auto const [success, plan] = [&move_group_interface] {
-        moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
-        auto const ok =
-            static_cast<bool>(move_group_interface.plan(plan_feedback));
-        return std::make_pair(ok, plan_feedback);
-    }();
-    if (success) {
-        move_group_interface.execute(plan);
-    }
-    return success;
-}
-
 /// reconnect
-// int8 NO_CONTROLLER=-1
-// int8 DISCONNECTED=0
-// int8 CONFIRM_SAFETY=1
-// int8 BOOTING=2
-// int8 POWER_OFF=3
-// int8 POWER_ON=4
-// int8 IDLE=5
-// int8 BACKDRIVE=6
-// int8 RUNNING=7
-// int8 UPDATING_FIRMWARE=8
 
-// int8 mode
-// class SetModeActionClient : public rclcpp::Node {
-//   public:
-//     SetModeActionClient() : Node("set_mode_action_client") {
-//         // Adjust the action name if your driver uses a different topic
-//         client_ = rclcpp_action::create_client<SetMode>(
-//             this, "/dashboard_client/set_mode");
-//     }
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "ur_dashboard_msgs/ur_dashboard_msgs/action/set_mode.hpp"
+#include "ur_dashboard_msgs/ur_dashboard_msgs/msg/robot_mode.hpp"
+#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_program_state.hpp"
+#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_robot_mode.hpp"
+#include <std_srvs/srv/trigger.hpp>
 
-//     void send_goal(int8_t target_mode, bool stop_program = false,
-//                    bool play_program = false) {
-//         // Wait until the action server is available
-//         if (!client_->wait_for_action_server(std::chrono::seconds(5))) {
-//       RCLCPP_ERROR(this->get_logger(), "Action server not available after
-//       waiting"); return;
-//         }
+using SetMode = ur_dashboard_msgs::action::SetMode;
+using GoalHandleSetMode = rclcpp_action::ClientGoalHandle<SetMode>;
 
-//         // Create a goal
-//         auto goal_msg = SetMode::Goal();
-//         goal_msg.target_robot_mode = target_mode;
-//         goal_msg.stop_program = stop_program;
-//         goal_msg.play_program = play_program;
+class SetModeActionClient : public rclcpp::Node {
+  public:
+    SetModeActionClient() : Node("set_mode_action_client") {
+        client_ = rclcpp_action::create_client<SetMode>(
+            this, "/dashboard_client/set_mode");
+    }
 
-//         RCLCPP_INFO(this->get_logger(),
-//                     "Sending goal: target_mode=%d
-//                     stop_program = % s play_program = % s ",
-//                                                       target_mode,
-//                     stop_program ? "true" : "false",
-//                     play_program ? "true" : "false");
+    void send_goal(int8_t target_mode, bool stop_program = false,
+                   bool play_program = false) {
+        if (!client_->wait_for_action_server(std::chrono::seconds(5))) {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Action server not available after waiting");
+            return;
+        }
 
-//         // Send goal
-//         auto send_goal_options =
-//             rclcpp_action::Client<SetMode>::SendGoalOptions();
-//         send_goal_options.feedback_callback =
-//             std::bind(&SetModeActionClient::feedback_callback, this,
-//                       std::placeholders::_1, std::placeholders::_2);
-//         send_goal_options.result_callback = std::bind(
-//             &SetModeActionClient::result_callback, this,
-//             std::placeholders::_1);
+        auto goal_msg = SetMode::Goal();
+        goal_msg.target_robot_mode = target_mode;
+        goal_msg.stop_program = stop_program;
+        goal_msg.play_program = play_program;
 
-//         client_->async_send_goal(goal_msg, send_goal_options);
-//     }
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Sending goal: target_mode=%d stop_program=%s play_program=%s",
+            static_cast<int>(target_mode), stop_program ? "true" : "false",
+            play_program ? "true" : "false");
 
-//   private:
-//     void
-//     feedback_callback(GoalHandleSetMode::SharedPtr,
-//                       const std::shared_ptr<const SetMode::Feedback>
-//                       feedback) {
-//         RCLCPP_INFO(
-//             this->get_logger(),
-//             "Feedback - current_robot_mode: %d, current_safety_mode: %d",
-//             feedback->current_robot_mode, feedback->current_safety_mode);
-//     }
+        auto send_goal_options =
+            rclcpp_action::Client<SetMode>::SendGoalOptions();
+        send_goal_options.feedback_callback =
+            std::bind(&SetModeActionClient::feedback_callback, this,
+                      std::placeholders::_1, std::placeholders::_2);
+        send_goal_options.result_callback = std::bind(
+            &SetModeActionClient::result_callback, this, std::placeholders::_1);
 
-//     void result_callback(const GoalHandleSetMode::WrappedResult &result) {
-//         switch (result.code) {
-//         case rclcpp_action::ResultCode::SUCCEEDED:
-//             RCLCPP_INFO(this->get_logger(),
-//                         "Result received: success=%s,
-//                         message = % s ",
-//                                           result.result->success
-//                                       ? "true"
-//                                       : "false",
-//                         result.result->message.c_str());
-//             break;
-//         case rclcpp_action::ResultCode::ABORTED:
-//             RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
-//             break;
-//         case rclcpp_action::ResultCode::CANCELED:
-//             RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
-//             break;
-//         default:
-//             RCLCPP_ERROR(this->get_logger(), "Unknown result code");
-//             break;
-//         }
-//     }
+        client_->async_send_goal(goal_msg, send_goal_options);
+    }
 
-//     rclcpp_action::Client<SetMode>::SharedPtr client_;
-// };
+  private:
+    void
+    feedback_callback(GoalHandleSetMode::SharedPtr,
+                      const std::shared_ptr<const SetMode::Feedback> feedback) {
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Feedback - current_robot_mode: %d, current_safety_mode: %d",
+            feedback->current_robot_mode, feedback->current_safety_mode);
+    }
 
-// #include "rclcpp/rclcpp.hpp"
-// #include "ur_dashboard_msgs/srv/get_robot_mode.hpp"
+    void result_callback(const GoalHandleSetMode::WrappedResult &result) {
+        switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+            RCLCPP_INFO(this->get_logger(),
+                        "Result received: success=%s, message=%s",
+                        result.result->success ? "true" : "false",
+                        result.result->message.c_str());
+            break;
+        case rclcpp_action::ResultCode::ABORTED:
+            RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+            break;
+        case rclcpp_action::ResultCode::CANCELED:
+            RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
+            break;
+        default:
+            RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+            break;
+        }
+    }
 
-// static const int8_t POWER_OFF = 3;
-// static const int8_t POWER_ON = 4;
-// static const int8_t RUNNING = 7;
+    rclcpp_action::Client<SetMode>::SharedPtr client_;
+};
 
-// using SetMode = ur_dashboard_msgs::action::SetMode;
-// using GoalHandleSetMode = rclcpp_action::ClientGoalHandle<SetMode>;
+static const int8_t NO_CONTROLLER = -1;
+static const int8_t DISCONNECTED = 0;
+static const int8_t CONFIRM_SAFETY = 1;
+static const int8_t BOOTING = 2;
+static const int8_t POWER_OFF = 3;
+static const int8_t POWER_ON = 4;
+static const int8_t IDLE = 5;
+static const int8_t BACKDRIVE = 6;
+static const int8_t RUNNING = 7;
+static const int8_t UPDATING_FIRMWARE = 8;
 
-// class GetRobotModeClient : public rclcpp::Node {
-//   public:
-//     GetRobotModeClient() : Node("get_robot_mode_client") {
-//         client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>(
-//             "/dashboard_client/get_robot_mode");
-//     }
+#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_robot_mode.hpp"
 
-//     void callService() {
-//         if (!client_->wait_for_service(5s)) {
-//       RCLCPP_ERROR(this->get_logger(), "Service
-//       /dashboard_client/get_robot_mode not available"); return;
-//         }
-//         auto request =
-//             std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
-//         auto future_result = client_->async_send_request(request);
-//         if
-//         (rclcpp::spin_until_future_complete(this->get_node_base_interface(),
-//                                                future_result, 5s) ==
-//             rclcpp::FutureReturnCode::SUCCESS) {
-//             auto response = future_result.get();
-//             if (response->success) {
-//                 RCLCPP_INFO(this->get_logger(), "Robot mode: %d, answer: %s",
-//                             response->mode, response->answer.c_str());
-//             } else {
-//                 RCLCPP_WARN(this->get_logger(),
-//                             "Service call succeeded but reported
-//                                 failure : %
-//                                 s ",
-//                                 response->answer.c_str());
-//             }
-//         } else {
-//       RCLCPP_ERROR(this->get_logger(), "Failed to call get_robot_mode
-//       service");
-//         }
-//     }
+class GetRobotModeClient : public rclcpp::Node {
+  public:
+    // Constructor name matches the class name
+    GetRobotModeClient()
+        : Node("get_robot_mode_client") // name your node
+    {
+        // Create the service client for the official UR Dashboard service
+        client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>(
+            "/dashboard_client/get_robot_mode");
 
-//   private:
-//     rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
-// };
+        // Create a timer that calls timerCallback() every 500ms (2 Hz)
+        timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(500),
+            std::bind(&GetRobotModeClient::timerCallback, this));
+    }
+
+    // Provide a getter so other code can read the last known robot mode
+    int8_t getCurrentMode() const { return current_mode_.load(); }
+
+  private:
+    void timerCallback() {
+        using namespace std::chrono_literals;
+
+        // Check if the service is up
+        if (!client_->wait_for_service(1s)) {
+            RCLCPP_WARN(this->get_logger(),
+                        "[GetRobotModeClient] Service "
+                        "/dashboard_client/get_robot_mode not available");
+            return;
+        }
+
+        // Create an empty request
+        auto request =
+            std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
+
+        // Asynchronously call the service
+        auto future_result = client_->async_send_request(request);
+
+        // Instead of spin_until_future_complete, use wait_for
+        auto status = future_result.wait_for(std::chrono::seconds(2));
+
+        if (status == std::future_status::ready) {
+            // We got a response
+            auto response = future_result.get();
+            if (response->success) {
+                // Store the last known mode in our atomic variable
+                current_mode_.store(response->robot_mode.mode);
+
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    "[GetRobotModeClient] Polled Robot mode: %d, answer: %s",
+                    response->robot_mode.mode, response->answer.c_str());
+            } else {
+                RCLCPP_WARN(this->get_logger(),
+                            "[GetRobotModeClient] Service call succeeded, but "
+                            "robot reported failure: %s",
+                            response->answer.c_str());
+                current_mode_.store(DISCONNECTED);
+            }
+        } else {
+            // Timed out or an error occurred
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "[GetRobotModeClient] Timeout or error calling get_robot_mode");
+            current_mode_.store(DISCONNECTED);
+        }
+    }
+
+    // The client to /dashboard_client/get_robot_mode
+    rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
+
+    // The timer that periodically calls timerCallback()
+    rclcpp::TimerBase::SharedPtr timer_;
+
+    // Atomic to hold the last known robot mode from the UR driver
+    std::atomic<int8_t> current_mode_{DISCONNECTED};
+};
 
 /// reconnect
 
@@ -447,6 +275,10 @@ int main(int argc, char *argv[]) {
     auto publisher_node = std::make_shared<dds_publisher>(
         msg, angle, circle_state, fast_axis, apply_config, end_state, scan_3d);
     auto img_subscriber_node = std::make_shared<img_subscriber>();
+    auto robot_mode_node = std::make_shared<GetRobotModeClient>();
+    auto robot_set_node = std::make_shared<SetModeActionClient>();
+
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr trigger_client;
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
@@ -459,11 +291,13 @@ int main(int argc, char *argv[]) {
     executor.add_node(publisher_node);
     executor.add_node(urscript_node);
     executor.add_node(img_subscriber_node);
+    executor.add_node(robot_mode_node);
+    executor.add_node(robot_set_node);
     std::thread spinner([&executor]() { executor.spin(); });
 
     add_collision_obj(move_group_interface);
 
-    move_group_interface.setPlanningTime(2.0);
+    move_group_interface.setPlanningTime(10.0);
     move_group_interface.setNumPlanningAttempts(30);
     move_group_interface.setPlanningPipelineId("ompl");
 
@@ -495,17 +329,6 @@ int main(int argc, char *argv[]) {
         robot_vel = 0.1;
         robot_acc = 0.1;
 
-        // if (!robot_mode_node->callService()) {
-        //     RCLCPP_INFO(node->get_logger(), "Requesting RUNNING...");
-        //     node->send_goal(RUNNING, /*stop_program=*/true,
-        //                     /*play_program=*/false);
-        //     trigger_client = this->create_client<std_srvs::srv::Trigger>(
-        //         "/io_and_status_controller/resend_robot_program");
-        //     auto request =
-        //     std::make_shared<std_srvs::srv::Trigger::Request>(); auto future
-        //     = trigger_client->async_send_request(request);
-        // };
-
         if (subscriber_node->freedrive()) {
             circle_state = 1;
             angle = 0.0;
@@ -516,6 +339,18 @@ int main(int argc, char *argv[]) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
             urscript_node->deactivate_freedrive();
+        } else {
+            if (!robot_mode_node->getCurrentMode()) {
+                RCLCPP_INFO(logger, "Requesting RUNNING...");
+                robot_set_node->send_goal(RUNNING, true, false);
+
+                trigger_client =
+                    robot_mode_node->create_client<std_srvs::srv::Trigger>(
+                        "/io_and_status_controller/resend_robot_program");
+                auto request =
+                    std::make_shared<std_srvs::srv::Trigger::Request>();
+                auto future = trigger_client->async_send_request(request);
+            }
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
@@ -642,6 +477,14 @@ int main(int argc, char *argv[]) {
                 scan_3d = false;
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                publisher_node->set_apply_config(apply_config);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
                 publisher_node->set_apply_config(apply_config);
                 rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
@@ -778,6 +621,15 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            publisher_node->set_apply_config(apply_config);
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
         }
     }
     executor.cancel();

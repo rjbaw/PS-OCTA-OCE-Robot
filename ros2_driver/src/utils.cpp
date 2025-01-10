@@ -8,7 +8,8 @@ double to_degree(const double radian) {
     return (180 / std::numbers::pi * radian);
 }
 
-void add_collision_obj(moveit::planning_interface::MoveGroupInterface &move_group_interface) {
+void add_collision_obj(
+    moveit::planning_interface::MoveGroupInterface &move_group_interface) {
 
     auto const collision_floor = [frame_id =
                                       move_group_interface.getPlanningFrame()] {
@@ -92,4 +93,37 @@ void add_collision_obj(moveit::planning_interface::MoveGroupInterface &move_grou
     planning_scene_interface.applyCollisionObject(collision_floor);
     planning_scene_interface.applyCollisionObject(collision_base);
     planning_scene_interface.applyCollisionObject(collision_monitor);
+}
+
+void print_target(rclcpp::Logger const &logger,
+                  geometry_msgs::msg::Pose target_pose) {
+    RCLCPP_INFO(logger,
+                std::format("Target Pose: "
+                            " x: {}, y: {}, z: {},"
+                            " qx: {}, qy: {}, qz: {}, qw: {}",
+                            target_pose.position.x, target_pose.position.y,
+                            target_pose.position.z, target_pose.orientation.x,
+                            target_pose.orientation.y,
+                            target_pose.orientation.z,
+                            target_pose.orientation.w)
+                    .c_str());
+}
+
+bool move_to_target(
+    moveit::planning_interface::MoveGroupInterface &move_group_interface,
+    rclcpp::Logger const &logger) {
+    auto joint_values = move_group_interface.getCurrentJointValues();
+    for (size_t i = 0; i < joint_values.size(); ++i) {
+        RCLCPP_INFO(logger, "Joint[%zu]: %f", i, joint_values[i]);
+    }
+    auto const [success, plan] = [&move_group_interface] {
+        moveit::planning_interface::MoveGroupInterface::Plan plan_feedback;
+        auto const ok =
+            static_cast<bool>(move_group_interface.plan(plan_feedback));
+        return std::make_pair(ok, plan_feedback);
+    }();
+    if (success) {
+        move_group_interface.execute(plan);
+    }
+    return success;
 }

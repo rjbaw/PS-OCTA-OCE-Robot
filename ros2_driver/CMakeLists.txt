@@ -30,16 +30,56 @@ find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Open3D REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(rosidl_default_generators REQUIRED) # generate the msg/srv header
+find_package(rosidl_default_generators REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+find_package(ur_dashboard_msgs REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${Open3D_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
 
-rosidl_generate_interfaces(${PROJECT_NAME} "msg/Labviewint.msg" "msg/Img.msg"
-                           "msg/Robotdata.msg" "msg/Labviewdata.msg")
+
+# set(msg_files
+#   msg/ProgramState.msg
+#   msg/RobotMode.msg
+#   msg/SafetyMode.msg
+# )
+
+# set(srv_files
+#   srv/AddToLog.srv
+#   srv/GetLoadedProgram.srv
+#   srv/GetProgramState.srv
+#   srv/GetRobotMode.srv
+#   srv/GetSafetyMode.srv
+#   srv/IsProgramRunning.srv
+#   srv/IsProgramSaved.srv
+#   srv/Load.srv
+#   srv/Popup.srv
+#   srv/RawRequest.srv
+# )
+
+# set(action_files
+#   action/SetMode.action
+# )
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Labviewint.msg"
+  "msg/Img.msg"
+  "msg/Robotdata.msg"
+  "msg/Labviewdata.msg"
+  # ${msg_files}
+  # ${srv_files}
+  # ${action_files}
+  # DEPENDENCIES
+  #   action_msgs
+  #   builtin_interfaces
+)
+
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
                               rosidl_typesupport_cpp) # link against interface
+
+ament_export_dependencies(rosidl_default_runtime)
 
 # add executables
 
@@ -67,8 +107,16 @@ target_link_libraries(
   single_axis_ctrl "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
-
-add_executable(octa_ctrl src/octa_ctrl.cpp src/dds_publisher.cpp src/dds_subscriber.cpp src/urscript_publisher.cpp src/img_subscriber.cpp src/utils.cpp)
+add_executable(
+  octa_ctrl
+  src/octa_ctrl.cpp
+  src/dds_publisher.cpp
+  src/dds_subscriber.cpp
+  src/urscript_publisher.cpp
+  src/img_subscriber.cpp
+  src/process_img.cpp
+  src/utils.cpp
+)
 ament_target_dependencies(
   octa_ctrl
   rclcpp
@@ -76,16 +124,20 @@ ament_target_dependencies(
   geometry_msgs
   tf2_ros
   std_msgs
+  ur_dashboard_msgs
   OpenCV
   Open3D
   Eigen3)
+target_include_directories(octa_ctrl PRIVATE
+    "/opt/ros/jazzy/include/ur_dashboard_msgs"
+)
 target_link_libraries(
   octa_ctrl
   "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}"
   "${geometry_msgs_LIBRARIES}"
   "${OpenCV_LIBS}"
-  Open3D::Open3D
+ Open3D::Open3D
   Eigen3::Eigen)
 
 # add_executable(planning_node src/planning_node.cpp src/dds_publisher.cpp src/dds_subscriber.cpp src/urscript_publisher.cpp src/img_subscriber.cpp src/utils.cpp)
