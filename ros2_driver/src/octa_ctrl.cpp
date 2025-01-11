@@ -42,10 +42,11 @@ bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
 /// reconnect
 
 #include "rclcpp_action/rclcpp_action.hpp"
-#include "ur_dashboard_msgs/ur_dashboard_msgs/action/set_mode.hpp"
-#include "ur_dashboard_msgs/ur_dashboard_msgs/msg/robot_mode.hpp"
-#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_program_state.hpp"
-#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_robot_mode.hpp"
+#include "ur_dashboard_msgs/action/set_mode.hpp"
+#include "ur_dashboard_msgs/msg/robot_mode.hpp"
+#include "ur_dashboard_msgs/srv/get_program_state.hpp"
+#include "ur_dashboard_msgs/srv/get_robot_mode.hpp"
+
 #include <std_srvs/srv/trigger.hpp>
 
 using SetMode = ur_dashboard_msgs::action::SetMode;
@@ -136,50 +137,33 @@ static const int8_t UPDATING_FIRMWARE = 8;
 
 class GetRobotModeClient : public rclcpp::Node {
   public:
-    // Constructor name matches the class name
     GetRobotModeClient()
         : Node("get_robot_mode_client") // name your node
     {
-        // Create the service client for the official UR Dashboard service
         client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>(
             "/dashboard_client/get_robot_mode");
-
-        // Create a timer that calls timerCallback() every 500ms (2 Hz)
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5000),
             std::bind(&GetRobotModeClient::timerCallback, this));
     }
-
-    // Provide a getter so other code can read the last known robot mode
     int8_t getCurrentMode() const { return current_mode_.load(); }
 
   private:
     void timerCallback() {
         using namespace std::chrono_literals;
-
-        // Check if the service is up
         if (!client_->wait_for_service(10s)) {
             RCLCPP_WARN(this->get_logger(),
                         "[GetRobotModeClient] Service "
                         "/dashboard_client/get_robot_mode not available");
             return;
         }
-
-        // Create an empty request
         auto request =
             std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
-
-        // Asynchronously call the service
         auto future_result = client_->async_send_request(request);
-
-        // Instead of spin_until_future_complete, use wait_for
         auto status = future_result.wait_for(std::chrono::seconds(2));
-
         if (status == std::future_status::ready) {
-            // We got a response
             auto response = future_result.get();
             if (response->success) {
-                // Store the last known mode in our atomic variable
                 current_mode_.store(response->robot_mode.mode);
 
                 RCLCPP_INFO(
@@ -194,21 +178,14 @@ class GetRobotModeClient : public rclcpp::Node {
                 current_mode_.store(DISCONNECTED);
             }
         } else {
-            // Timed out or an error occurred
             RCLCPP_ERROR(
                 this->get_logger(),
                 "[GetRobotModeClient] Timeout or error calling get_robot_mode");
             current_mode_.store(DISCONNECTED);
         }
     }
-
-    // The client to /dashboard_client/get_robot_mode
     rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
-
-    // The timer that periodically calls timerCallback()
     rclcpp::TimerBase::SharedPtr timer_;
-
-    // Atomic to hold the last known robot mode from the UR driver
     std::atomic<int8_t> current_mode_{DISCONNECTED};
 };
 
