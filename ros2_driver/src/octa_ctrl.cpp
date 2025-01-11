@@ -151,7 +151,7 @@ class GetRobotModeClient : public rclcpp::Node {
   private:
     void timerCallback() {
         using namespace std::chrono_literals;
-        if (!client_->wait_for_service(10s)) {
+        if (!client_->wait_for_service(20s)) {
             RCLCPP_WARN(this->get_logger(),
                         "[GetRobotModeClient] Service "
                         "/dashboard_client/get_robot_mode not available");
@@ -160,7 +160,7 @@ class GetRobotModeClient : public rclcpp::Node {
         auto request =
             std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
         auto future_result = client_->async_send_request(request);
-        auto status = future_result.wait_for(std::chrono::seconds(2));
+        auto status = future_result.wait_for(std::chrono::seconds(20));
         if (status == std::future_status::ready) {
             auto response = future_result.get();
             if (response->success) {
@@ -224,6 +224,7 @@ int main(int argc, char *argv[]) {
     tf2::Quaternion q;
     tf2::Quaternion target_q;
     geometry_msgs::msg::Pose target_pose;
+    static bool program_already_resent = true;
 
     // Subscriber Parameters
     double robot_vel;
@@ -327,6 +328,10 @@ int main(int argc, char *argv[]) {
                 auto request =
                     std::make_shared<std_srvs::srv::Trigger::Request>();
                 auto future = trigger_client->async_send_request(request);
+                rclcpp::sleep_for(std::chrono::seconds(5));
+                program_already_resent = true;
+            } else {
+                program_already_resent = false;
             }
         }
 
