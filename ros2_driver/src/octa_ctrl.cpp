@@ -318,7 +318,7 @@ int main(int argc, char *argv[]) {
             }
             urscript_node->deactivate_freedrive();
         } else {
-            if (!robot_mode_node->getCurrentMode()) {
+            if (!robot_mode_node->getCurrentMode() && !program_already_resent) {
                 RCLCPP_INFO(logger, "Requesting RUNNING...");
                 robot_set_node->send_goal(RUNNING, true, false);
 
