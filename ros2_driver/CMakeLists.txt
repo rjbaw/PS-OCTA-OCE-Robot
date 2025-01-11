@@ -107,6 +107,13 @@ target_link_libraries(
   single_axis_ctrl "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
+add_executable(double_axis_ctrl src/double_axis_ctrl.cpp)
+ament_target_dependencies(double_axis_ctrl rclcpp moveit_ros_planning_interface
+                          geometry_msgs tf2_ros std_msgs)
+target_link_libraries(
+  double_axis_ctrl "${cpp_typesupport_target}"
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+
 add_executable(
   octa_ctrl
   src/octa_ctrl.cpp
@@ -198,6 +205,7 @@ install(
           test_detect
           octa_ctrl
           single_axis_ctrl
+          double_axis_ctrl
           reset
   DESTINATION lib/${PROJECT_NAME})
 

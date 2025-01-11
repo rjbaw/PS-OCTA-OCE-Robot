@@ -3,9 +3,9 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <memory>
-#include <moveit/move_group_interface/move_group_interface.hpp>
-#include <moveit/planning_interface/planning_interface.hpp>
-#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/planning_interface/planning_interface.h>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -26,15 +26,14 @@ void signal_handler(int signum) {
 
 class dds_publisher : public rclcpp::Node {
   public:
-    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false, false) {}
+    dds_publisher() : dds_publisher("", 0.0, 1, false, false, false) {}
 
     dds_publisher(std::string msg = "", double angle = 0.0,
                   int circle_state = 1, bool fast_axis = false,
-                  bool apply_config = false, bool end_state = false,
-                  bool scan_3d = false)
+                  bool apply_config = false, bool end_state = false)
         : Node("pub_robot_data"), msg(msg), angle(angle),
           circle_state(circle_state), fast_axis(fast_axis),
-          apply_config(apply_config), end_state(end_state), scan_3d(scan_3d) {
+          apply_config(apply_config), end_state(end_state) {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         publisher_ =
             this->create_publisher<octa_ros::msg::Robotdata>("robot_data", qos);
@@ -47,7 +46,6 @@ class dds_publisher : public rclcpp::Node {
             message.fast_axis = this->fast_axis;
             message.apply_config = this->apply_config;
             message.end_state = this->end_state;
-            message.scan_3d = this->scan_3d;
             if (old_message != message) {
                 RCLCPP_INFO(this->get_logger(),
                             std::format("[PUBLISHING] "
@@ -56,12 +54,10 @@ class dds_publisher : public rclcpp::Node {
                                         " circle_state: {},"
                                         " fast_axis: {},"
                                         " apply_config: {},"
-                                        " end_state: {},"
-                                        " scan_3d: {}",
+                                        " end_state: {}",
                                         this->msg, this->angle,
                                         this->circle_state, this->fast_axis,
-                                        this->apply_config, this->end_state,
-                                        this->scan_3d)
+                                        this->apply_config, this->end_state)
                                 .c_str());
             }
             publisher_->publish(message);
@@ -79,7 +75,6 @@ class dds_publisher : public rclcpp::Node {
         apply_config = new_apply_config;
     }
     void set_end_state(bool new_end_state) { end_state = new_end_state; }
-    void set_scan_3d(bool new_scan_3d) { scan_3d = new_scan_3d; }
 
   private:
     rclcpp::TimerBase::SharedPtr timer_;
@@ -87,7 +82,7 @@ class dds_publisher : public rclcpp::Node {
     std::string msg;
     double angle;
     int circle_state;
-    bool fast_axis, apply_config, end_state, scan_3d;
+    bool fast_axis, apply_config, end_state;
     octa_ros::msg::Robotdata old_message = octa_ros::msg::Robotdata();
 };
 
@@ -117,34 +112,31 @@ class dds_subscriber : public rclcpp::Node {
                 home_ = msg->home;
                 reset_ = msg->reset;
                 fast_axis_ = msg->fast_axis;
-                scan_3d_ = msg->scan_3d;
                 if (old_msg != *msg) {
-                    RCLCPP_INFO(this->get_logger(),
-                                std::format("[SUBSCRIBING] "
-                                            " robot_vel: {},"
-                                            " robot_acc: {},"
-                                            " z_tolerance: {},"
-                                            " angle_tolerance: {},"
-                                            " radius: {},"
-                                            " angle_limit: {},"
-                                            " num_pt: {},"
-                                            " dz: {},"
-                                            " drot: {},"
-                                            " autofocus: {},"
-                                            " freedrive: {},"
-                                            " previous: {},"
-                                            " next: {},"
-                                            " home: {},"
-                                            " reset: {},"
-                                            " fast_axis: {},"
-                                            " scan_3d: {}",
-                                            robot_vel_, robot_acc_,
-                                            z_tolerance_, angle_tolerance_,
-                                            radius_, angle_limit_, num_pt_, dz_,
-                                            drot_, autofocus_, freedrive_,
-                                            previous_, next_, home_, reset_,
-                                            fast_axis_, scan_3d_)
-                                    .c_str());
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        std::format("[SUBSCRIBING] "
+                                    " robot_vel: {},"
+                                    " robot_acc: {},"
+                                    " z_tolerance: {},"
+                                    " angle_tolerance: {},"
+                                    " radius: {},"
+                                    " angle_limit: {},"
+                                    " num_pt: {},"
+                                    " dz: {},"
+                                    " drot: {},"
+                                    " autofocus: {},"
+                                    " freedrive: {},"
+                                    " previous: {},"
+                                    " next: {},"
+                                    " home: {},"
+                                    " reset: {},"
+                                    " fast_axis: {},",
+                                    robot_vel_, robot_acc_, z_tolerance_,
+                                    angle_tolerance_, radius_, angle_limit_,
+                                    num_pt_, dz_, drot_, autofocus_, freedrive_,
+                                    previous_, next_, home_, reset_, fast_axis_)
+                            .c_str());
                     changed_ = true;
                 } else {
                     changed_ = false;
@@ -169,7 +161,6 @@ class dds_subscriber : public rclcpp::Node {
     bool reset() { return reset_; };
     bool fast_axis() { return fast_axis_; };
     bool changed() { return changed_; };
-    bool scan_3d() { return scan_3d_; };
 
   private:
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr subscription_;
@@ -179,7 +170,7 @@ class dds_subscriber : public rclcpp::Node {
     int num_pt_ = 0;
     bool autofocus_ = false, freedrive_ = false, previous_ = false,
          next_ = false, home_ = false, reset_ = false, fast_axis_ = false,
-         changed_ = false, scan_3d_ = false;
+         changed_ = false;
     octa_ros::msg::Labviewdata old_msg = octa_ros::msg::Labviewdata();
 };
 
@@ -256,7 +247,7 @@ bool tol_measure(double &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
     return (
         (std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
-        (std::abs(dz) < (z_tolerance / 1000.0)));
+        (std::abs(dz) < (z_tolerance/1000.0)));
 }
 
 void add_collision_obj(auto &move_group_interface) {
@@ -368,8 +359,9 @@ int main(int argc, char *argv[]) {
     int circle_state = 1;
     bool apply_config = false;
     bool end_state = false;
-    bool scan_3d = false;
 
+    bool fast_focused = false;
+    bool slow_focused = false;
     bool planning = false;
     double scale_factor = 0.25;
     double angle_increment;
@@ -387,7 +379,7 @@ int main(int argc, char *argv[]) {
     auto subscriber_node = std::make_shared<dds_subscriber>();
     auto urscript_node = std::make_shared<urscript_publisher>();
     auto publisher_node = std::make_shared<dds_publisher>(
-        msg, angle, circle_state, fast_axis, apply_config, end_state, scan_3d);
+        msg, angle, circle_state, fast_axis, apply_config, end_state);
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
@@ -404,7 +396,6 @@ int main(int argc, char *argv[]) {
 
         end_state = false;
         apply_config = false;
-        fast_axis = true;
         autofocus = subscriber_node->autofocus();
         freedrive = subscriber_node->freedrive();
         robot_vel = subscriber_node->robot_vel();
@@ -421,7 +412,7 @@ int main(int argc, char *argv[]) {
         next = subscriber_node->next();
         home = subscriber_node->home();
         reset = subscriber_node->reset();
-        scan_3d = subscriber_node->scan_3d();
+        fast_axis = subscriber_node->fast_axis();
 
         if (freedrive) {
             circle_state = 1;
@@ -462,11 +453,31 @@ int main(int argc, char *argv[]) {
                 if (tol_measure(drot, dz, angle_tolerance, z_tolerance,
                                 scale_factor)) {
                     planning = false;
-                    end_state = true;
-                    msg = "Autofocus complete";
+                    if (fast_focused && slow_focused) {
+                        end_state = true;
+                        msg = "Autofocus complete";
+                    } else {
+                        if (fast_axis) {
+                            fast_axis = false;
+                            apply_config = true;
+                            fast_focused = true;
+                        } else {
+                            fast_axis = true;
+                            apply_config = true;
+                            slow_focused = true;
+                        }
+                    }
                 } else {
                     planning = true;
-                    roll += drot;
+                    if (fast_focused && slow_focused) {
+                        fast_focused = false;
+                        slow_focused = false;
+                    }
+                    if (fast_axis) {
+                        pitch += -drot;
+                    } else {
+                        roll += drot;
+                    }
                     target_pose.position.x +=
                         radius * std::cos(to_radian(angle));
                     target_pose.position.y +=
@@ -474,6 +485,8 @@ int main(int argc, char *argv[]) {
                     target_pose.position.z += -dz;
                 }
             } else {
+                fast_focused = false;
+                slow_focused = false;
                 if (next) {
                     planning = true;
                     angle += angle_increment;
@@ -489,7 +502,7 @@ int main(int argc, char *argv[]) {
                 if (home) {
                     planning = true;
                     yaw += to_radian(-angle);
-                    circle_state = 1;
+                    circle_state = 0;
                     angle = 0.0;
                 }
             }
@@ -539,7 +552,6 @@ int main(int argc, char *argv[]) {
         publisher_node->set_fast_axis(fast_axis);
         publisher_node->set_apply_config(apply_config);
         publisher_node->set_end_state(end_state);
-        publisher_node->set_scan_3d(scan_3d);
 
         if (apply_config && !end_state) {
             rclcpp::sleep_for(std::chrono::milliseconds(1500));

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import yaml
 
@@ -452,8 +453,8 @@ def launch_setup():
 
     octa_node = Node(
         package="octa_ros",
-        executable="single_axis_ctrl",
-        name="single_axis_ctrl",
+        executable="double_axis_ctrl",
+        name="double_axis_ctrl",
         output="log",
         parameters=[
             moveit_config.robot_description,
@@ -470,8 +471,8 @@ def launch_setup():
             target_action=wait_robot_description,
             on_exit=[
                 rviz_node,
-                move_group_node, 
-                servo_node, 
+                move_group_node,
+                servo_node,
                 robot_state_node,
                 octa_node,
             ]
