@@ -318,21 +318,22 @@ int main(int argc, char *argv[]) {
             }
             urscript_node->deactivate_freedrive();
         } else {
-            if (!robot_mode_node->getCurrentMode() && !program_already_resent) {
-                RCLCPP_INFO(logger, "Requesting RUNNING...");
-                robot_set_node->send_goal(RUNNING, true, false);
+            // if (!robot_mode_node->getCurrentMode() &&
+            // !program_already_resent) {
+            //     RCLCPP_INFO(logger, "Requesting RUNNING...");
+            //     robot_set_node->send_goal(RUNNING, true, false);
 
-                trigger_client =
-                    robot_mode_node->create_client<std_srvs::srv::Trigger>(
-                        "/io_and_status_controller/resend_robot_program");
-                auto request =
-                    std::make_shared<std_srvs::srv::Trigger::Request>();
-                auto future = trigger_client->async_send_request(request);
-                rclcpp::sleep_for(std::chrono::seconds(5));
-                program_already_resent = true;
-            } else {
-                program_already_resent = false;
-            }
+            //     // trigger_client =
+            //     // robot_mode_node->create_client<std_srvs::srv::Trigger>(
+            //     //         "/io_and_status_controller/resend_robot_program");
+            //     // auto request =
+            //     //     std::make_shared<std_srvs::srv::Trigger::Request>();
+            //     // auto future = trigger_client->async_send_request(request);
+            //     rclcpp::sleep_for(std::chrono::seconds(5));
+            //     program_already_resent = true;
+            // } else {
+            //     program_already_resent = false;
+            // }
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);

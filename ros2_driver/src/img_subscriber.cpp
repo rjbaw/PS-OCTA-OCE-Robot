@@ -48,7 +48,7 @@ void img_subscriber::timerCallback() {
     {
         std::lock_guard<std::mutex> lock(img_mutex_);
         if (img_.empty()) {
-            RCLCPP_INFO(this->get_logger(),
+            RCLCPP_DEBUG(this->get_logger(),
                         "timerCallback: No image to process");
             return;
         }
