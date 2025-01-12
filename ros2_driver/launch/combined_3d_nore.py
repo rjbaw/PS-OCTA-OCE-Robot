@@ -478,13 +478,6 @@ def launch_setup():
         ],
     )
 
-    reconnect_node = Node(
-        package="octa_ros",
-        executable="reconnect_node",
-        name="reconnect_node",
-        output="screen",
-    )
-
     nodes_after_driver = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=wait_robot_description,
@@ -494,7 +487,6 @@ def launch_setup():
                 servo_node, 
                 robot_state_node,
                 octa_node,
-                reconnect_node,
             ]
         )
     )

@@ -39,158 +39,6 @@ bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
 }
 
-/// reconnect
-
-#include "rclcpp_action/rclcpp_action.hpp"
-#include "ur_dashboard_msgs/action/set_mode.hpp"
-#include "ur_dashboard_msgs/msg/robot_mode.hpp"
-#include "ur_dashboard_msgs/srv/get_program_state.hpp"
-#include "ur_dashboard_msgs/srv/get_robot_mode.hpp"
-
-#include <std_srvs/srv/trigger.hpp>
-
-using SetMode = ur_dashboard_msgs::action::SetMode;
-using GoalHandleSetMode = rclcpp_action::ClientGoalHandle<SetMode>;
-
-class SetModeActionClient : public rclcpp::Node {
-  public:
-    SetModeActionClient() : Node("set_mode_action_client") {
-        client_ = rclcpp_action::create_client<SetMode>(
-            this, "/dashboard_client/set_mode");
-    }
-
-    void send_goal(int8_t target_mode, bool stop_program = false,
-                   bool play_program = false) {
-        if (!client_->wait_for_action_server(std::chrono::seconds(20))) {
-            RCLCPP_ERROR(this->get_logger(),
-                         "Action server not available after waiting");
-            return;
-        }
-
-        auto goal_msg = SetMode::Goal();
-        goal_msg.target_robot_mode = target_mode;
-        goal_msg.stop_program = stop_program;
-        goal_msg.play_program = play_program;
-
-        RCLCPP_INFO(
-            this->get_logger(),
-            "Sending goal: target_mode=%d stop_program=%s play_program=%s",
-            static_cast<int>(target_mode), stop_program ? "true" : "false",
-            play_program ? "true" : "false");
-
-        auto send_goal_options =
-            rclcpp_action::Client<SetMode>::SendGoalOptions();
-        send_goal_options.feedback_callback =
-            std::bind(&SetModeActionClient::feedback_callback, this,
-                      std::placeholders::_1, std::placeholders::_2);
-        send_goal_options.result_callback = std::bind(
-            &SetModeActionClient::result_callback, this, std::placeholders::_1);
-
-        client_->async_send_goal(goal_msg, send_goal_options);
-    }
-
-  private:
-    void
-    feedback_callback(GoalHandleSetMode::SharedPtr,
-                      const std::shared_ptr<const SetMode::Feedback> feedback) {
-        RCLCPP_INFO(
-            this->get_logger(),
-            "Feedback - current_robot_mode: %d, current_safety_mode: %d",
-            feedback->current_robot_mode, feedback->current_safety_mode);
-    }
-
-    void result_callback(const GoalHandleSetMode::WrappedResult &result) {
-        switch (result.code) {
-        case rclcpp_action::ResultCode::SUCCEEDED:
-            RCLCPP_INFO(this->get_logger(),
-                        "Result received: success=%s, message=%s",
-                        result.result->success ? "true" : "false",
-                        result.result->message.c_str());
-            break;
-        case rclcpp_action::ResultCode::ABORTED:
-            RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
-            break;
-        case rclcpp_action::ResultCode::CANCELED:
-            RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
-            break;
-        default:
-            RCLCPP_ERROR(this->get_logger(), "Unknown result code");
-            break;
-        }
-    }
-
-    rclcpp_action::Client<SetMode>::SharedPtr client_;
-};
-
-static const int8_t NO_CONTROLLER = -1;
-static const int8_t DISCONNECTED = 0;
-static const int8_t CONFIRM_SAFETY = 1;
-static const int8_t BOOTING = 2;
-static const int8_t POWER_OFF = 3;
-static const int8_t POWER_ON = 4;
-static const int8_t IDLE = 5;
-static const int8_t BACKDRIVE = 6;
-static const int8_t RUNNING = 7;
-static const int8_t UPDATING_FIRMWARE = 8;
-
-#include "ur_dashboard_msgs/ur_dashboard_msgs/srv/get_robot_mode.hpp"
-
-class GetRobotModeClient : public rclcpp::Node {
-  public:
-    GetRobotModeClient()
-        : Node("get_robot_mode_client") // name your node
-    {
-        client_ = this->create_client<ur_dashboard_msgs::srv::GetRobotMode>(
-            "/dashboard_client/get_robot_mode");
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(5000),
-            std::bind(&GetRobotModeClient::timerCallback, this));
-    }
-    int8_t getCurrentMode() const { return current_mode_.load(); }
-
-  private:
-    void timerCallback() {
-        using namespace std::chrono_literals;
-        if (!client_->wait_for_service(20s)) {
-            RCLCPP_WARN(this->get_logger(),
-                        "[GetRobotModeClient] Service "
-                        "/dashboard_client/get_robot_mode not available");
-            return;
-        }
-        auto request =
-            std::make_shared<ur_dashboard_msgs::srv::GetRobotMode::Request>();
-        auto future_result = client_->async_send_request(request);
-        auto status = future_result.wait_for(std::chrono::seconds(20));
-        if (status == std::future_status::ready) {
-            auto response = future_result.get();
-            if (response->success) {
-                current_mode_.store(response->robot_mode.mode);
-
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "[GetRobotModeClient] Polled Robot mode: %d, answer: %s",
-                    response->robot_mode.mode, response->answer.c_str());
-            } else {
-                RCLCPP_WARN(this->get_logger(),
-                            "[GetRobotModeClient] Service call succeeded, but "
-                            "robot reported failure: %s",
-                            response->answer.c_str());
-                current_mode_.store(DISCONNECTED);
-            }
-        } else {
-            RCLCPP_ERROR(
-                this->get_logger(),
-                "[GetRobotModeClient] Timeout or error calling get_robot_mode");
-            current_mode_.store(DISCONNECTED);
-        }
-    }
-    rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedPtr client_;
-    rclcpp::TimerBase::SharedPtr timer_;
-    std::atomic<int8_t> current_mode_{DISCONNECTED};
-};
-
-/// reconnect
-
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     std::signal(SIGINT, signal_handler);
@@ -224,7 +72,6 @@ int main(int argc, char *argv[]) {
     tf2::Quaternion q;
     tf2::Quaternion target_q;
     geometry_msgs::msg::Pose target_pose;
-    static bool program_already_resent = true;
 
     // Subscriber Parameters
     double robot_vel;
@@ -253,10 +100,6 @@ int main(int argc, char *argv[]) {
     auto publisher_node = std::make_shared<dds_publisher>(
         msg, angle, circle_state, fast_axis, apply_config, end_state, scan_3d);
     auto img_subscriber_node = std::make_shared<img_subscriber>();
-    auto robot_mode_node = std::make_shared<GetRobotModeClient>();
-    auto robot_set_node = std::make_shared<SetModeActionClient>();
-
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr trigger_client;
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
@@ -269,8 +112,6 @@ int main(int argc, char *argv[]) {
     executor.add_node(publisher_node);
     executor.add_node(urscript_node);
     executor.add_node(img_subscriber_node);
-    executor.add_node(robot_mode_node);
-    executor.add_node(robot_set_node);
     std::thread spinner([&executor]() { executor.spin(); });
 
     add_collision_obj(move_group_interface);
@@ -278,11 +119,6 @@ int main(int argc, char *argv[]) {
     move_group_interface.setPlanningTime(10.0);
     move_group_interface.setNumPlanningAttempts(30);
     move_group_interface.setPlanningPipelineId("ompl");
-
-    // auto robot_mode_node = std::make_shared<GetRobotModeClient>();
-    // auto robot_set_node = std::make_shared<SetModeActionClient>();
-    // RCLCPP_INFO(node->get_logger(), "Requesting POWER_ON...");
-    // node->send_goal(POWER_ON);
 
     while (rclcpp::ok() && running) {
 
@@ -317,22 +153,6 @@ int main(int argc, char *argv[]) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
             urscript_node->deactivate_freedrive();
-        } else {
-            if (!robot_mode_node->getCurrentMode() && !program_already_resent) {
-                RCLCPP_INFO(logger, "Requesting RUNNING...");
-                // robot_set_node->send_goal(RUNNING, true, false);
-
-                // trigger_client =
-                // robot_mode_node->create_client<std_srvs::srv::Trigger>(
-                //         "/io_and_status_controller/resend_robot_program");
-                // auto request =
-                //     std::make_shared<std_srvs::srv::Trigger::Request>();
-                // auto future = trigger_client->async_send_request(request);
-                // rclcpp::sleep_for(std::chrono::seconds(5));
-                program_already_resent = true;
-            } else {
-                program_already_resent = false;
-            }
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);

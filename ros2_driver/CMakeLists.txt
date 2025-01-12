@@ -31,14 +31,15 @@ find_package(OpenCV REQUIRED)
 find_package(Open3D REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(ur_dashboard_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${Open3D_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
-
 
 # set(msg_files
 #   msg/ProgramState.msg
@@ -77,8 +78,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
-                              rosidl_typesupport_cpp) # link against interface
-
+                              rosidl_typesupport_cpp)
 ament_export_dependencies(rosidl_default_runtime)
 
 # add executables
@@ -131,13 +131,9 @@ ament_target_dependencies(
   geometry_msgs
   tf2_ros
   std_msgs
-  ur_dashboard_msgs
   OpenCV
   Open3D
   Eigen3)
-target_include_directories(octa_ctrl PRIVATE
-    "/opt/ros/jazzy/include/ur_dashboard_msgs"
-)
 target_link_libraries(
   octa_ctrl
   "${cpp_typesupport_target}"
@@ -147,25 +143,14 @@ target_link_libraries(
  Open3D::Open3D
   Eigen3::Eigen)
 
-# add_executable(planning_node src/planning_node.cpp src/dds_publisher.cpp src/dds_subscriber.cpp src/urscript_publisher.cpp src/img_subscriber.cpp src/utils.cpp)
-# ament_target_dependencies(
-#   planning_node
-#   rclcpp
-#   moveit_ros_planning_interface
-#   geometry_msgs
-#   tf2_ros
-#   std_msgs
-#   OpenCV
-#   Open3D
-#   Eigen3)
-# target_link_libraries(
-#   octa_ctrl
-#   "${cpp_typesupport_target}"
-#   "${moveit_ros_planning_interface_LIBRARIES}"
-#   "${geometry_msgs_LIBRARIES}"
-#   "${OpenCV_LIBS}"
-#   Open3D::Open3D
-#   Eigen3::Eigen)
+add_executable(get_robot_state src/get_robot_state.cpp)
+ament_target_dependencies(get_robot_state rclcpp ur_dashboard_msgs)
+
+add_executable(reconnect_node src/reconnect_node.cpp)
+# target_include_directories(octa_ctrl PRIVATE
+#     "/opt/ros/jazzy/include/ur_dashboard_msgs"
+# )
+ament_target_dependencies(reconnect_node rclcpp rclcpp_action ur_dashboard_msgs std_srvs)
 
 add_executable(pub_labview_data src/pub_labview_data.cpp)
 ament_target_dependencies(pub_labview_data rclcpp std_msgs)
@@ -207,6 +192,8 @@ install(
           single_axis_ctrl
           double_axis_ctrl
           reset
+          get_robot_state
+          reconnect_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})
