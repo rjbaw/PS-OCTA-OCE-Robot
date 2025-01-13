@@ -140,8 +140,8 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        robot_vel = 0.1;
-        robot_acc = 0.1;
+        robot_vel = 0.05;
+        robot_acc = 0.05;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -199,15 +199,7 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
@@ -280,15 +272,7 @@ int main(int argc, char *argv[]) {
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
+                rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
 
             if (angle_focused && !z_focused) {
@@ -423,15 +407,7 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
+            rclcpp::sleep_for(std::chrono::milliseconds(500));
         }
     }
     executor.cancel();
