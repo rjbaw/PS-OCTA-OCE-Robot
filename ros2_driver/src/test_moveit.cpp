@@ -8,6 +8,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include "joint_state_subscriber.hpp"
+
 std::atomic<bool> running(true);
 moveit::planning_interface::MoveGroupInterface *move_group_ptr = nullptr;
 
@@ -23,8 +25,9 @@ void signal_handler(int signum) {
 
 double to_radian(double angle) { return (std::numbers::pi / 180 * angle); }
 
-void test_plan(auto const &logger, auto &move_group_interface, double xpos,
-               double ypos, double zpos, double r, double p, double y) {
+void test_plan(auto const &logger, auto &move_group_interface,
+               auto &joint_state_node, double xpos, double ypos, double zpos,
+               double r, double p, double y) {
     geometry_msgs::msg::Pose target_pose =
         move_group_interface.getCurrentPose().pose;
 
@@ -79,9 +82,9 @@ void test_plan(auto const &logger, auto &move_group_interface, double xpos,
         }();
 
         if (success && running) {
-            // Execute asynchronously
             moveit::core::MoveItErrorCode exec_code =
                 move_group_interface.asyncExecute(plan);
+
             if (exec_code != moveit::core::MoveItErrorCode::SUCCESS) {
                 RCLCPP_ERROR(logger, "Failed to start execution! Code: %d",
                              exec_code.val);
@@ -93,7 +96,10 @@ void test_plan(auto const &logger, auto &move_group_interface, double xpos,
             RCLCPP_ERROR(logger, "Planning failed!");
         }
     }
-    rclcpp::sleep_for(std::chrono::milliseconds(3000));
+    while (!joint_state_node->ready()) {
+        rclcpp::sleep_for(std::chrono::milliseconds(50));
+    }
+    rclcpp::sleep_for(std::chrono::milliseconds(2500));
     move_group_interface.setStartStateToCurrentState();
 }
 
@@ -110,8 +116,10 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("test_moveit");
 
+    auto joint_state_node = std::make_shared<joint_state_subscriber>();
     rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(node);
+    executor.add_node(joint_state_node);
     std::thread([&executor]() { executor.spin(); }).detach();
 
     using moveit::planning_interface::MoveGroupInterface;
@@ -120,8 +128,8 @@ int main(int argc, char *argv[]) {
     move_group_interface.setNumPlanningAttempts(20);
     move_group_interface.setStartStateToCurrentState();
 
-    move_group_interface.setPlanningPipelineId("ompl");
-    // move_group_interface.setPlannerId("Stomp");
+    // move_group_interface.setPlanningPipelineId("ompl");
+    move_group_interface.setPlannerId("Stomp");
 
     RCLCPP_INFO(logger, "Planning Frame: %s",
                 move_group_interface.getPlanningFrame().c_str());
@@ -147,19 +155,41 @@ int main(int argc, char *argv[]) {
     // geometry_msgs::msg::Pose target_pose =
     //     move_group_interface.getCurrentPose(reference_frame).pose;
 
-    test_plan(logger, move_group_interface, 0, 0, 0, 0, 0, 45);
-    test_plan(logger, move_group_interface, 0, 0, 0, 0, 0, -45);
-    test_plan(logger, move_group_interface, 0, 0, 0, 45, 0, 0);
-    test_plan(logger, move_group_interface, 0, 0, 0, -45, 0, 0);
-    test_plan(logger, move_group_interface, 0, 0, 0, 0, 45, 0);
-    test_plan(logger, move_group_interface, 0, 0, 0, 0, -45, 0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, 0,
+              270);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, 0,
+              -270);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, 0,
+              -270);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, 0,
+              270);
 
-    test_plan(logger, move_group_interface, 0, 0, 0.1, 0, 0, 0);
-    test_plan(logger, move_group_interface, 0, 0, -0.1, 0, 0, 0);
-    test_plan(logger, move_group_interface, 0.1, 0, 0, 0, 0, 0);
-    test_plan(logger, move_group_interface, -0.1, 0, 0, 0, 0, 0);
-    test_plan(logger, move_group_interface, 0, 0.1, 0, 0, 0, 0);
-    test_plan(logger, move_group_interface, 0, -0.1, 0, 0, 0, 0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 45, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, -45, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, -45, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 45, 0,
+              0);
+
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, 30,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0, 0, -30,
+              0);
+
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, 0.1, 0, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0, -0.1, 0, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0.1, 0, 0, 0, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, -0.1, 0, 0, 0, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, 0.1, 0, 0, 0,
+              0);
+    test_plan(logger, move_group_interface, joint_state_node, 0, -0.1, 0, 0, 0,
+              0);
 
     rclcpp::shutdown();
     return 0;

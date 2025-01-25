@@ -103,9 +103,6 @@ int main(int argc, char *argv[]) {
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
-    // int attempt = 0;
-    // int max_attempt = 5;
-
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(move_group_node);
     executor.add_node(subscriber_node);
@@ -140,8 +137,8 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        robot_vel = 0.05;
-        robot_acc = 0.05;
+        robot_vel = 0.1;
+        robot_acc = 0.1;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;

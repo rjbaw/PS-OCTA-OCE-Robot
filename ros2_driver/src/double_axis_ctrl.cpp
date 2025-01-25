@@ -3,9 +3,9 @@
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <memory>
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/planning_interface/planning_interface.h>
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -247,7 +247,7 @@ bool tol_measure(double &drot, double &dz, double &angle_tolerance,
                  double &z_tolerance, double &scale_factor) {
     return (
         (std::abs((1 / scale_factor * drot)) < to_radian(angle_tolerance)) &&
-        (std::abs(dz) < (z_tolerance/1000.0)));
+        (std::abs(dz) < (z_tolerance / 1000.0)));
 }
 
 void add_collision_obj(auto &move_group_interface) {

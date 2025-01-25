@@ -8,7 +8,11 @@ from launch_ros.parameter_descriptions import ParameterFile
 from launch_ros.substitutions import FindPackageShare
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -23,6 +27,7 @@ from launch.launch_description_sources import AnyLaunchDescriptionSource
 
 from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
+
 
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
@@ -57,7 +62,9 @@ def launch_setup():
     warehouse_sqlite_path = LaunchConfiguration("warehouse_sqlite_path")
     launch_servo = LaunchConfiguration("launch_servo")
     use_sim_time = LaunchConfiguration("use_sim_time")
-    publish_robot_description_semantic = LaunchConfiguration("publish_robot_description_semantic")
+    publish_robot_description_semantic = LaunchConfiguration(
+        "publish_robot_description_semantic"
+    )
 
     # Robot Description
 
@@ -381,8 +388,8 @@ def launch_setup():
 
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
-        #.robot_description(Path("urdf") / "ur.urdf.xacro")
-        #.robot_description(mappings={"robot_description": robot_description_content})
+        # .robot_description(Path("urdf") / "ur.urdf.xacro")
+        # .robot_description(mappings={"robot_description": robot_description_content})
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
         .to_moveit_configs()
@@ -445,8 +452,8 @@ def launch_setup():
 
     robot_state_node = Node(
         package="octa_ros",
-        executable="joint_state_listener",
-        name="joint_state_listener",
+        executable="joint_state_publisher",
+        name="joint_state_publisher",
         output="screen",
     )
 
@@ -470,27 +477,32 @@ def launch_setup():
             target_action=wait_robot_description,
             on_exit=[
                 rviz_node,
-                move_group_node, 
-                servo_node, 
+                move_group_node,
+                servo_node,
                 robot_state_node,
                 octa_node,
-            ]
+            ],
         )
     )
-    nodes_to_start = [
-        control_node,
-        dashboard_client_node,
-        tool_communication_node,
-        controller_stopper_node,
-        urscript_interface,
-        #rsp,
-        robot_description,
-        initial_joint_controller_spawner_stopped,
-        initial_joint_controller_spawner_started,
-        wait_robot_description,
-    ] + controller_spawners + [nodes_after_driver]
+    nodes_to_start = (
+        [
+            control_node,
+            dashboard_client_node,
+            tool_communication_node,
+            controller_stopper_node,
+            urscript_interface,
+            # rsp,
+            robot_description,
+            initial_joint_controller_spawner_stopped,
+            initial_joint_controller_spawner_started,
+            wait_robot_description,
+        ]
+        + controller_spawners
+        + [nodes_after_driver]
+    )
 
     return nodes_to_start
+
 
 def generate_launch_description():
     declared_arguments = []
@@ -690,7 +702,9 @@ def generate_launch_description():
         )
     )
     declared_arguments.append(
-        DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
+        DeclareLaunchArgument(
+            "launch_rviz", default_value="true", description="Launch RViz?"
+        )
     )
     declared_arguments.append(
         DeclareLaunchArgument(

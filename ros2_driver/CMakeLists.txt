@@ -15,9 +15,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -fmodules-ts)
 endif()
 
-#option(GLIBCXX_USE_CXX11_ABI ON)
-#option(BUILD_SHARED_LIBS ON)
-#option(BUILD_CUDA_MODULE ON)
+# option(GLIBCXX_USE_CXX11_ABI ON) option(BUILD_SHARED_LIBS ON)
+# option(BUILD_CUDA_MODULE ON)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -41,40 +40,19 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${Open3D_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
 
-# set(msg_files
-#   msg/ProgramState.msg
-#   msg/RobotMode.msg
-#   msg/SafetyMode.msg
-# )
+# set(msg_files msg/ProgramState.msg msg/RobotMode.msg msg/SafetyMode.msg )
 
-# set(srv_files
-#   srv/AddToLog.srv
-#   srv/GetLoadedProgram.srv
-#   srv/GetProgramState.srv
-#   srv/GetRobotMode.srv
-#   srv/GetSafetyMode.srv
-#   srv/IsProgramRunning.srv
-#   srv/IsProgramSaved.srv
-#   srv/Load.srv
-#   srv/Popup.srv
-#   srv/RawRequest.srv
-# )
+# set(srv_files srv/AddToLog.srv srv/GetLoadedProgram.srv
+# srv/GetProgramState.srv srv/GetRobotMode.srv srv/GetSafetyMode.srv
+# srv/IsProgramRunning.srv srv/IsProgramSaved.srv srv/Load.srv srv/Popup.srv
+# srv/RawRequest.srv )
 
-# set(action_files
-#   action/SetMode.action
-# )
+# set(action_files action/SetMode.action )
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Labviewint.msg"
-  "msg/Img.msg"
-  "msg/Robotdata.msg"
-  "msg/Labviewdata.msg"
-  # ${msg_files}
-  # ${srv_files}
-  # ${action_files}
-  # DEPENDENCIES
-  #   action_msgs
-  #   builtin_interfaces
+rosidl_generate_interfaces(
+  ${PROJECT_NAME} "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
+  "msg/Labviewdata.msg" # ${msg_files} ${srv_files} ${action_files} DEPENDENCIES
+                        # action_msgs builtin_interfaces
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
@@ -83,12 +61,13 @@ ament_export_dependencies(rosidl_default_runtime)
 
 # add executables
 
-add_executable(joint_state_listener src/joint_state_listener.cpp)
-ament_target_dependencies(joint_state_listener rclcpp std_msgs sensor_msgs)
+add_executable(joint_state_publisher src/joint_state_publisher.cpp)
+ament_target_dependencies(joint_state_publisher rclcpp std_msgs sensor_msgs)
 
-add_executable(test_moveit src/test_moveit.cpp)
+add_executable(test_moveit src/test_moveit.cpp src/joint_state_subscriber.cpp)
 ament_target_dependencies(test_moveit rclcpp moveit_ros_planning_interface
                           geometry_msgs tf2_ros std_msgs)
+
 target_link_libraries(
   test_moveit "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
@@ -122,8 +101,7 @@ add_executable(
   src/urscript_publisher.cpp
   src/img_subscriber.cpp
   src/process_img.cpp
-  src/utils.cpp
-)
+  src/utils.cpp)
 ament_target_dependencies(
   octa_ctrl
   rclcpp
@@ -140,17 +118,17 @@ target_link_libraries(
   "${moveit_ros_planning_interface_LIBRARIES}"
   "${geometry_msgs_LIBRARIES}"
   "${OpenCV_LIBS}"
- Open3D::Open3D
+  Open3D::Open3D
   Eigen3::Eigen)
 
 add_executable(get_robot_state src/get_robot_state.cpp)
 ament_target_dependencies(get_robot_state rclcpp ur_dashboard_msgs)
 
-add_executable(reconnect_node src/reconnect_node.cpp)
 # target_include_directories(octa_ctrl PRIVATE
-#     "/opt/ros/jazzy/include/ur_dashboard_msgs"
-# )
-ament_target_dependencies(reconnect_node rclcpp rclcpp_action ur_dashboard_msgs std_srvs)
+# "/opt/ros/jazzy/include/ur_dashboard_msgs" )
+add_executable(reconnect_client src/reconnect_client.cpp src/reconnect_node.cpp)
+ament_target_dependencies(reconnect_client rclcpp rclcpp_action
+                          ur_dashboard_msgs std_srvs)
 
 add_executable(pub_labview_data src/pub_labview_data.cpp)
 ament_target_dependencies(pub_labview_data rclcpp std_msgs)
@@ -184,7 +162,7 @@ install(
           pub_robot_data
           sub_labview_data
           pub_labview_data
-          joint_state_listener
+          joint_state_publisher
           test_moveit
           test_img_rot
           test_detect
@@ -193,7 +171,7 @@ install(
           double_axis_ctrl
           reset
           get_robot_state
-          reconnect_node
+          reconnect_client
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})
