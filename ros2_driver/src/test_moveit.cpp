@@ -2,6 +2,7 @@
 #include <csignal>
 #include <memory>
 #include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <geometry_msgs/msg/quaternion.hpp>
@@ -83,9 +84,8 @@ void test_plan(auto const &logger, auto &move_group_interface,
 
         if (success && running) {
             moveit::core::MoveItErrorCode exec_code =
-                move_group_interface.asyncExecute(plan);
-
-            if (exec_code != moveit::core::MoveItErrorCode::SUCCESS) {
+                move_group_interface.execute(plan);
+            if (exec_code != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
                 RCLCPP_ERROR(logger, "Failed to start execution! Code: %d",
                              exec_code.val);
                 return;
@@ -126,6 +126,10 @@ int main(int argc, char *argv[]) {
     auto move_group_interface = MoveGroupInterface(node, "ur_manipulator");
     move_group_interface.setPlanningTime(20.0);
     move_group_interface.setNumPlanningAttempts(20);
+    // move_group_interface.setGoalJointTolerance(0.001);
+    // move_group_interface.setGoalOrientationTolerance(0.001);
+    move_group_interface.setMaxVelocityScalingFactor(1.0);
+    move_group_interface.setMaxAccelerationScalingFactor(1.0);
     move_group_interface.setStartStateToCurrentState();
 
     // move_group_interface.setPlanningPipelineId("ompl");

@@ -24,7 +24,7 @@ while getopts ":hs" option; do
    esac
 done
 
-pkill -f octa_ctrl
+pkill -f octa_ros
 pkill -f dashboard_client
 pkill -f urscript
 pkill -f controller

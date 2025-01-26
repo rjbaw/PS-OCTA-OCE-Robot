@@ -21,8 +21,11 @@
 #include "ur_dashboard_msgs/msg/robot_mode.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <ur_dashboard_msgs/srv/get_loaded_program.hpp>
+#include <ur_dashboard_msgs/srv/get_program_state.hpp>
 #include <ur_dashboard_msgs/srv/get_robot_mode.hpp>
 #include <ur_dashboard_msgs/srv/get_safety_mode.hpp>
+#include <ur_dashboard_msgs/srv/is_program_running.hpp>
 
 static constexpr int8_t NO_CONTROLLER = -1;
 static constexpr int8_t DISCONNECTED = 0;
@@ -63,11 +66,18 @@ class ReconnectClient : public rclcpp::Node {
         get_robot_mode_client_;
     rclcpp::Client<ur_dashboard_msgs::srv::GetSafetyMode>::SharedPtr
         get_safety_mode_client_;
+    rclcpp::Client<ur_dashboard_msgs::srv::GetProgramState>::SharedPtr
+        get_program_state_client_;
+    rclcpp::Client<ur_dashboard_msgs::srv::GetLoadedProgram>::SharedPtr
+        get_loaded_program_client_;
+    rclcpp::Client<ur_dashboard_msgs::srv::IsProgramRunning>::SharedPtr
+        running_program_client_;
 
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr connect_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr power_on_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr resend_program_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr restart_safety_client_;
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr brake_release_client_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 };

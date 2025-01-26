@@ -137,8 +137,8 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        robot_vel = 0.1;
-        robot_acc = 0.1;
+        // robot_vel = 0.1;
+        // robot_acc = 0.1;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -152,8 +152,8 @@ int main(int argc, char *argv[]) {
             urscript_node->deactivate_freedrive();
         }
 
-        move_group_interface.setMaxVelocityScalingFactor(robot_vel);
-        move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
+        // move_group_interface.setMaxVelocityScalingFactor(robot_vel);
+        // move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
         move_group_interface.setStartStateToCurrentState();
 
         if (subscriber_node->reset()) {
@@ -178,11 +178,11 @@ int main(int argc, char *argv[]) {
                                                      to_radian(-135.0));
 
             success = move_to_target(move_group_interface, logger);
-            // if (!success) {
-            //     msg = std::format("Reset Planning Failed!");
-            //     publisher_node->set_msg(msg);
-            //     RCLCPP_ERROR(logger, msg.c_str());
-            // }
+            if (!success) {
+                msg = std::format("Reset Planning Failed!");
+                publisher_node->set_msg(msg);
+                RCLCPP_ERROR(logger, msg.c_str());
+            }
         }
 
         if (subscriber_node->autofocus()) {
@@ -196,7 +196,6 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
             img_array.clear();
             for (int i = 0; i < interval; i++) {
@@ -217,11 +216,10 @@ int main(int argc, char *argv[]) {
             publisher_node->set_msg(msg);
             RCLCPP_INFO(logger, msg.c_str());
 
-            // scan_3d = false;
-            // apply_config = true;
-            // publisher_node->set_scan_3d(scan_3d);
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
+            scan_3d = false;
+            apply_config = true;
+            publisher_node->set_scan_3d(scan_3d);
+            publisher_node->set_apply_config(apply_config);
 
             pc_lines = lines_3d(img_array, interval, single_interval);
             open3d::geometry::PointCloud pcd_lines;
@@ -269,7 +267,6 @@ int main(int argc, char *argv[]) {
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
 
             if (angle_focused && !z_focused) {
@@ -404,7 +401,6 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
-            rclcpp::sleep_for(std::chrono::milliseconds(500));
         }
     }
     executor.cancel();
