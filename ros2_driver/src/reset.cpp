@@ -158,6 +158,8 @@ int main(int argc, char *argv[]) {
                                              to_radian(-120.0));
     move_group_interface.setJointValueTarget("wrist_2_joint", to_radian(-90.0));
     move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
+    // move_group_interface.setJointValueTarget("wrist_3_joint",
+    // to_radian(135.0));
     while (running) {
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         bool success = static_cast<bool>(move_group_interface.plan(plan));

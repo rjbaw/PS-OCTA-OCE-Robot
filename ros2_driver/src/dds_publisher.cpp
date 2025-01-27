@@ -34,16 +34,16 @@ dds_publisher::dds_publisher(std::string msg, double angle, int circle_state,
 
         publisher_->publish(message);
 
-        // if (this->apply_config) {
-        //     auto now = std::chrono::steady_clock::now();
-        //     auto elapsed =
-        //         std::chrono::duration_cast<std::chrono::milliseconds>(
-        //             now - apply_config_time_)
-        //             .count();
-        //     if (elapsed >= 500) {
-        //         this->apply_config = false;
-        //     }
-        // }
+        if (this->apply_config) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - apply_config_time_)
+                    .count();
+            if (elapsed >= 100) {
+                this->apply_config = false;
+            }
+        }
 
         old_message = message;
     });
@@ -58,9 +58,9 @@ void dds_publisher::set_fast_axis(bool new_fast_axis) {
     fast_axis = new_fast_axis;
 }
 void dds_publisher::set_apply_config(bool new_apply_config) {
-    // if (new_apply_config) {
-    //     apply_config_time_ = std::chrono::steady_clock::now();
-    // }
+    if (new_apply_config) {
+        apply_config_time_ = std::chrono::steady_clock::now();
+    }
     apply_config = new_apply_config;
 }
 void dds_publisher::set_end_state(bool new_end_state) {

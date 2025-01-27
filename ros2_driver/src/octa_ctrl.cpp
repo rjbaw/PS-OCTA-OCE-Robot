@@ -186,8 +186,6 @@ int main(int argc, char *argv[]) {
         }
 
         if (subscriber_node->autofocus()) {
-            apply_config = true;
-            publisher_node->set_apply_config(apply_config);
             if (!scan_3d) {
                 scan_3d = true;
                 apply_config = true;
