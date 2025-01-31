@@ -122,6 +122,9 @@ void ReconnectClient::timerCallback() {
             default:
                 break;
             }
+	    if (mode == POWER_OFF || mode == IDLE) {
+	        return;
+	    }
         });
 
     auto safety_req =
