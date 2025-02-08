@@ -16,4 +16,4 @@ bool reset
 bool fast_axis
 bool scan_3d
 float64 z_height
-
+bool run_state
