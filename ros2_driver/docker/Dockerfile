@@ -9,7 +9,11 @@ RUN apt-get update &&\
     tmux \
     curl \
     wget \
-    htop
+    htop \
+    sudo \
+    iproute2 \
+    ros-rolling-ros2-control \ 
+    ros-rolling-ros2-controllers
 
 RUN git clone https://github.com/isl-org/Open3D &&\
     cd Open3D &&\
@@ -22,7 +26,16 @@ RUN git clone https://github.com/isl-org/Open3D &&\
     cd ../../ &&\
     rm -r Open3D
 
+RUN deluser ubuntu
+RUN adduser ubuntu --disabled-password --home /workspace/
+RUN passwd -d ubuntu && usermod -aG sudo ubuntu
+
 RUN chmod +x /ros_entrypoint.sh
+
+USER ubuntu
+WORKDIR /workspace
+
+RUN ulimit -c 0
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
 CMD ["bash"]
