@@ -24,6 +24,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+const bool use_urscript = true;
+
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
 
@@ -37,6 +39,24 @@ void signal_handler(int signum) {
 bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
     return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
+}
+void reset_robot_urscript(std::shared_ptr<urscript_publisher> &urscript_node,
+                          double velocity, double acceleration) {
+    double j0 = to_radian(0.0);
+    double j1 = to_radian(-60.0);
+    double j2 = to_radian(90.0);
+    double j3 = to_radian(-120.0);
+    double j4 = to_radian(-90.0);
+    double j5 = to_radian(-135.0);
+
+    std::ostringstream prog;
+    prog << "def reset_position():\n";
+    prog << "  end_freedrive_mode()\n";
+    prog << "  movej([" << j0 << ", " << j1 << ", " << j2 << ", " << j3 << ", "
+         << j4 << ", " << j5 << "], " << "a=" << acceleration
+         << ", v=" << velocity << ")\n";
+    prog << "end\n";
+    urscript_node->publish_script_now(prog.str());
 }
 
 int main(int argc, char *argv[]) {
@@ -116,7 +136,7 @@ int main(int argc, char *argv[]) {
     move_group_interface.setPlanningTime(10.0);
     move_group_interface.setNumPlanningAttempts(30);
     move_group_interface.setPlanningPipelineId("ompl");
-    //move_group_interface.setPlanningPipelineId("stomp");
+    // move_group_interface.setPlanningPipelineId("stomp");
 
     while (rclcpp::ok() && running) {
 
@@ -165,20 +185,23 @@ int main(int argc, char *argv[]) {
             publisher_node->set_msg(msg);
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
-            move_group_interface.setJointValueTarget("shoulder_pan_joint",
-                                                     to_radian(0.0));
-            move_group_interface.setJointValueTarget("shoulder_lift_joint",
-                                                     -to_radian(60.0));
-            move_group_interface.setJointValueTarget("elbow_joint",
-                                                     to_radian(90.0));
-            move_group_interface.setJointValueTarget("wrist_1_joint",
-                                                     to_radian(-120.0));
-            move_group_interface.setJointValueTarget("wrist_2_joint",
-                                                     to_radian(-90.0));
-            move_group_interface.setJointValueTarget("wrist_3_joint",
-                                                     to_radian(-135.0));
-
-            success = move_to_target(move_group_interface, logger);
+            if (use_urscript) {
+                reset_robot_urscript(urscript_node, 1.0, 1.0);
+            } else {
+                move_group_interface.setJointValueTarget("shoulder_pan_joint",
+                                                         to_radian(0.0));
+                move_group_interface.setJointValueTarget("shoulder_lift_joint",
+                                                         -to_radian(60.0));
+                move_group_interface.setJointValueTarget("elbow_joint",
+                                                         to_radian(90.0));
+                move_group_interface.setJointValueTarget("wrist_1_joint",
+                                                         to_radian(-120.0));
+                move_group_interface.setJointValueTarget("wrist_2_joint",
+                                                         to_radian(-90.0));
+                move_group_interface.setJointValueTarget("wrist_3_joint",
+                                                         to_radian(-135.0));
+                success = move_to_target(move_group_interface, logger);
+            }
             if (!success) {
                 msg = std::format("Reset Planning Failed!");
                 publisher_node->set_msg(msg);
@@ -285,7 +308,13 @@ int main(int argc, char *argv[]) {
                     target_pose.position.z += dz;
                     print_target(logger, target_pose);
                     move_group_interface.setPoseTarget(target_pose);
-                    success = move_to_target(move_group_interface, logger);
+                    if (use_urscript) {
+                        success = move_to_target_urscript(
+                            target_pose, logger, urscript_node, 1.0, 1.0);
+                    } else {
+                        success = move_to_target(move_group_interface, logger);
+                    }
+
                     // if (!success) {
                     //     msg = std::format("Z-height Planning Failed!");
                     //     RCLCPP_ERROR(logger, msg.c_str());
@@ -307,7 +336,12 @@ int main(int argc, char *argv[]) {
                 target_pose.position.z += dz;
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
-                success = move_to_target(move_group_interface, logger);
+                if (use_urscript) {
+                    success = move_to_target_urscript(target_pose, logger,
+                                                      urscript_node, 1.0, 1.0);
+                } else {
+                    success = move_to_target(move_group_interface, logger);
+                }
                 if (!success) {
                     // msg = std::format("Angle Focus Planning Failed!");
                     msg = "Angle Focus Planning Failed!";
@@ -358,7 +392,12 @@ int main(int argc, char *argv[]) {
                 target_pose.orientation = tf2::toMsg(target_q);
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
-                success = move_to_target(move_group_interface, logger);
+                if (use_urscript) {
+                    success = move_to_target_urscript(target_pose, logger,
+                                                      urscript_node, 1.0, 1.0);
+                } else {
+                    success = move_to_target(move_group_interface, logger);
+                }
                 if (success) {
                     msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());

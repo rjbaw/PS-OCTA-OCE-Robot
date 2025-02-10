@@ -1,7 +1,9 @@
 #include "urscript_publisher.hpp"
 
 urscript_publisher::urscript_publisher()
-    : Node("urscript_publisher"), freedrive(false), executed(true) {
+    : Node("urscript_publisher"), freedrive(false), executed(true),
+      traj_requested_(false), use_movej_(true), traj_velocity_(1.0),
+      traj_acceleration_(1.0) {
     auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     trigger_client = this->create_client<std_srvs::srv::Trigger>(
         "/io_and_status_controller/resend_robot_program");
@@ -14,16 +16,30 @@ urscript_publisher::urscript_publisher()
 void urscript_publisher::activate_freedrive() {
     freedrive = true;
     executed = false;
+    traj_requested_ = false;
 }
 void urscript_publisher::deactivate_freedrive() {
     freedrive = false;
     executed = false;
 }
-
+void urscript_publisher::execute_trajectory(
+    const std::vector<std::array<double, 6>> &trajectory, double velocity,
+    double acceleration, bool use_movej) {
+    trajectory_points_ = trajectory;
+    traj_velocity_ = velocity;
+    traj_acceleration_ = acceleration;
+    use_movej_ = use_movej;
+    freedrive = false;
+    traj_requested_ = true;
+    executed = false;
+}
 void urscript_publisher::publish_to_robot() {
-    if (!executed) {
-        executed = true;
+    if (executed) {
+        return;
+    }
+    if (!traj_requested_) {
         auto message = std_msgs::msg::String();
+        executed = true;
         if (freedrive) {
             message.data = R"(
 def program():
@@ -32,13 +48,14 @@ def program():
   freedrive_mode()
  end
 end
-            )";
-        } else {
+	    )";
+        }
+        if (!freedrive) {
             message.data = R"(
 def program():
  end_freedrive_mode()
 end
-            )";
+	    )";
         }
         publisher_->publish(message);
         RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
@@ -54,4 +71,58 @@ end
             auto future = trigger_client->async_send_request(request);
         }
     }
+    if (traj_requested_) {
+        auto message = std_msgs::msg::String();
+        std::ostringstream prog;
+        prog << "def trajectory_program():\n";
+        prog << "  end_freedrive_mode()\n";
+        // movej([j0, j1, j2, j3, j4, j5], a=acc, v=vel)
+        for (size_t i = 0; i < trajectory_points_.size(); i++) {
+            prog << "  ";
+            if (use_movej_) {
+                prog << "movej([";
+            } else {
+                prog << "movel([";
+            }
+            for (int j = 0; j < 6; j++) {
+                prog << trajectory_points_[i][j];
+                if (j < 5) {
+                    prog << ", ";
+                }
+            }
+            prog << "], a=" << traj_acceleration_ << ", v=" << traj_velocity_
+                 << ")\n";
+        }
+        prog << "end\n";
+        message.data = prog.str();
+        publisher_->publish(message);
+        RCLCPP_INFO(this->get_logger(), "URscript trajectory published:\n%s",
+                    message.data.c_str());
+        traj_requested_ = false;
+        executed = true;
+        while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
+            RCLCPP_INFO(this->get_logger(),
+                        "Waiting for /resend_robot_program service...");
+        }
+        auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+        (void)trigger_client->async_send_request(request);
+    }
+}
+void urscript_publisher::publish_script_now(const std::string &script) {
+    auto message = std_msgs::msg::String();
+    message.data = script;
+    this->freedrive = false;
+    this->traj_requested_ = false;
+    this->executed = false;
+    publisher_->publish(message);
+    RCLCPP_INFO(this->get_logger(), "URScript message published:\n%s",
+                script.c_str());
+    while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Waiting for /io_and_status_controller/resend_robot_program");
+    }
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+    (void)trigger_client->async_send_request(request);
+    executed = true;
 }

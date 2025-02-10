@@ -24,19 +24,14 @@ while getopts ":hs" option; do
    esac
 done
 
-pkill -f octa_ros
-pkill -f dashboard_client
-pkill -f urscript
-pkill -f controller
-pkill -f moveit
-pkill -f ros
-#ros2 daemon stop
-#ros2 daemon start
+pkill ros
 rm -f core*
+pkill -f octa_ros
+pkill -f moveit
 source install/setup.bash
 if  [[ $sim == "true" ]]; then
-	ros2 launch octa_ros single_node_3d.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true
+	ros2 launch octa_ros single_axis.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true
 else
-	ros2 launch octa_ros single_node_3d.py ur_type:=ur3e robot_ip:=192.168.0.10 headless_mode:=true reverse_ip:=192.168.0.5
+	ros2 launch octa_ros single_axis.py ur_type:=ur3e robot_ip:=192.168.0.10 headless_mode:=true reverse_ip:=192.168.0.5
 
 fi

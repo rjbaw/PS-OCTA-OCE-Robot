@@ -10,6 +10,11 @@ class urscript_publisher : public rclcpp::Node {
     urscript_publisher();
     void activate_freedrive();
     void deactivate_freedrive();
+    void
+    execute_trajectory(const std::vector<std::array<double, 6>> &trajectory,
+                       double velocity = 1.0, double acceleration = 1.0,
+                       bool use_movej = true);
+    void publish_script_now(const std::string &script);
 
   private:
     rclcpp::TimerBase::SharedPtr timer_;
@@ -18,6 +23,12 @@ class urscript_publisher : public rclcpp::Node {
     bool freedrive;
     bool executed;
     void publish_to_robot();
+
+    bool traj_requested_;
+    bool use_movej_;
+    double traj_velocity_;
+    double traj_acceleration_;
+    std::vector<std::array<double, 6>> trajectory_points_;
 };
 
 #endif // URSCRIPT_PUBLISHER_HPP
