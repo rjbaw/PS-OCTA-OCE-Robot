@@ -26,5 +26,7 @@ bool move_to_target_urscript(double dx, double dy, double dz, double rx,
                              double ry, double rz, rclcpp::Logger const &logger,
                              std::shared_ptr<urscript_publisher> urscript_node,
                              double velocity, double acceleration);
+void reset_robot_urscript(std::shared_ptr<urscript_publisher> &urscript_node,
+                          double velocity, double acceleration);
 
 #endif // UTILS_HPP_

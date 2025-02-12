@@ -157,3 +157,21 @@ bool move_to_target_urscript(double dx, double dy, double dz, double rx,
                 prog.str().c_str());
     return true;
 }
+
+void reset_robot_urscript(std::shared_ptr<urscript_publisher> &urscript_node,
+                          double velocity, double acceleration) {
+    double j0 = to_radian(0.0);
+    double j1 = to_radian(-60.0);
+    double j2 = to_radian(90.0);
+    double j3 = to_radian(-120.0);
+    double j4 = to_radian(-90.0);
+    double j5 = to_radian(-135.0);
+    std::ostringstream prog;
+    prog << "def reset_position():\n";
+    prog << "  end_freedrive_mode()\n";
+    prog << "  movej([" << j0 << ", " << j1 << ", " << j2 << ", " << j3 << ", "
+         << j4 << ", " << j5 << "], " << "a=" << acceleration
+         << ", v=" << velocity << ")\n";
+    prog << "end\n";
+    urscript_node->publish_script_now(prog.str());
+}

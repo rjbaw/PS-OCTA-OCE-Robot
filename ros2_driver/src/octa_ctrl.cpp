@@ -171,7 +171,9 @@ int main(int argc, char *argv[]) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
             urscript_node->deactivate_freedrive();
-            urscript_node->resend_program();
+            if (!use_urscript) {
+                urscript_node->resend_program();
+            }
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
