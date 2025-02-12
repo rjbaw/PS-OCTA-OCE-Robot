@@ -80,6 +80,8 @@ class ReconnectClient : public rclcpp::Node {
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr brake_release_client_;
 
     rclcpp::TimerBase::SharedPtr timer_;
+
+    bool executed_ = false;
 };
 
 #endif // RECONNECT_NODE_HPP

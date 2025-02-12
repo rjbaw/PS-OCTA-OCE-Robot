@@ -97,6 +97,7 @@ def launch_setup():
     reverse_port = LaunchConfiguration("reverse_port")
     script_sender_port = LaunchConfiguration("script_sender_port")
     trajectory_port = LaunchConfiguration("trajectory_port")
+    run_reconnect_node = LaunchConfiguration("reconnect")
 
     control_node = Node(
         package="controller_manager",
@@ -221,40 +222,6 @@ def launch_setup():
         condition=UnlessCondition(activate_joint_controller),
     )
 
-    # rsp = IncludeLaunchDescription(
-    #     AnyLaunchDescriptionSource(description_launchfile),
-    #     launch_arguments={
-    #         "robot_ip": robot_ip,
-    #         "ur_type": ur_type,
-    #         "safety_limits" : safety_limits,
-    #         "safety_pos_margin" : safety_pos_margin,
-    #         "safety_k_position" : safety_k_position,
-    #         "kinematics_params_file" : kinematics_params_file,
-    #         "physical_params_file" : physical_params_file,
-    #         "visual_params_file" : visual_params_file,
-    #         "joint_limit_params_file" : joint_limit_params_file,
-    #         "description_file" : description_file,
-    #         "tf_prefix" : tf_prefix,
-    #         "use_mock_hardware" : use_mock_hardware,
-    #         "mock_sensor_commands" : mock_sensor_commands,
-    #         "headless_mode" : headless_mode,
-    #         "use_tool_communication" : use_tool_communication,
-    #         "tool_parity" : tool_parity,
-    #         "tool_baud_rate" : tool_baud_rate,
-    #         "tool_stop_bits" : tool_stop_bits,
-    #         "tool_rx_idle_chars" : tool_rx_idle_chars,
-    #         "tool_tx_idle_chars" : tool_tx_idle_chars,
-    #         "tool_device_name" : tool_device_name,
-    #         "tool_tcp_port" : tool_tcp_port,
-    #         "tool_voltage" : tool_voltage,
-    #         "reverse_ip" : reverse_ip,
-    #         "script_command_port" : script_command_port,
-    #         "reverse_port" : reverse_port,
-    #         "script_sender_port" : script_sender_port,
-    #         "trajectory_port" : trajectory_port,
-    #     }.items(),
-    # )
-
     script_filename = PathJoinSubstitution(
         [
             FindPackageShare("ur_client_library"),
@@ -374,38 +341,18 @@ def launch_setup():
         parameters=[{"robot_description": robot_description_content}],
     )
 
-    static_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="static_transform_publisher",
-        output="log",
-        arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
-    )
-
-    # planning_yaml = load_yaml(package_name="octa_ros", file_path="ompl_planning.yaml")
-    # moveit_config = (
-    #     MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
-    #     #.robot_description(Path("urdf") / "ur.urdf.xacro")
-    #     #.robot_description(mappings={"robot_description": robot_description_content})
-    #     .robot_description()
-    #     .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-    #     .robot_description_kinematics(file_path="config/kinematics.yaml")
-    #     .trajectory_execution(file_path="config/moveit_controllers.yaml")
-    #     .planning_pipelines(pipelines=planning_yaml)
-    #     .planning_scene_monitor(
-    #         publish_robot_description=True,
-    #         publish_robot_description_semantic=True
-    #     )
-    #     .sensors_3d()
-    #     .to_moveit_configs()
+    # static_tf = Node(
+    #     package="tf2_ros",
+    #     executable="static_transform_publisher",
+    #     name="static_transform_publisher",
+    #     output="log",
+    #     arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
     # )
 
-    # planner_yaml = load_yaml("octa_ros", "chomp_planning.yaml")
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
         .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-        # .planning_pipelines(pipelines=planner_yaml)
         .to_moveit_configs()
     )
 
@@ -475,7 +422,6 @@ def launch_setup():
         package="octa_ros",
         executable="octa_ctrl",
         name="octa_ctrl",
-        # output="screen",
         output="log",
         parameters=[
             moveit_config.robot_description,
@@ -507,6 +453,19 @@ def launch_setup():
         )
     )
 
+    reconnect_client_action = TimerAction(
+        period=10.0,
+        actions=[
+            Node(
+                package="octa_ros",
+                executable="reconnect_client",
+                name="reconnect_client",
+                output="screen",
+            )
+        ],
+        condition=IfCondition(run_reconnect_node),
+    )
+
     joint_publisher_exit_handler = RegisterEventHandler(
         OnProcessExit(target_action=robot_state_node, on_exit=[Shutdown()])
     )
@@ -521,7 +480,6 @@ def launch_setup():
             tool_communication_node,
             controller_stopper_node,
             urscript_interface,
-            # rsp,
             robot_description,
             initial_joint_controller_spawner_stopped,
             initial_joint_controller_spawner_started,
@@ -530,12 +488,7 @@ def launch_setup():
         + controller_spawners
         + [nodes_after_driver]
         + [joint_publisher_exit_handler, octa_exit_handler]
-        + [
-            TimerAction(
-                period=10.0,
-                actions=[reconnect_client],
-            )
-        ]
+        + [reconnect_client_action]
     )
 
     return nodes_to_start
@@ -677,13 +630,13 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
-            "description_launchfile",
-            default_value=PathJoinSubstitution(
-                [FindPackageShare("ur_robot_driver"), "launch", "ur_rsp.launch.py"]
-            ),
-            description="Launchfile (absolute path) providing the description. "
-            "The launchfile has to start a robot_state_publisher node that "
-            "publishes the description topic.",
+            "reconnect",
+            description="Run auto reconnect node",
+            default_value="true",
+            choices=[
+                "true",
+                "false",
+            ],
         )
     )
     declared_arguments.append(

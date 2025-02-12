@@ -13,6 +13,16 @@ urscript_publisher::urscript_publisher()
         std::chrono::seconds(1),
         std::bind(&urscript_publisher::publish_to_robot, this));
 }
+void urscript_publisher::resend_program() {
+    // ros2 service call
+    // /io_and_status_controller/resend_robot_program
+    // std_srvs/srv/Trigger;
+    while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
+        RCLCPP_INFO(this->get_logger(), "Waiting for service...");
+    }
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+    auto future = trigger_client->async_send_request(request);
+}
 void urscript_publisher::activate_freedrive() {
     freedrive = true;
     executed = false;
@@ -61,14 +71,7 @@ end
         RCLCPP_INFO(this->get_logger(), "URscript message published: '%s'",
                     message.data.c_str());
         if (!freedrive) {
-            // ros2 service call
-            // /io_and_status_controller/resend_robot_program
-            // std_srvs/srv/Trigger;
-            while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
-                RCLCPP_INFO(this->get_logger(), "Waiting for service...");
-            }
-            auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-            auto future = trigger_client->async_send_request(request);
+            urscript_publisher::resend_program();
         }
     }
     if (traj_requested_) {
@@ -100,12 +103,6 @@ end
                     message.data.c_str());
         traj_requested_ = false;
         executed = true;
-        while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
-            RCLCPP_INFO(this->get_logger(),
-                        "Waiting for /resend_robot_program service...");
-        }
-        auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-        (void)trigger_client->async_send_request(request);
     }
 }
 void urscript_publisher::publish_script_now(const std::string &script) {
@@ -117,12 +114,5 @@ void urscript_publisher::publish_script_now(const std::string &script) {
     publisher_->publish(message);
     RCLCPP_INFO(this->get_logger(), "URScript message published:\n%s",
                 script.c_str());
-    while (!trigger_client->wait_for_service(std::chrono::seconds(1))) {
-        RCLCPP_INFO(
-            this->get_logger(),
-            "Waiting for /io_and_status_controller/resend_robot_program");
-    }
-    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-    (void)trigger_client->async_send_request(request);
     executed = true;
 }

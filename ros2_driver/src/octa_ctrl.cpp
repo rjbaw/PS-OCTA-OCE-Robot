@@ -24,7 +24,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-const bool use_urscript = true;
+const bool use_urscript = false;
 
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
@@ -171,6 +171,7 @@ int main(int argc, char *argv[]) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
             urscript_node->deactivate_freedrive();
+            urscript_node->resend_program();
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
@@ -186,7 +187,8 @@ int main(int argc, char *argv[]) {
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
             if (use_urscript) {
-                reset_robot_urscript(urscript_node, 1.0, 1.0);
+                reset_robot_urscript(urscript_node, robot_vel, robot_acc);
+                rclcpp::sleep_for(std::chrono::milliseconds(3000));
             } else {
                 move_group_interface.setJointValueTarget("shoulder_pan_joint",
                                                          to_radian(0.0));
@@ -311,6 +313,7 @@ int main(int argc, char *argv[]) {
                     if (use_urscript) {
                         success = move_to_target_urscript(
                             target_pose, logger, urscript_node, 1.0, 1.0);
+                        rclcpp::sleep_for(std::chrono::milliseconds(3000));
                     } else {
                         success = move_to_target(move_group_interface, logger);
                     }
@@ -339,6 +342,7 @@ int main(int argc, char *argv[]) {
                 if (use_urscript) {
                     success = move_to_target_urscript(target_pose, logger,
                                                       urscript_node, 1.0, 1.0);
+                    rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
                     success = move_to_target(move_group_interface, logger);
                 }
@@ -395,6 +399,7 @@ int main(int argc, char *argv[]) {
                 if (use_urscript) {
                     success = move_to_target_urscript(target_pose, logger,
                                                       urscript_node, 1.0, 1.0);
+                    rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
                     success = move_to_target(move_group_interface, logger);
                 }

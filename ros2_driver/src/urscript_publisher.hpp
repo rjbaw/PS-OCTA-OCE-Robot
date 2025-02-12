@@ -10,6 +10,7 @@ class urscript_publisher : public rclcpp::Node {
     urscript_publisher();
     void activate_freedrive();
     void deactivate_freedrive();
+    void resend_program();
     void
     execute_trajectory(const std::vector<std::array<double, 6>> &trajectory,
                        double velocity = 1.0, double acceleration = 1.0,

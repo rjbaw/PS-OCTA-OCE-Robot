@@ -93,6 +93,8 @@ mkdir -p "${PROGRAM_STORAGE}"
 if [[ ! -f "${URCAP_STORAGE}/externalcontrol-${URCAP_VERSION}.jar" ]]; then
   curl -L -o "${URCAP_STORAGE}/externalcontrol-${URCAP_VERSION}.jar" \
     "https://github.com/UniversalRobots/Universal_Robots_ExternalControl_URCap/releases/download/v${URCAP_VERSION}/externalcontrol-${URCAP_VERSION}.jar"
+  curl -L -o "${URCAP_STORAGE}/ext_control.urcap" \
+    "https://github.com/UniversalRobots/Universal_Robots_ExternalControl_URCap/releases/download/v${URCAP_VERSION}/externalcontrol-${URCAP_VERSION}.urcap"
 fi
 
 # Check whether network already exists
