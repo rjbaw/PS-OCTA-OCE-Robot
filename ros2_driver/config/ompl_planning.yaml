@@ -23,7 +23,7 @@ ur_manipulator:
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
-    #  - RRTstar
+    - RRTstar
   projection_evaluator: joints(shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint)
 
 start_state_max_bounds_error: 0.05

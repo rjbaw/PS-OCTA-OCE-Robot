@@ -306,15 +306,17 @@ int main(int argc, char *argv[]) {
                     RCLCPP_INFO(logger, msg.c_str());
                 } else {
                     planning = true;
-                    target_pose = move_group_interface.getCurrentPose().pose;
-                    target_pose.position.z += dz;
-                    print_target(logger, target_pose);
-                    move_group_interface.setPoseTarget(target_pose);
                     if (use_urscript) {
-                        success = move_to_target_urscript(
-                            target_pose, logger, urscript_node, 1.0, 1.0);
+                        success = move_to_target_urscript(0, 0, dz, 0, 0, 0,
+                                                          logger, urscript_node,
+                                                          robot_vel, robot_acc);
                         rclcpp::sleep_for(std::chrono::milliseconds(3000));
                     } else {
+                        target_pose =
+                            move_group_interface.getCurrentPose().pose;
+                        target_pose.position.z += dz;
+                        print_target(logger, target_pose);
+                        move_group_interface.setPoseTarget(target_pose);
                         success = move_to_target(move_group_interface, logger);
                     }
 
@@ -329,21 +331,38 @@ int main(int argc, char *argv[]) {
             if (!angle_focused) {
                 planning = true;
                 rotmat_tf.getRotation(q);
-                target_pose = move_group_interface.getCurrentPose().pose;
-                tf2::fromMsg(target_pose.orientation, target_q);
                 q.normalize();
-                target_q = target_q * q;
-                target_pose.orientation = tf2::toMsg(target_q);
-                target_pose.position.x += radius * std::cos(to_radian(angle));
-                target_pose.position.y += radius * std::sin(to_radian(angle));
-                target_pose.position.z += dz;
-                print_target(logger, target_pose);
-                move_group_interface.setPoseTarget(target_pose);
                 if (use_urscript) {
-                    success = move_to_target_urscript(target_pose, logger,
-                                                      urscript_node, 1.0, 1.0);
+                    double angle = 2.0 * std::acos(q.getW());
+                    double norm =
+                        std::sqrt(q.getX() * q.getX() + q.getY() * q.getY() +
+                                  q.getZ() * q.getZ());
+                    double rx = 0, ry = 0, rz = 0;
+                    if (norm < 1e-8) {
+                        rx = ry = rz = 0.0;
+                    } else {
+                        rx = (q.getX() / norm) * angle;
+                        ry = (q.getY() / norm) * angle;
+                        rz = (q.getZ() / norm) * angle;
+                    }
+
+                    success = move_to_target_urscript(
+                        radius * std::cos(to_radian(angle)),
+                        radius * std::sin(to_radian(angle)), dz, rx, ry, rz,
+                        logger, urscript_node, robot_vel, robot_acc);
                     rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
+                    target_pose = move_group_interface.getCurrentPose().pose;
+                    tf2::fromMsg(target_pose.orientation, target_q);
+                    target_q = target_q * q;
+                    target_pose.orientation = tf2::toMsg(target_q);
+                    target_pose.position.x +=
+                        radius * std::cos(to_radian(angle));
+                    target_pose.position.y +=
+                        radius * std::sin(to_radian(angle));
+                    target_pose.position.z += dz;
+                    print_target(logger, target_pose);
+                    move_group_interface.setPoseTarget(target_pose);
                     success = move_to_target(move_group_interface, logger);
                 }
                 if (!success) {
@@ -388,19 +407,20 @@ int main(int argc, char *argv[]) {
             publisher_node->set_circle_state(circle_state);
 
             if (planning) {
-                target_pose = move_group_interface.getCurrentPose().pose;
-                tf2::fromMsg(target_pose.orientation, target_q);
-                q.setRPY(roll, pitch, yaw);
-                q.normalize();
-                target_q = target_q * q;
-                target_pose.orientation = tf2::toMsg(target_q);
-                print_target(logger, target_pose);
-                move_group_interface.setPoseTarget(target_pose);
                 if (use_urscript) {
-                    success = move_to_target_urscript(target_pose, logger,
-                                                      urscript_node, 1.0, 1.0);
+                    success = move_to_target_urscript(0, 0, 0, roll, pitch, yaw,
+                                                      logger, urscript_node,
+                                                      robot_vel, robot_acc);
                     rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
+                    q.setRPY(roll, pitch, yaw);
+                    q.normalize();
+                    target_pose = move_group_interface.getCurrentPose().pose;
+                    tf2::fromMsg(target_pose.orientation, target_q);
+                    target_q = target_q * q;
+                    target_pose.orientation = tf2::toMsg(target_q);
+                    print_target(logger, target_pose);
+                    move_group_interface.setPoseTarget(target_pose);
                     success = move_to_target(move_group_interface, logger);
                 }
                 if (success) {

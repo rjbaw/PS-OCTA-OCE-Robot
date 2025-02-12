@@ -22,9 +22,9 @@ void print_target(rclcpp::Logger const &logger,
 bool move_to_target(
     moveit::planning_interface::MoveGroupInterface &move_group_interface,
     rclcpp::Logger const &logger);
-bool move_to_target_urscript(const geometry_msgs::msg::Pose &target_pose,
-                             rclcpp::Logger const &logger,
+bool move_to_target_urscript(double dx, double dy, double dz, double rx,
+                             double ry, double rz, rclcpp::Logger const &logger,
                              std::shared_ptr<urscript_publisher> urscript_node,
-                             double velocity = 1.0, double acceleration = 1.0);
+                             double velocity, double acceleration);
 
 #endif // UTILS_HPP_

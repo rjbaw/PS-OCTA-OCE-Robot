@@ -128,48 +128,32 @@ bool move_to_target(
     return success;
 }
 
-bool move_to_target_urscript(const geometry_msgs::msg::Pose &target_pose,
-                             rclcpp::Logger const &logger,
+bool move_to_target_urscript(double dx, double dy, double dz, double rx,
+                             double ry, double rz, rclcpp::Logger const &logger,
                              std::shared_ptr<urscript_publisher> urscript_node,
                              double velocity, double acceleration) {
-    const double x = target_pose.position.x;
-    const double y = target_pose.position.y;
-    const double z = target_pose.position.z;
-    tf2::Quaternion q;
-    tf2::fromMsg(target_pose.orientation, q);
-    q.normalize();
-
-    double angle = 2.0 * std::acos(q.getW());
-    double norm = std::sqrt(q.getX() * q.getX() + q.getY() * q.getY() +
-                            q.getZ() * q.getZ());
-
-    double rx = 0.0, ry = 0.0, rz = 0.0;
-    if (norm < 1e-8) {
-        rx = ry = rz = 0.0;
-    } else {
-        rx = (q.getX() / norm) * angle;
-        ry = (q.getY() / norm) * angle;
-        rz = (q.getZ() / norm) * angle;
-    }
-    RCLCPP_INFO(logger,
-                "URScript Cartesian move request:\n  p[%f, %f, %f, %f, %f, %f]",
-                x, y, z, rx, ry, rz);
     std::ostringstream prog;
     prog << "def single_move():\n";
     prog << "  end_freedrive_mode()\n";
-    prog << "  movel(p[" << x << ", " << y << ", " << z << ", " << rx << ", "
-         << ry << ", " << rz << "]";
-    prog << ", a=" << acceleration << ", v=" << velocity << ")\n";
+    prog << "  current_pose = get_actual_tcp_pose()\n";
+    prog << "  rotation_offset = p[0, 0, 0, " << rx << ", " << ry << ", " << rz
+         << "]\n";
+    prog << "  pose_after_rot = pose_trans(current_pose, rotation_offset)\n";
+    prog << "  translation_offset = p[" << dx << ", " << dy << ", " << dz
+         << ", 0, 0, 0]\n";
+    prog << "  final_pose = pose_trans(pose_after_rot, translation_offset)\n";
+    prog << "  movel(final_pose, a=" << acceleration << ", v=" << velocity
+         << ")\n";
     prog << "end\n";
+
     try {
         urscript_node->publish_script_now(prog.str());
     } catch (const std::exception &e) {
-        RCLCPP_ERROR(logger,
-                     "Failed to publish URScript single_move program: %s",
+        RCLCPP_ERROR(logger, "Failed to publish URScript single_move: %s",
                      e.what());
         return false;
     }
-
-    RCLCPP_INFO(logger, "URScript command published: \n%s", prog.str().c_str());
+    RCLCPP_INFO(logger, "URScript relative+rotation move published:\n%s",
+                prog.str().c_str());
     return true;
 }

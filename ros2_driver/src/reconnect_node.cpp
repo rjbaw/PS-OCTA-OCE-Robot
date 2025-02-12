@@ -30,7 +30,7 @@ ReconnectClient::ReconnectClient() : Node("reconnect_client_node") {
     restart_safety_client_ = this->create_client<std_srvs::srv::Trigger>(
         "/dashboard_client/restart_safety");
     timer_ = this->create_wall_timer(
-        10s, std::bind(&ReconnectClient::timerCallback, this));
+        5s, std::bind(&ReconnectClient::timerCallback, this));
 }
 
 bool ReconnectClient::callTriggerService(
