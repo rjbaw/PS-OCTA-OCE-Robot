@@ -146,8 +146,8 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        //robot_vel = 0.5;
-        //robot_acc = 0.5;
+        // robot_vel = 0.5;
+        // robot_acc = 0.5;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
             publisher_node->set_circle_state(circle_state);
             if (use_urscript) {
                 reset_robot_urscript(urscript_node, robot_vel, robot_acc);
-                //rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                // rclcpp::sleep_for(std::chrono::milliseconds(3000));
             } else {
                 move_group_interface.setJointValueTarget("shoulder_pan_joint",
                                                          to_radian(0.0));
@@ -310,7 +310,7 @@ int main(int argc, char *argv[]) {
                         success = move_to_target_urscript(0, 0, -dz, 0, 0, 0,
                                                           logger, urscript_node,
                                                           robot_vel, robot_acc);
-                        //rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                        // rclcpp::sleep_for(std::chrono::milliseconds(3000));
                     } else {
                         target_pose =
                             move_group_interface.getCurrentPose().pose;
@@ -350,7 +350,7 @@ int main(int argc, char *argv[]) {
                         radius * std::cos(to_radian(angle)),
                         radius * std::sin(to_radian(angle)), dz, -rx, -ry, rz,
                         logger, urscript_node, robot_vel, robot_acc);
-                    //rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                    // rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
                     target_pose = move_group_interface.getCurrentPose().pose;
                     tf2::fromMsg(target_pose.orientation, target_q);
@@ -394,14 +394,23 @@ int main(int argc, char *argv[]) {
             if (next) {
                 planning = true;
                 yaw += to_radian(angle_increment);
+                while (next == subscriber_node->next()) {
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
+                }
             }
             if (previous) {
                 planning = true;
                 yaw += to_radian(-angle_increment);
+                while (previous == subscriber_node->previous()) {
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
+                }
             }
             if (home) {
                 planning = true;
                 yaw += to_radian(-angle);
+                while (home == subscriber_node->home()) {
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
+                }
             }
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
