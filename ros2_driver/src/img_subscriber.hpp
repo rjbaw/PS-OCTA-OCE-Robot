@@ -16,7 +16,7 @@ class img_subscriber : public rclcpp::Node {
   private:
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg);
     void timerCallback();
-    const double gating_interval_ = 1.0;
+    const double gating_interval_ = 0.5;
     const int width_ = 500;
     const int height_ = 512;
     cv::Mat img_;

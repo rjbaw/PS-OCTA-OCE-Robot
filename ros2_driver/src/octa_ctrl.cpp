@@ -40,24 +40,6 @@ bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
     return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
             (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
 }
-void reset_robot_urscript(std::shared_ptr<urscript_publisher> &urscript_node,
-                          double velocity, double acceleration) {
-    double j0 = to_radian(0.0);
-    double j1 = to_radian(-60.0);
-    double j2 = to_radian(90.0);
-    double j3 = to_radian(-120.0);
-    double j4 = to_radian(-90.0);
-    double j5 = to_radian(-135.0);
-
-    std::ostringstream prog;
-    prog << "def reset_position():\n";
-    prog << "  end_freedrive_mode()\n";
-    prog << "  movej([" << j0 << ", " << j1 << ", " << j2 << ", " << j3 << ", "
-         << j4 << ", " << j5 << "], " << "a=" << acceleration
-         << ", v=" << velocity << ")\n";
-    prog << "end\n";
-    urscript_node->publish_script_now(prog.str());
-}
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
@@ -70,7 +52,7 @@ int main(int argc, char *argv[]) {
     node_options.automatically_declare_parameters_from_overrides(true);
 
     // 3D Parameters
-    const int interval = 4;
+    const int interval = 8;
     const bool single_interval = false;
 
     // Publisher Parameters
@@ -138,6 +120,12 @@ int main(int argc, char *argv[]) {
     move_group_interface.setPlanningPipelineId("ompl");
     // move_group_interface.setPlanningPipelineId("stomp");
 
+    publisher_node->set_fast_axis(true);
+    while (subscriber_node->fast_axis() != true) {
+        rclcpp::sleep_for(std::chrono::milliseconds(50));
+    }
+    publisher_node->set_apply_config(true);
+
     while (rclcpp::ok() && running) {
 
         end_state = false;
@@ -158,8 +146,8 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        robot_vel = 0.5;
-        robot_acc = 0.5;
+        //robot_vel = 0.5;
+        //robot_acc = 0.5;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -190,7 +178,7 @@ int main(int argc, char *argv[]) {
             publisher_node->set_circle_state(circle_state);
             if (use_urscript) {
                 reset_robot_urscript(urscript_node, robot_vel, robot_acc);
-                rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                //rclcpp::sleep_for(std::chrono::milliseconds(3000));
             } else {
                 move_group_interface.setJointValueTarget("shoulder_pan_joint",
                                                          to_radian(0.0));
@@ -221,8 +209,12 @@ int main(int argc, char *argv[]) {
                 RCLCPP_INFO(logger, msg.c_str());
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
+                while (subscriber_node->scan_3d() != scan_3d) {
+                    rclcpp::sleep_for(std::chrono::milliseconds(50));
+                }
                 publisher_node->set_apply_config(apply_config);
             }
+            rclcpp::sleep_for(std::chrono::milliseconds(1000));
             img_array.clear();
             for (int i = 0; i < interval; i++) {
                 while (true) {
@@ -245,6 +237,9 @@ int main(int argc, char *argv[]) {
             scan_3d = false;
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
+            while (subscriber_node->scan_3d() != scan_3d) {
+                rclcpp::sleep_for(std::chrono::milliseconds(50));
+            }
             publisher_node->set_apply_config(apply_config);
 
             pc_lines = lines_3d(img_array, interval, single_interval);
@@ -273,7 +268,7 @@ int main(int argc, char *argv[]) {
             double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
             roll = tmp_yaw;
-            pitch = tmp_roll;
+            pitch = -tmp_roll;
             yaw = tmp_pitch;
             rotmat_tf.setRPY(roll, pitch, yaw);
             ///////////////////////
@@ -292,6 +287,9 @@ int main(int argc, char *argv[]) {
                 scan_3d = false;
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
+                while (subscriber_node->scan_3d() != scan_3d) {
+                    rclcpp::sleep_for(std::chrono::milliseconds(50));
+                }
                 publisher_node->set_apply_config(apply_config);
             }
 
@@ -309,10 +307,10 @@ int main(int argc, char *argv[]) {
                 } else {
                     planning = true;
                     if (use_urscript) {
-                        success = move_to_target_urscript(0, 0, dz, 0, 0, 0,
+                        success = move_to_target_urscript(0, 0, -dz, 0, 0, 0,
                                                           logger, urscript_node,
                                                           robot_vel, robot_acc);
-                        rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                        //rclcpp::sleep_for(std::chrono::milliseconds(3000));
                     } else {
                         target_pose =
                             move_group_interface.getCurrentPose().pose;
@@ -322,11 +320,11 @@ int main(int argc, char *argv[]) {
                         success = move_to_target(move_group_interface, logger);
                     }
 
-                    // if (!success) {
-                    //     msg = std::format("Z-height Planning Failed!");
-                    //     RCLCPP_ERROR(logger, msg.c_str());
-                    //     publisher_node->set_msg(msg);
-                    // }
+                    if (!success) {
+                        msg = std::format("Z-height Planning Failed!");
+                        RCLCPP_ERROR(logger, msg.c_str());
+                        publisher_node->set_msg(msg);
+                    }
                 }
             }
 
@@ -350,9 +348,9 @@ int main(int argc, char *argv[]) {
 
                     success = move_to_target_urscript(
                         radius * std::cos(to_radian(angle)),
-                        radius * std::sin(to_radian(angle)), dz, rx, ry, rz,
+                        radius * std::sin(to_radian(angle)), dz, -rx, -ry, rz,
                         logger, urscript_node, robot_vel, robot_acc);
-                    rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                    //rclcpp::sleep_for(std::chrono::milliseconds(3000));
                 } else {
                     target_pose = move_group_interface.getCurrentPose().pose;
                     tf2::fromMsg(target_pose.orientation, target_q);
@@ -413,7 +411,7 @@ int main(int argc, char *argv[]) {
                     success = move_to_target_urscript(0, 0, 0, roll, pitch, yaw,
                                                       logger, urscript_node,
                                                       robot_vel, robot_acc);
-                    rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                    rclcpp::sleep_for(std::chrono::milliseconds(4000));
                 } else {
                     q.setRPY(roll, pitch, yaw);
                     q.normalize();
@@ -452,12 +450,12 @@ int main(int argc, char *argv[]) {
 
         if (planning) {
             planning = false;
-            while (!subscriber_node->changed()) {
-                if (!subscriber_node->autofocus()) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(10));
-                    break;
-                }
-            }
+            // while (!subscriber_node->changed()) {
+            //     if (!subscriber_node->autofocus()) {
+            //         rclcpp::sleep_for(std::chrono::milliseconds(10));
+            //         break;
+            //     }
+            // }
             // rclcpp::sleep_for(std::chrono::milliseconds(1000));
         }
 
@@ -465,6 +463,9 @@ int main(int argc, char *argv[]) {
             scan_3d = false;
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
+            while (subscriber_node->scan_3d() != scan_3d) {
+                rclcpp::sleep_for(std::chrono::milliseconds(50));
+            }
             publisher_node->set_apply_config(apply_config);
         }
     }
