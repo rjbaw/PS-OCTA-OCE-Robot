@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     node_options.automatically_declare_parameters_from_overrides(true);
 
     // 3D Parameters
-    const int interval = 8;
+    const int interval = 16;
     const bool single_interval = false;
 
     // Publisher Parameters
@@ -171,29 +171,33 @@ int main(int argc, char *argv[]) {
         if (subscriber_node->reset()) {
             angle = 0.0;
             circle_state = 1;
-            msg = "Reset to default position";
+            msg = "[Action] Reset to default position";
             RCLCPP_INFO(logger, msg.c_str());
             publisher_node->set_msg(msg);
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
-            if (use_urscript) {
-                reset_robot_urscript(urscript_node, robot_vel, robot_acc);
-                // rclcpp::sleep_for(std::chrono::milliseconds(3000));
-            } else {
-                move_group_interface.setJointValueTarget("shoulder_pan_joint",
-                                                         to_radian(0.0));
-                move_group_interface.setJointValueTarget("shoulder_lift_joint",
-                                                         -to_radian(60.0));
-                move_group_interface.setJointValueTarget("elbow_joint",
-                                                         to_radian(90.0));
-                move_group_interface.setJointValueTarget("wrist_1_joint",
-                                                         to_radian(-120.0));
-                move_group_interface.setJointValueTarget("wrist_2_joint",
-                                                         to_radian(-90.0));
-                move_group_interface.setJointValueTarget("wrist_3_joint",
-                                                         to_radian(-135.0));
-                success = move_to_target(move_group_interface, logger);
-            }
+            robot_vel = 0.8;
+            robot_acc = 0.8;
+            reset_robot_urscript(urscript_node, robot_vel, robot_acc);
+	    success = true;
+            //if (use_urscript) {
+            //    reset_robot_urscript(urscript_node, robot_vel, robot_acc);
+            //    // rclcpp::sleep_for(std::chrono::milliseconds(3000));
+            //} else {
+            //    move_group_interface.setJointValueTarget("shoulder_pan_joint",
+            //                                             to_radian(0.0));
+            //    move_group_interface.setJointValueTarget("shoulder_lift_joint",
+            //                                             -to_radian(60.0));
+            //    move_group_interface.setJointValueTarget("elbow_joint",
+            //                                             to_radian(90.0));
+            //    move_group_interface.setJointValueTarget("wrist_1_joint",
+            //                                             to_radian(-120.0));
+            //    move_group_interface.setJointValueTarget("wrist_2_joint",
+            //                                             to_radian(-90.0));
+            //    move_group_interface.setJointValueTarget("wrist_3_joint",
+            //                                             to_radian(-135.0));
+            //    success = move_to_target(move_group_interface, logger);
+            //}
             if (!success) {
                 msg = std::format("Reset Planning Failed!");
                 publisher_node->set_msg(msg);
@@ -360,6 +364,7 @@ int main(int argc, char *argv[]) {
                         radius * std::cos(to_radian(angle));
                     target_pose.position.y +=
                         radius * std::sin(to_radian(angle));
+                    dz = (z_height - center[1]) / (50 * 1000.0);
                     target_pose.position.z += dz;
                     print_target(logger, target_pose);
                     move_group_interface.setPoseTarget(target_pose);
