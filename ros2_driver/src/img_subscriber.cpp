@@ -8,7 +8,7 @@ img_subscriber::img_subscriber()
         "oct_image", best_effort,
         std::bind(&img_subscriber::imageCallback, this, std::placeholders::_1));
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(100),
+        std::chrono::milliseconds(10),
         std::bind(&img_subscriber::timerCallback, this));
 }
 

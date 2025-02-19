@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     node_options.automatically_declare_parameters_from_overrides(true);
 
     // 3D Parameters
-    const int interval = 16;
+    const int interval = 6;
     const bool single_interval = false;
 
     // Publisher Parameters
@@ -115,8 +115,8 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    move_group_interface.setPlanningTime(10.0);
-    move_group_interface.setNumPlanningAttempts(30);
+    move_group_interface.setPlanningTime(0.5);
+    move_group_interface.setNumPlanningAttempts(5);
     move_group_interface.setPlanningPipelineId("ompl");
     // move_group_interface.setPlanningPipelineId("stomp");
 
