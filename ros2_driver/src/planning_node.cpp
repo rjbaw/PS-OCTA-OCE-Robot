@@ -11,6 +11,21 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <thread>
 
+using namespace std::chrono_literals;
+std::atomic<bool> running(true);
+
+void signal_handler(int signum) {
+    RCLCPP_INFO(rclcpp::get_logger("signal_handler"),
+                "Signal %d received, shutting down...", signum);
+    running = false;
+    rclcpp::shutdown();
+}
+
+bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
+    return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
+            (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
+}
+
 using Focus = octa_ros::action::Focus;
 
 class FocusActionServer : public rclcpp::Node {

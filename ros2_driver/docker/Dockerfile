@@ -12,6 +12,7 @@ RUN apt-get update &&\
     htop \
     sudo \
     iproute2 \
+    iputils-ping \
     ros-rolling-ros2-control \ 
     ros-rolling-ros2-controllers
 

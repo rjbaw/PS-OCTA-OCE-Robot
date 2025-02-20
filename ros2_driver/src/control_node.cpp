@@ -1,7 +1,7 @@
+#include "dds_subscriber.hpp"
 #include "octa_ros/action/focus.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include "dds_subscriber.hpp"
 
 using Focus = octa_ros::action::Focus;
 
@@ -105,8 +105,18 @@ class WatcherClientNode : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
-int main(int argc, char **argv) {
+bool tol_measure(double &roll, double &pitch, double &angle_tolerance) {
+    return ((std::abs(std::abs(roll)) < to_radian(angle_tolerance)) &&
+            (std::abs(std::abs(pitch)) < to_radian(angle_tolerance)));
+}
+
+int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    rclcpp::NodeOptions node_options;
+    node_options.automatically_declare_parameters_from_overrides(true);
 
     // 3D Parameters
     const int interval = 4;
@@ -121,20 +131,18 @@ int main(int argc, char **argv) {
     bool scan_3d = false;
 
     // Internal Parameters
-    bool planning = false;
     double angle_increment;
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
-    Eigen::Matrix3d rotmat_eigen;
-    cv::Mat img;
-    std::vector<cv::Mat> img_array;
-    std::vector<Eigen::Vector3d> pc_lines;
-    tf2::Quaternion q;
-    tf2::Quaternion target_q;
-    geometry_msgs::msg::Pose target_pose;
 
     // Subscriber Parameters
-    double robot_vel, robot_acc, radius, angle_limit, dz;
-    double z_tolerance, angle_tolerance, z_height;
+    double robot_vel;
+    double robot_acc;
+    double radius;
+    double angle_limit;
+    double dz;
+    double z_tolerance;
+    double angle_tolerance;
+    double z_height;
     int num_pt;
     bool fast_axis = true;
     bool success = false;
@@ -144,21 +152,18 @@ int main(int argc, char **argv) {
     bool z_focused = false;
     bool angle_focused = false;
 
+    auto subscriber_node = std::make_shared<dds_subscriber>();
+    auto publisher_node = std::make_shared<dds_publisher>(
+        msg, angle, circle_state, fast_axis, apply_config, end_state, scan_3d);
 
     auto const logger = rclcpp::get_logger("logger_planning");
 
-    auto subscriber_node = std::make_shared<dds_subscriber>();
-    rclcpp::executors::SingleThreadedExecutor executor;
+    rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(subscriber_node);
+    executor.add_node(publisher_node);
     std::thread spinner([&executor]() { executor.spin(); });
 
-    auto node = std::make_shared<WatcherClientNode>();
-
     while (rclcpp::ok() && running) {
-
-        node->send_goal(10);
-
-
         end_state = false;
         apply_config = false;
         fast_axis = true;
@@ -176,37 +181,19 @@ int main(int argc, char **argv) {
         num_pt = subscriber_node->num_pt();
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
+        z_height = subscriber_node->z_height();
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
             angle = 0.0;
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
-            urscript_node->activate_freedrive();
-            while (subscriber_node->freedrive()) {
-                rclcpp::sleep_for(std::chrono::milliseconds(200));
-            }
-            urscript_node->deactivate_freedrive();
+
+            // action server handle freedrive
+            // switch controller to freedrive_mode_controller
+            // or send program to program to urscript service
+            continue;
         }
-
-        move_group_interface.setMaxVelocityScalingFactor(robot_vel);
-        move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
-        move_group_interface.setStartStateToCurrentState();
-
-        // current_state = move_group_interface.getCurrentState(10.0);
-        // bool is_valid = current_state->satisfiesBounds();
-        // msg = std::format("Current Robot state is {}",
-        //                   (is_valid ? "VALID" : "INVALID"));
-        // RCLCPP_INFO(logger, msg.c_str());
-        // publisher_node->set_msg(msg);
-
-        // if (x_tol > 3.0 || y_tol > 3.0 || z_tol > 3.0 || path_enforce <= 0.0)
-        // {
-        //     end_state = true;
-        //     msg = "Unrecoverable Error. Please restart";
-        //     publisher_node->set_msg(msg);
-        //     publisher_node->set_end_state(end_state);
-        // }
 
         if (subscriber_node->reset()) {
             angle = 0.0;
@@ -216,235 +203,59 @@ int main(int argc, char **argv) {
             publisher_node->set_msg(msg);
             publisher_node->set_angle(angle);
             publisher_node->set_circle_state(circle_state);
-            move_group_interface.setJointValueTarget("shoulder_pan_joint",
-                                                     to_radian(0.0));
-            move_group_interface.setJointValueTarget("shoulder_lift_joint",
-                                                     -to_radian(60.0));
-            move_group_interface.setJointValueTarget("elbow_joint",
-                                                     to_radian(90.0));
-            move_group_interface.setJointValueTarget("wrist_1_joint",
-                                                     to_radian(-120.0));
-            move_group_interface.setJointValueTarget("wrist_2_joint",
-                                                     to_radian(-90.0));
-            move_group_interface.setJointValueTarget("wrist_3_joint",
-                                                     to_radian(-135.0));
-            attempt = 0;
-            success = false;
-            while (!success && (attempt < max_attempt)) {
-                success = move_to_target(move_group_interface, logger);
-                if (!success) {
-                    msg = std::format(
-                        "Reset Planning Failed! \nAttempt[{}] Retrying....",
-                        attempt);
-                    publisher_node->set_msg(msg);
-                    x_tol += 0.1;
-                    y_tol += 0.1;
-                    z_tol += 0.1;
-                    path_enforce -= 0.1;
-                    ocm.absolute_x_axis_tolerance = x_tol;
-                    ocm.absolute_y_axis_tolerance = y_tol;
-                    ocm.absolute_z_axis_tolerance = z_tol;
-                    ocm.weight = path_enforce;
-                    path_constr.orientation_constraints.clear();
-                    path_constr.orientation_constraints.push_back(ocm);
-                    move_group_interface.setPathConstraints(path_constr);
-                    attempt++;
-                }
-            }
-            if (!success) {
-                msg = std::format(
-                    "Reset Planning Failed! Maximum Attempts Reached", attempt);
-                publisher_node->set_msg(msg);
-                RCLCPP_ERROR(logger, msg.c_str());
-            }
+
+            // action server handle move to default position
+
+            continue;
         }
 
         if (subscriber_node->autofocus()) {
-            apply_config = true;
-            publisher_node->set_apply_config(apply_config);
+
             if (!scan_3d) {
+                // activate 3D if not already enabled
                 scan_3d = true;
                 apply_config = true;
-                // msg = "Starting 3D Scan";
+                msg = "Starting 3D Scan";
+                RCLCPP_INFO(logger, msg.c_str());
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
             }
-            img_array.clear();
-            for (int i = 0; i < interval; i++) {
-                while (true) {
-                    img = img_subscriber_node->get_img();
-                    if (!img.empty()) {
-                        break;
-                    }
-                    if (!subscriber_node->autofocus()) {
-                        break;
-                    }
-                    rclcpp::sleep_for(std::chrono::milliseconds(10000));
-                }
-                img_array.push_back(img);
-                RCLCPP_INFO(logger, "Collected image %d", i + 1);
-            }
-            msg = "Calculating Rotations";
-            publisher_node->set_msg(msg);
-            // scan_3d = false;
-            // apply_config = true;
-            // publisher_node->set_scan_3d(scan_3d);
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
-            // publisher_node->set_apply_config(apply_config);
-            // rclcpp::sleep_for(std::chrono::milliseconds(100));
 
-            pc_lines = lines_3d(img_array, interval, single_interval);
-            open3d::geometry::PointCloud pcd_lines;
-            for (const auto &point : pc_lines) {
-                pcd_lines.points_.emplace_back(point);
-            }
-            auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
-            Eigen::Vector3d center = boundbox.GetCenter();
-            z_height = subscriber_node->z_height();
-            msg = std::format("Center: {}", center[1]);
-            publisher_node->set_msg(msg.c_str());
-            RCLCPP_INFO(logger, "center: %f", center[1]);
-            rotmat_eigen = align_to_direction(boundbox.R_);
-            tf2::Matrix3x3 rotmat_tf(
-                rotmat_eigen(0, 0), rotmat_eigen(0, 1), rotmat_eigen(0, 2),
-                rotmat_eigen(1, 0), rotmat_eigen(1, 1), rotmat_eigen(1, 2),
-                rotmat_eigen(2, 0), rotmat_eigen(2, 1), rotmat_eigen(2, 2));
-            RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
-                                           << rotmat_eigen);
-            double tmp_roll;
-            double tmp_pitch;
-            double tmp_yaw;
-            rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
-            roll = tmp_yaw;
-            pitch = tmp_roll;
-            yaw = tmp_pitch;
-            msg =
-                std::format("Calculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
-                            to_degree(roll), to_degree(pitch), to_degree(yaw));
+            // action server?
+            // capture images to array according to interval and boolean
+            // wrap-around
+
+            msg = "Images captured";
+            publisher_node->set_msg(msg);
             RCLCPP_INFO(logger, msg.c_str());
-            publisher_node->set_msg(msg);
-            rotmat_tf.setRPY(roll, pitch, yaw);
 
+            // deactivate 3D scan after capture
+            scan_3d = false;
+            apply_config = true;
+            publisher_node->set_scan_3d(scan_3d);
+            publisher_node->set_apply_config(apply_config);
+
+            // action server?
+            // calculate rotation matrix and center[1], given image array
+
+            rotmat_tf.setRPY(roll, pitch, yaw);
+            msg +=
+                std::format("\nCalculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
+                            to_degree(roll), to_degree(pitch), to_degree(yaw));
+            publisher_node->set_msg(msg);
+            RCLCPP_INFO(logger, msg.c_str());
+
+            // calculate angle tolerance
             if (tol_measure(roll, pitch, angle_tolerance)) {
                 angle_focused = true;
                 msg += "\nAngle focused";
                 publisher_node->set_msg(msg);
+                RCLCPP_INFO(logger, msg.c_str());
                 scan_3d = false;
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
                 publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                publisher_node->set_apply_config(apply_config);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            if (angle_focused && !z_focused) {
-                // dz = 0;
-                dz = -(center[1] - z_height) / 150 * 1.2 / 1000.0;
-                // dz = (z_height - center[1]) / (256.0 * 1000.0);
-                msg += std::format("\ndz = {}", dz).c_str();
-                publisher_node->set_msg(msg);
-                RCLCPP_INFO(logger, "dz: %f", dz);
-                if (std::abs(dz) < (z_tolerance / 1000.0)) {
-                    z_focused = true;
-                    msg += "\nHeight focused";
-                    publisher_node->set_msg(msg);
-                } else {
-                    planning = true;
-                    target_pose = move_group_interface.getCurrentPose().pose;
-                    target_pose.position.z += dz;
-                    print_target(logger, target_pose);
-                    move_group_interface.setPoseTarget(target_pose);
-                    attempt = 0;
-                    success = false;
-                    while (!success && (attempt < max_attempt)) {
-                        success = move_to_target(move_group_interface, logger);
-                        if (success) {
-                            RCLCPP_INFO(logger, msg.c_str());
-                        } else {
-                            msg = std::format("Z-height Planning Failed! "
-                                              "\nAttempt[{}] Retrying....",
-                                              attempt);
-                            RCLCPP_ERROR(logger, msg.c_str());
-                            publisher_node->set_msg(msg);
-                            x_tol += 0.1;
-                            y_tol += 0.1;
-                            z_tol += 0.1;
-                            path_enforce -= 0.1;
-                            ocm.absolute_x_axis_tolerance = x_tol;
-                            ocm.absolute_y_axis_tolerance = y_tol;
-                            ocm.absolute_z_axis_tolerance = z_tol;
-                            ocm.weight = path_enforce;
-                            path_constr.orientation_constraints.clear();
-                            path_constr.orientation_constraints.push_back(ocm);
-                            move_group_interface.setPathConstraints(
-                                path_constr);
-                            attempt++;
-                        }
-                    }
-                    if (!success) {
-                        msg = std::format("Z-height Planning Failed! Maximum "
-                                          "Attempts Reached",
-                                          attempt);
-                        publisher_node->set_msg(msg);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                    }
-                }
-            }
-
-            if (!angle_focused) {
-                planning = true;
-                rotmat_tf.getRotation(q);
-                target_pose = move_group_interface.getCurrentPose().pose;
-                tf2::fromMsg(target_pose.orientation, target_q);
-                q.normalize();
-                target_q = target_q * q;
-                target_pose.orientation = tf2::toMsg(target_q);
-                target_pose.position.x += radius * std::cos(to_radian(angle));
-                target_pose.position.y += radius * std::sin(to_radian(angle));
-                target_pose.position.z += dz;
-                print_target(logger, target_pose);
-                move_group_interface.setPoseTarget(target_pose);
-
-                attempt = 0;
-                success = false;
-                while (!success && (attempt < max_attempt)) {
-                    success = move_to_target(move_group_interface, logger);
-                    if (success) {
-                        RCLCPP_INFO(logger, msg.c_str());
-                    } else {
-                        msg = std::format("Angle Focus Planning Failed! "
-                                          "\nAttempt[{}] Retrying....",
-                                          attempt);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                        publisher_node->set_msg(msg);
-                    }
-                    attempt++;
-                }
-                if (!success) {
-                    msg = std::format(
-                        "Angle Focus Planning Failed! Maximum Attempts Reached",
-                        attempt);
-                    publisher_node->set_msg(msg);
-                    RCLCPP_ERROR(logger, msg.c_str());
-                }
             }
 
             if (angle_focused && z_focused) {
@@ -462,80 +273,115 @@ int main(int argc, char **argv) {
                 }
             }
 
-        } else {
-            angle_increment = angle_limit / num_pt;
-            roll = 0.0, pitch = 0.0, yaw = 0.0;
+            // move end effector to target if not within tolerance bounds
 
-            if (next) {
+            if (!angle_focused) {
                 planning = true;
-                yaw += to_radian(angle_increment);
-            }
-            if (previous) {
-                planning = true;
-                yaw += to_radian(-angle_increment);
-            }
-            if (home) {
-                planning = true;
-                yaw += to_radian(-angle);
-            }
-            publisher_node->set_angle(angle);
-            publisher_node->set_circle_state(circle_state);
+                // action server rotate end effector according to rotation
+                // matrix
+                if (!success) {
+                    // msg = std::format("Angle Focus Planning Failed!");
+                    msg = "Angle Focus Planning Failed!";
+                    publisher_node->set_msg(msg);
+                    RCLCPP_ERROR(logger, msg.c_str());
+                }
+                continue;
+            } else {
 
-            if (planning) {
-                target_pose = move_group_interface.getCurrentPose().pose;
-                tf2::fromMsg(target_pose.orientation, target_q);
+                // calculate dz
+                dz = (z_height - center[1]) / (50 * 1000.0);
+                msg += std::format("\ndz = {}", dz);
+                publisher_node->set_msg(msg);
+                RCLCPP_INFO(logger, "dz: %f", dz);
+                // check tolerance and move it is not within bounds
+                if (std::abs(dz) < (z_tolerance / 1000.0)) {
+                    z_focused = true;
+                    msg += "\nHeight focused";
+                    publisher_node->set_msg(msg);
+                    RCLCPP_INFO(logger, msg.c_str());
+                } else {
+                    planning = true;
+                    if (use_urscript) {
+                        success = move_to_target_urscript(0, 0, dz, 0, 0, 0,
+                                                          logger, urscript_node,
+                                                          robot_vel, robot_acc);
+                        rclcpp::sleep_for(std::chrono::milliseconds(3000));
+                    } else {
+                        target_pose =
+                            move_group_interface.getCurrentPose().pose;
+                        target_pose.position.z += dz;
+                        print_target(logger, target_pose);
+                        move_group_interface.setPoseTarget(target_pose);
+                        success = move_to_target(move_group_interface, logger);
+                    }
+
+                    if (!success) {
+                        msg = std::format("Z-height Planning Failed!");
+                        RCLCPP_ERROR(logger, msg.c_str());
+                        publisher_node->set_msg(msg);
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        angle_increment = angle_limit / num_pt;
+        roll = 0.0, pitch = 0.0, yaw = 0.0;
+
+        if (next) {
+            planning = true;
+            yaw += to_radian(angle_increment);
+        }
+        if (previous) {
+            planning = true;
+            yaw += to_radian(-angle_increment);
+        }
+        if (home) {
+            planning = true;
+            yaw += to_radian(-angle);
+        }
+        publisher_node->set_angle(angle);
+        publisher_node->set_circle_state(circle_state);
+
+        if (planning) {
+            if (use_urscript) {
+                success = move_to_target_urscript(0, 0, 0, roll, pitch, yaw,
+                                                  logger, urscript_node,
+                                                  robot_vel, robot_acc);
+                rclcpp::sleep_for(std::chrono::milliseconds(3000));
+            } else {
                 q.setRPY(roll, pitch, yaw);
                 q.normalize();
+                target_pose = move_group_interface.getCurrentPose().pose;
+                tf2::fromMsg(target_pose.orientation, target_q);
                 target_q = target_q * q;
                 target_pose.orientation = tf2::toMsg(target_q);
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
-
-                attempt = 0;
-                success = false;
-                while (!success && (attempt < max_attempt)) {
-                    success = move_to_target(move_group_interface, logger);
-                    if (success) {
-                        msg = "Planning Success!";
-                        RCLCPP_INFO(logger, msg.c_str());
-                        if (next) {
-                            angle += angle_increment;
-                            circle_state++;
-                        }
-                        if (previous) {
-                            angle -= angle_increment;
-                            circle_state--;
-                        }
-                        if (home) {
-                            circle_state = 1;
-                            angle = 0.0;
-                        }
-                    } else {
-                        msg = std::format("Z-axis Rotation Planning Failed! "
-                                          "\nAttempt[{}] Retrying....",
-                                          attempt);
-                        RCLCPP_ERROR(logger, msg.c_str());
-                        publisher_node->set_msg(msg);
-                        x_tol += 0.1;
-                        y_tol += 0.1;
-                        z_tol += 0.1;
-                        path_enforce -= 0.1;
-                        ocm.absolute_x_axis_tolerance = x_tol;
-                        ocm.absolute_y_axis_tolerance = y_tol;
-                        ocm.absolute_z_axis_tolerance = z_tol;
-                        ocm.weight = path_enforce;
-                        path_constr.orientation_constraints.push_back(ocm);
-                        move_group_interface.setPathConstraints(path_constr);
-                    }
-                    attempt++;
+                success = move_to_target(move_group_interface, logger);
+            }
+            if (success) {
+                msg = "Planning Success!";
+                RCLCPP_INFO(logger, msg.c_str());
+                if (next) {
+                    angle += angle_increment;
+                    circle_state++;
                 }
-                if (!success) {
-                    msg = std::format("Z-axis Rotation Planning Failed! "
-                                      "Maximum Attempts Reached",
-                                      attempt);
-                    publisher_node->set_msg(msg);
-                    RCLCPP_ERROR(logger, msg.c_str());
+                if (previous) {
+                    angle -= angle_increment;
+                    circle_state--;
                 }
+                if (home) {
+                    circle_state = 1;
+                    angle = 0.0;
+                }
+            } else {
+                // msg = std::format("Z-axis Rotation Planning Failed! "
+                //                   "\nAttempt[{}] Retrying....");
+                msg = "Z-axis Rotation Planning Failed!";
+                RCLCPP_ERROR(logger, msg.c_str());
+                publisher_node->set_msg(msg);
             }
         }
 
@@ -550,20 +396,15 @@ int main(int argc, char **argv) {
             // rclcpp::sleep_for(std::chrono::milliseconds(1000));
         }
 
-        if (subscriber_node->scan_3d() && !subscriber_node->autofocus()) {
+        if (scan_3d && !subscriber_node->autofocus()) {
             scan_3d = false;
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             publisher_node->set_apply_config(apply_config);
         }
     }
-
     executor.cancel();
     spinner.join();
-    rclcpp::shutdown();
-    return 0;
-
-    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }
