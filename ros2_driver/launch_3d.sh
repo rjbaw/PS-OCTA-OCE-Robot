@@ -66,21 +66,72 @@ start_ros() {
 
     echo "[INFO] Tmux session '$TMUX_SESSION' created. You can attach with:"
     echo "       tmux attach -t $TMUX_SESSION"
-    echo "[INFO] ROS Running"
+    echo "[INFO] ROS RUNNING"
+}
+
+check_labview_topic() {
+    bash -ic "source install/setup.bash; python3 <<EOF
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Bool
+
+try:
+    rclpy.init()
+    node = Node('labview_data_checker')
+    msg_data = {'value': None}
+
+    def callback(msg):
+        msg_data['value'] = msg.data
+        node.destroy_subscription(subscription)
+
+    subscription = node.create_subscription(
+        Bool,
+        '/labview_data',
+        callback,
+        10
+    )
+    
+    for _ in range(10):
+        rclpy.spin_once(node, timeout_sec=0.5)
+        if msg_data['value'] is not None:
+            print('true' if msg_data['value'] else 'false')
+            break
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+except Exception as e:
+    pass
+EOF"
 }
 
 echo "[INFO] Checking connectivity to $MONITOR_IP every $CHECK_INTERVAL seconds."
 echo "[INFO] Press Ctrl+C to stop this monitor script."
 
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 ros_running=false
+run_state=true
 echo "[INFO] ROS is waiting for Robot to be online...."
 while true
 do
    if ping -c 1 -W 3 "$MONITOR_IP" &>/dev/null; then
-       if ! $ros_running; then
-           echo "[INFO] $MONITOR_IP is online. Starting ROS..."
+       new_state=$(check_labview_topic)
+       if [[ "$new_state" == "true" ]]; then
+          run_state=true
+       elif [[ "$new_state" == "false" ]]; then
+          run_state=false
+       fi
+
+       if $run_state && ! $ros_running; then
+           echo "[INFO] run_state=true and Robot is online. Starting ROS..."
            start_ros
            ros_running=true
+       elif ! $run_state && $ros_running; then
+           echo "[INFO] run_state=false. Stopping ROS..."
+           stop_ros
+           ros_running=false
+           echo "[INFO] ROS is waiting Labview activation...."
        fi
    else
        if $ros_running; then
