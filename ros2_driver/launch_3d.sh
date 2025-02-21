@@ -73,6 +73,7 @@ echo "[INFO] Checking connectivity to $MONITOR_IP every $CHECK_INTERVAL seconds.
 echo "[INFO] Press Ctrl+C to stop this monitor script."
 
 ros_running=false
+echo "[INFO] ROS is waiting for Robot to be online...."
 while true
 do
    if ping -c 1 -W 3 "$MONITOR_IP" &>/dev/null; then
@@ -86,14 +87,8 @@ do
            echo "[INFO] $MONITOR_IP is offline. Stopping ROS..."
            stop_ros
            ros_running=false
+           echo "[INFO] ROS is waiting for Robot to be online...."
        fi
    fi
    sleep "$CHECK_INTERVAL"
 done
-
-# source install/setup.bash
-# if  [[ $sim == "true" ]]; then
-# 	ros2 launch octa_ros single_node_3d.py ur_type:=ur3e robot_ip:=192.168.56.101 headless_mode:=true
-# else
-# 	ros2 launch octa_ros single_node_3d.py ur_type:=ur3e robot_ip:=192.168.0.10 headless_mode:=true reverse_ip:=192.168.0.2
-# fi
