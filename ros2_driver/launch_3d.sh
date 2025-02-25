@@ -25,7 +25,7 @@ while getopts ":hs" option; do
    esac
 done
 
-CHECK_INTERVAL=5
+CHECK_INTERVAL=1
 TMUX_SESSION="ros_session"
 
 if [[ "$sim" == "true" ]]; then
@@ -70,39 +70,18 @@ start_ros() {
 }
 
 check_labview_topic() {
-    bash -ic "source install/setup.bash; python3 <<EOF
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Bool
-
-try:
-    rclpy.init()
-    node = Node('labview_data_checker')
-    msg_data = {'value': None}
-
-    def callback(msg):
-        msg_data['value'] = msg.data
-        node.destroy_subscription(subscription)
-
-    subscription = node.create_subscription(
-        Bool,
-        '/labview_data',
-        callback,
-        10
-    )
-    
-    for _ in range(10):
-        rclpy.spin_once(node, timeout_sec=0.5)
-        if msg_data['value'] is not None:
-            print('true' if msg_data['value'] else 'false')
-            break
-
-    node.destroy_node()
-    rclpy.shutdown()
-
-except Exception as e:
-    pass
-EOF"
+    source /opt/ros/jazzy/setup.bash
+    source install/setup.bash
+    output=$(ros2 topic echo --once --timeout 0.2 /run_state std_msgs/msg/Bool 2>/dev/null)
+    if [ -z "$output" ]; then
+        echo ""
+        return
+    fi
+    if [[ $output =~ "true" ]]; then
+        echo "true"
+    else
+        echo "false"
+    fi
 }
 
 echo "[INFO] Checking connectivity to $MONITOR_IP every $CHECK_INTERVAL seconds."

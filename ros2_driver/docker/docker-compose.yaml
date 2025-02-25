@@ -3,6 +3,7 @@ services:
     #image: osrf/ros:jazzy-desktop-full
     #image: ros:jazzy
     build: .
+    shm_size: '512m'
     environment:
       - DISPLAY=$DISPLAY
       - QT_GRAPHICSSYSTEM=native
