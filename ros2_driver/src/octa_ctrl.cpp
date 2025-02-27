@@ -24,8 +24,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-const bool use_urscript = false;
-
 using namespace std::chrono_literals;
 std::atomic<bool> running(true);
 
@@ -159,9 +157,7 @@ int main(int argc, char *argv[]) {
                 rclcpp::sleep_for(std::chrono::milliseconds(200));
             }
             urscript_node->deactivate_freedrive();
-            if (!use_urscript) {
-                urscript_node->resend_program();
-            }
+            urscript_node->resend_program();
         }
 
         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
@@ -230,9 +226,12 @@ int main(int argc, char *argv[]) {
                         break;
                     }
                     // rclcpp::sleep_for(std::chrono::milliseconds(10000));
+                    publisher_node->set_msg("Collecting Image");
                 }
                 img_array.push_back(img);
-                RCLCPP_INFO(logger, "Collected image %d", i + 1);
+                msg = std::format("Collected image %d", i + 1);
+                RCLCPP_INFO(logger, msg.c_str());
+                publisher_node->set_msg(msg);
             }
             msg = "Calculating Rotations";
             publisher_node->set_msg(msg);
@@ -310,24 +309,21 @@ int main(int argc, char *argv[]) {
                     RCLCPP_INFO(logger, msg.c_str());
                 } else {
                     planning = true;
-                    if (use_urscript) {
+                    target_pose = move_group_interface.getCurrentPose().pose;
+                    target_pose.position.z += dz;
+                    print_target(logger, target_pose);
+                    move_group_interface.setPoseTarget(target_pose);
+                    success = move_to_target(move_group_interface, logger);
+
+                    if (!success) {
+                        msg = std::format(
+                            "Z-height Planning Fallback to URScript");
+                        publisher_node->set_msg(msg);
+                        RCLCPP_ERROR(logger, msg.c_str());
                         success = move_to_target_urscript(0, 0, -dz, 0, 0, 0,
                                                           logger, urscript_node,
                                                           robot_vel, robot_acc);
                         // rclcpp::sleep_for(std::chrono::milliseconds(3000));
-                    } else {
-                        target_pose =
-                            move_group_interface.getCurrentPose().pose;
-                        target_pose.position.z += dz;
-                        print_target(logger, target_pose);
-                        move_group_interface.setPoseTarget(target_pose);
-                        success = move_to_target(move_group_interface, logger);
-                    }
-
-                    if (!success) {
-                        msg = std::format("Z-height Planning Failed!");
-                        RCLCPP_ERROR(logger, msg.c_str());
-                        publisher_node->set_msg(msg);
                     }
                 }
             }
@@ -336,7 +332,22 @@ int main(int argc, char *argv[]) {
                 planning = true;
                 rotmat_tf.getRotation(q);
                 q.normalize();
-                if (use_urscript) {
+                target_pose = move_group_interface.getCurrentPose().pose;
+                tf2::fromMsg(target_pose.orientation, target_q);
+                target_q = target_q * q;
+                target_pose.orientation = tf2::toMsg(target_q);
+                target_pose.position.x += radius * std::cos(to_radian(angle));
+                target_pose.position.y += radius * std::sin(to_radian(angle));
+                dz = (z_height - center[1]) / (50 * 1000.0);
+                target_pose.position.z += dz;
+                print_target(logger, target_pose);
+                move_group_interface.setPoseTarget(target_pose);
+                success = move_to_target(move_group_interface, logger);
+                if (!success) {
+                    msg = "Angle Focus Planning Fallback to URScript";
+                    publisher_node->set_msg(msg);
+                    RCLCPP_ERROR(logger, msg.c_str());
+
                     double angle = 2.0 * std::acos(q.getW());
                     double norm =
                         std::sqrt(q.getX() * q.getX() + q.getY() * q.getY() +
@@ -355,25 +366,6 @@ int main(int argc, char *argv[]) {
                         radius * std::sin(to_radian(angle)), dz, -rx, -ry, rz,
                         logger, urscript_node, robot_vel, robot_acc);
                     // rclcpp::sleep_for(std::chrono::milliseconds(3000));
-                } else {
-                    target_pose = move_group_interface.getCurrentPose().pose;
-                    tf2::fromMsg(target_pose.orientation, target_q);
-                    target_q = target_q * q;
-                    target_pose.orientation = tf2::toMsg(target_q);
-                    target_pose.position.x +=
-                        radius * std::cos(to_radian(angle));
-                    target_pose.position.y +=
-                        radius * std::sin(to_radian(angle));
-                    dz = (z_height - center[1]) / (50 * 1000.0);
-                    target_pose.position.z += dz;
-                    print_target(logger, target_pose);
-                    move_group_interface.setPoseTarget(target_pose);
-                    success = move_to_target(move_group_interface, logger);
-                }
-                if (!success) {
-                    msg = "Angle Focus Planning Failed!";
-                    publisher_node->set_msg(msg);
-                    RCLCPP_ERROR(logger, msg.c_str());
                 }
             }
 
@@ -422,22 +414,15 @@ int main(int argc, char *argv[]) {
             publisher_node->set_circle_state(circle_state);
 
             if (planning) {
-                if (use_urscript) {
-                    success = move_to_target_urscript(0, 0, 0, roll, pitch, yaw,
-                                                      logger, urscript_node,
-                                                      robot_vel, robot_acc);
-                    rclcpp::sleep_for(std::chrono::milliseconds(4000));
-                } else {
-                    q.setRPY(roll, pitch, yaw);
-                    q.normalize();
-                    target_pose = move_group_interface.getCurrentPose().pose;
-                    tf2::fromMsg(target_pose.orientation, target_q);
-                    target_q = target_q * q;
-                    target_pose.orientation = tf2::toMsg(target_q);
-                    print_target(logger, target_pose);
-                    move_group_interface.setPoseTarget(target_pose);
-                    success = move_to_target(move_group_interface, logger);
-                }
+                q.setRPY(roll, pitch, yaw);
+                q.normalize();
+                target_pose = move_group_interface.getCurrentPose().pose;
+                tf2::fromMsg(target_pose.orientation, target_q);
+                target_q = target_q * q;
+                target_pose.orientation = tf2::toMsg(target_q);
+                print_target(logger, target_pose);
+                move_group_interface.setPoseTarget(target_pose);
+                success = move_to_target(move_group_interface, logger);
                 if (success) {
                     msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());
@@ -454,9 +439,13 @@ int main(int argc, char *argv[]) {
                         angle = 0.0;
                     }
                 } else {
-                    msg = "Z-axis Rotation Planning Failed!";
-                    RCLCPP_ERROR(logger, msg.c_str());
+                    msg = "Z-axis Rotation Planning Fallback to URScript";
                     publisher_node->set_msg(msg);
+                    RCLCPP_ERROR(logger, msg.c_str());
+                    success = move_to_target_urscript(0, 0, 0, roll, pitch, yaw,
+                                                      logger, urscript_node,
+                                                      robot_vel, robot_acc);
+                    rclcpp::sleep_for(std::chrono::milliseconds(4000));
                 }
             }
         }
