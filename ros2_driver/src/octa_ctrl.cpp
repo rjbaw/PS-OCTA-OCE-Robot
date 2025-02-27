@@ -113,8 +113,8 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    // move_group_interface.setPlanningTime(0.5);
-    // move_group_interface.setNumPlanningAttempts(5);
+    move_group_interface.setPlanningTime(0.2);
+    move_group_interface.setNumPlanningAttempts(1);
     move_group_interface.setPlanningPipelineId("ompl");
     // move_group_interface.setPlanningPipelineId("stomp");
 
@@ -214,10 +214,9 @@ int main(int argc, char *argv[]) {
                         break;
                     }
                     // rclcpp::sleep_for(std::chrono::milliseconds(10000));
-                    publisher_node->set_msg("Collecting Image");
                 }
                 img_array.push_back(img);
-                msg = std::format("Collected image %d", i + 1);
+                msg = std::format("Collected image {}", i + 1);
                 RCLCPP_INFO(logger, msg.c_str());
                 publisher_node->set_msg(msg);
             }

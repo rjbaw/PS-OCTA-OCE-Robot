@@ -25,7 +25,7 @@ while getopts ":hs" option; do
    esac
 done
 
-CHECK_INTERVAL=1
+CHECK_INTERVAL=0.1
 TMUX_SESSION="ros_session"
 
 if [[ "$sim" == "true" ]]; then

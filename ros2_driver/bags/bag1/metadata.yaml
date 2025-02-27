@@ -2,10 +2,10 @@ rosbag2_bagfile_information:
   version: 9
   storage_identifier: mcap
   duration:
-    nanoseconds: 13545408410
+    nanoseconds: 35649384212
   starting_time:
-    nanoseconds_since_epoch: 1738971544646619604
-  message_count: 130
+    nanoseconds_since_epoch: 1740623930281664454
+  message_count: 332
   topics_with_message_count:
     - topic_metadata:
         name: /oct_image
@@ -28,7 +28,7 @@ rosbag2_bagfile_information:
               nsec: 854775807
             avoid_ros_namespace_conventions: false
         type_description_hash: ""
-      message_count: 65
+      message_count: 166
     - topic_metadata:
         name: /labview_data
         type: octa_ros/msg/Labviewdata
@@ -50,7 +50,7 @@ rosbag2_bagfile_information:
               nsec: 854775807
             avoid_ros_namespace_conventions: false
         type_description_hash: ""
-      message_count: 65
+      message_count: 166
   compression_format: ""
   compression_mode: ""
   relative_file_paths:
@@ -58,9 +58,9 @@ rosbag2_bagfile_information:
   files:
     - path: bag1_0.mcap
       starting_time:
-        nanoseconds_since_epoch: 1738971544646619604
+        nanoseconds_since_epoch: 1740623930281664454
       duration:
-        nanoseconds: 13545408410
-      message_count: 130
+        nanoseconds: 35649384212
+      message_count: 332
   custom_data: ~
   ros_distro: jazzy
