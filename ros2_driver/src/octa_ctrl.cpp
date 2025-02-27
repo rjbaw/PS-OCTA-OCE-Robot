@@ -113,16 +113,10 @@ int main(int argc, char *argv[]) {
 
     add_collision_obj(move_group_interface);
 
-    move_group_interface.setPlanningTime(0.5);
-    move_group_interface.setNumPlanningAttempts(5);
+    // move_group_interface.setPlanningTime(0.5);
+    // move_group_interface.setNumPlanningAttempts(5);
     move_group_interface.setPlanningPipelineId("ompl");
     // move_group_interface.setPlanningPipelineId("stomp");
-
-    publisher_node->set_fast_axis(true);
-    while (subscriber_node->fast_axis() != true) {
-        rclcpp::sleep_for(std::chrono::milliseconds(50));
-    }
-    publisher_node->set_apply_config(true);
 
     while (rclcpp::ok() && running) {
 
@@ -144,8 +138,6 @@ int main(int argc, char *argv[]) {
         robot_vel = subscriber_node->robot_vel();
         robot_acc = subscriber_node->robot_acc();
         z_height = subscriber_node->z_height();
-        // robot_vel = 0.5;
-        // robot_acc = 0.5;
 
         if (subscriber_node->freedrive()) {
             circle_state = 1;
@@ -210,7 +202,7 @@ int main(int argc, char *argv[]) {
                 publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 while (subscriber_node->scan_3d() != scan_3d) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(50));
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
                 }
                 publisher_node->set_apply_config(apply_config);
             }
@@ -241,7 +233,7 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             while (subscriber_node->scan_3d() != scan_3d) {
-                rclcpp::sleep_for(std::chrono::milliseconds(50));
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
             }
             publisher_node->set_apply_config(apply_config);
 
@@ -291,7 +283,7 @@ int main(int argc, char *argv[]) {
                 apply_config = true;
                 publisher_node->set_scan_3d(scan_3d);
                 while (subscriber_node->scan_3d() != scan_3d) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(50));
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
                 }
                 publisher_node->set_apply_config(apply_config);
             }
@@ -380,7 +372,7 @@ int main(int argc, char *argv[]) {
                 move_group_interface.setStartStateToCurrentState();
                 target_pose = move_group_interface.getCurrentPose().pose;
                 while (subscriber_node->autofocus()) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(50));
+                    rclcpp::sleep_for(std::chrono::milliseconds(10));
                 }
             }
         } else {
@@ -391,6 +383,8 @@ int main(int argc, char *argv[]) {
 
             if (next) {
                 planning = true;
+                angle += angle_increment;
+                circle_state++;
                 yaw += to_radian(angle_increment);
                 while (next == subscriber_node->next()) {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
@@ -398,6 +392,8 @@ int main(int argc, char *argv[]) {
             }
             if (previous) {
                 planning = true;
+                angle -= angle_increment;
+                circle_state--;
                 yaw += to_radian(-angle_increment);
                 while (previous == subscriber_node->previous()) {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
@@ -405,6 +401,8 @@ int main(int argc, char *argv[]) {
             }
             if (home) {
                 planning = true;
+                circle_state = 1;
+                angle = 0.0;
                 yaw += to_radian(-angle);
                 while (home == subscriber_node->home()) {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
@@ -426,18 +424,6 @@ int main(int argc, char *argv[]) {
                 if (success) {
                     msg = "Planning Success!";
                     RCLCPP_INFO(logger, msg.c_str());
-                    if (next) {
-                        angle += angle_increment;
-                        circle_state++;
-                    }
-                    if (previous) {
-                        angle -= angle_increment;
-                        circle_state--;
-                    }
-                    if (home) {
-                        circle_state = 1;
-                        angle = 0.0;
-                    }
                 } else {
                     msg = "Z-axis Rotation Planning Fallback to URScript";
                     publisher_node->set_msg(msg);
@@ -465,7 +451,7 @@ int main(int argc, char *argv[]) {
             apply_config = true;
             publisher_node->set_scan_3d(scan_3d);
             while (subscriber_node->scan_3d() != scan_3d) {
-                rclcpp::sleep_for(std::chrono::milliseconds(50));
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
             }
             publisher_node->set_apply_config(apply_config);
         }
