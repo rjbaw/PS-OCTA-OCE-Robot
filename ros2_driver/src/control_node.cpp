@@ -1,18 +1,3 @@
-#include <rclcpp/rclcpp.hpp>
-#include <rclcpp_action/rclcpp_action.hpp>
-
-// Custom messages
-#include <octa_ros/msg/labviewdata.hpp>
-#include <octa_ros/msg/robotdata.hpp>
-
-// Existing actions
-#include <my_package/action/focus.hpp>        // e.g. Focus.action
-#include <my_package/action/move_z_angle.hpp> // e.g. MoveZAngle.action
-
-// New Freedrive & Reset actions
-#include <my_package/action/freedrive.hpp> // Freedrive.action
-#include <my_package/action/reset.hpp>     // Reset.action
-
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -20,48 +5,53 @@
 #include <string>
 #include <vector>
 
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+
+#include <octa_ros/msg/labviewdata.hpp>
+#include <octa_ros/msg/robotdata.hpp>
+
+#include <octa_ros/action/focus.hpp>
+#include <octa_ros/action/freedrive.hpp>
+#include <octa_ros/action/move_z_angle.hpp>
+#include <octa_ros/action/reset.hpp>
+
 static double to_radian(double deg) { return deg * M_PI / 180.0; }
 
 class ControlNode : public rclcpp::Node {
   public:
-    // Aliases for your actions
-    using Focus = my_package::action::Focus;
-    using MoveZAngle = my_package::action::MoveZAngle;
-    using Freedrive = my_package::action::Freedrive;
-    using ResetAction = my_package::action::Reset;
+    using Focus = octa_ros::action::Focus;
+    using MoveZAngle = octa_ros::action::MoveZAngle;
+    using Freedrive = octa_ros::action::Freedrive;
+    using ResetAction = octa_ros::action::Reset;
 
-    // Goal handles for each
     using FocusGoalHandle = rclcpp_action::ClientGoalHandle<Focus>;
     using MoveZGoalHandle = rclcpp_action::ClientGoalHandle<MoveZAngle>;
     using FreedriveGoalHandle = rclcpp_action::ClientGoalHandle<Freedrive>;
-    using ResetGoalHandle = rclcpp_action::ClientGoalHandle<ResetAction>;
+    using ReetGoalHandle = rclcpp_action::ClientGoalHandle<ResetAction>;
 
     explicit ControlNode(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
         : Node("control_node", options) {
-        // 1) Publisher for robot_data
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             robotdata_pub_ = this->create_publisher<octa_ros::msg::Robotdata>(
                 "robot_data", qos);
         }
 
-        // 2) Subscriber for labview_data
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-            labview_sub_ =
+            labview_read_ =
                 this->create_subscription<octa_ros::msg::Labviewdata>(
                     "labview_data", qos,
                     std::bind(&ControlNode::labviewCallback, this,
                               std::placeholders::_1));
         }
 
-        // 3) Timer to publish Robotdata
         robotdata_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(50),
             std::bind(&ControlNode::publishRobotdata, this));
 
-        // 4) Action clients
         focus_action_client_ =
             rclcpp_action::create_client<Focus>(this, "focus_action");
         move_z_angle_client_ = rclcpp_action::create_client<MoveZAngle>(
@@ -71,7 +61,6 @@ class ControlNode : public rclcpp::Node {
         reset_action_client_ =
             rclcpp_action::create_client<ResetAction>(this, "reset_action");
 
-        // 5) Main loop timer
         main_loop_timer_ = this->create_wall_timer(
             std::chrono::seconds(2), std::bind(&ControlNode::mainLoop, this));
 
@@ -79,21 +68,63 @@ class ControlNode : public rclcpp::Node {
     }
 
   private:
-    // -----------------------
-    // Action Clients
-    // -----------------------
     rclcpp_action::Client<Focus>::SharedPtr focus_action_client_;
     rclcpp_action::Client<MoveZAngle>::SharedPtr move_z_angle_client_;
     rclcpp_action::Client<Freedrive>::SharedPtr freedrive_action_client_;
     rclcpp_action::Client<ResetAction>::SharedPtr reset_action_client_;
 
-    // Publisher & Subscriber
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr robotdata_pub_;
-    rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr labview_sub_;
+    rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr labview_read_;
 
-    // Timers
     rclcpp::TimerBase::SharedPtr robotdata_timer_;
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
+
+    FocusGoalHandle::SharedPtr active_focus_goal_handle_;
+    MoveZGoalHandle::SharedPtr active_move_z_goal_handle_;
+    FreedriveGoalHandle::SharedPtr active_freedrive_goal_handle_;
+    ResetGoalHandle::SharedPtr active_reset_goal_handle_;
+
+    //     // 3D Parameters
+    //     const int interval = 6;
+    //     const bool single_interval = false;
+    //
+    //     // Publisher Parameters
+    //     std::string msg;
+    //     double angle = 0.0;
+    //     int circle_state = 1;
+    //     bool apply_config = true;
+    //     bool end_state = false;
+    //     bool scan_3d = false;
+    //
+    //     // Internal Parameters
+    //     bool planning = false;
+    //     double angle_increment;
+    //     double roll = 0.0, pitch = 0.0, yaw = 0.0;
+    //     Eigen::Matrix3d rotmat_eigen;
+    //     cv::Mat img;
+    //     std::vector<cv::Mat> img_array;
+    //     std::vector<Eigen::Vector3d> pc_lines;
+    //     tf2::Quaternion q;
+    //     tf2::Quaternion target_q;
+    //     geometry_msgs::msg::Pose target_pose;
+    //
+    //     // Subscriber Parameters
+    //     double robot_vel;
+    //     double robot_acc;
+    //     double radius;
+    //     double angle_limit;
+    //     double dz;
+    //     double z_tolerance;
+    //     double angle_tolerance;
+    //     double z_height;
+    //     int num_pt;
+    //     bool fast_axis = true;
+    //     bool success = false;
+    //     bool next = false;
+    //     bool previous = false;
+    //     bool home = false;
+    //     bool z_focused = false;
+    //     bool angle_focused = false;
 
     // Robotdata fields
     std::string msg_{"idle"};
@@ -103,6 +134,10 @@ class ControlNode : public rclcpp::Node {
     bool apply_config_{false};
     bool end_state_{false};
     bool scan_3d_{false};
+
+    //         move_group_interface.setMaxVelocityScalingFactor(robot_vel);
+    //         move_group_interface.setMaxAccelerationScalingFactor(robot_acc);
+    //         move_group_interface.setStartStateToCurrentState();
 
     std::chrono::steady_clock::time_point apply_config_time_{
         std::chrono::steady_clock::now()};
@@ -124,21 +159,17 @@ class ControlNode : public rclcpp::Node {
     bool next_{false};
     bool home_{false};
     bool reset_{false};
-    bool fast_axis_sub_{false};
-    bool scan_3d_sub_{false};
+    bool fast_axis_read_{false};
+    bool scan_3d_read_{false};
     double z_height_{0.0};
     int num_pt_{1};
 
     bool changed_{false};
     octa_ros::msg::Labviewdata old_labview_msg_;
 
-    // Some angles
     double roll_{0.0}, pitch_{0.0}, yaw_{0.0};
     double angle_increment_{0.0};
 
-    // -----------------------
-    // SUBSCRIBER CALLBACK
-    // -----------------------
     void labviewCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
 
@@ -157,8 +188,8 @@ class ControlNode : public rclcpp::Node {
         next_ = msg->next;
         home_ = msg->home;
         reset_ = msg->reset;
-        fast_axis_sub_ = msg->fast_axis;
-        scan_3d_sub_ = msg->scan_3d;
+        fast_axis_read_ = msg->fast_axis;
+        scan_3d_read_ = msg->scan_3d;
         z_height_ = msg->z_height;
 
         if (*msg != old_labview_msg_) {
@@ -176,7 +207,7 @@ class ControlNode : public rclcpp::Node {
                                     angle_tolerance_, radius_, angle_limit_,
                                     num_pt_, dz_, drot_, autofocus_, freedrive_,
                                     previous_, next_, home_, reset_,
-                                    fast_axis_sub_, scan_3d_sub_, z_height_)
+                                    fast_axis_read_, scan_3d_read_, z_height_)
                             .c_str());
         } else {
             changed_ = false;
@@ -184,9 +215,6 @@ class ControlNode : public rclcpp::Node {
         old_labview_msg_ = *msg;
     }
 
-    // -----------------------
-    // PUBLISHER TIMER
-    // -----------------------
     void publishRobotdata() {
         octa_ros::msg::Robotdata message;
         message.msg = msg_;
@@ -226,9 +254,6 @@ class ControlNode : public rclcpp::Node {
         old_robotdata_ = message;
     }
 
-    // -----------------------
-    // MAIN LOOP TIMER
-    // -----------------------
     void mainLoop() {
         // Wait for each server briefly (non-blocking style).
         if (!focus_action_client_->wait_for_action_server(
@@ -252,84 +277,252 @@ class ControlNode : public rclcpp::Node {
 
         std::lock_guard<std::mutex> lock(data_mutex_);
 
-        // Freedrive (enable/disable)
         if (freedrive_) {
-            RCLCPP_INFO(get_logger(),
-                        "User Freedrive => enabling Freedrive mode via action");
+            circle_state_ = 1;
+            angle_ = 0.0;
+            msg_ = "[Action] Freedrive Mode ON";
+            RCLCPP_INFO(get_logger(), msg.c_str());
             sendFreedriveGoal(true);
-            // Freedrive_ might stay true or revert after sending
         } else {
-            // Possibly disable Freedrive if it was previously on. This is up to
-            // your logic: sendFreedriveGoal(false);
+            sendFreedriveGoal(false);
         }
 
-        // Reset
         if (reset_) {
             RCLCPP_INFO(get_logger(), "User RESET => sending Reset action");
-            sendResetGoal();
+            angle_ = 0.0;
+            circle_state_ = 1;
+            msg_ = "[Action] Reset to default position. It may take some time "
+                   "please wait.";
+            RCLCPP_INFO(get_logger(), msg.c_str());
+            // sendResetGoal(robot_vel_, robot_acc_);
+            sendResetGoal(0.8, 0.8);
         }
 
-        // Autofocus
         if (autofocus_) {
             RCLCPP_INFO(get_logger(), "User AUTOFOCUS => sending Focus goal");
+            scan_3d_ = true;
+            apply_config_ = true;
+            msg_ = "Starting 3D Scan";
+            RCLCPP_INFO(get_logger, msg_.c_str());
+            while (!scan_3d_read_) {
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
+            }
+
+            sendSurfaceGoal();
+
+            scan_3d_ = false;
+            apply_config_ = true;
+            while (scan_3d_read_) {
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
+            }
+
+            //             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
+            //             roll = tmp_yaw;
+            //             pitch = -tmp_roll;
+            //             yaw = tmp_pitch;
+            //             rotmat_tf.setRPY(roll, pitch, yaw);
+
+            //             msg +=
+            //                 std::format("\nCalculated R:{:.2f}, P:{:.2f},
+            //                 Y:{:.2f}",
+            //                             to_degree(roll), to_degree(pitch),
+            //                             to_degree(yaw));
+            //             publisher_node->set_msg(msg);
+            //             RCLCPP_INFO(logger, msg.c_str());
+
+            //             if (tol_measure(roll, pitch, angle_tolerance)) {
+            //                 angle_focused = true;
+            //                 msg += "\nAngle focused";
+            //                 publisher_node->set_msg(msg);
+            //                 RCLCPP_INFO(logger, msg.c_str());
+            //                 scan_3d = false;
+            //                 apply_config = true;
+            //                 publisher_node->set_scan_3d(scan_3d);
+            //                 while (subscriber_node->scan_3d() != scan_3d) {
+            //                     rclcpp::sleep_for(std::chrono::milliseconds(50));
+            //                 }
+            //                 publisher_node->set_apply_config(apply_config);
+            //             }
+
             sendFocusGoal();
+
             return;
         }
 
-        // Normal circle stepping
+        //         if (subscriber_node->autofocus()) {
+        //
+        //             if (angle_focused && !z_focused) {
+        //                 // dz = 0;
+        //                 dz = (z_height - center[1]) / (50 * 1000.0);
+        //                 msg += std::format("\ndz = {}", dz);
+        //                 publisher_node->set_msg(msg);
+        //                 RCLCPP_INFO(logger, "dz: %f", dz);
+        //                 if (std::abs(dz) < (z_tolerance / 1000.0)) {
+        //                     z_focused = true;
+        //                     msg += "\nHeight focused";
+        //                     publisher_node->set_msg(msg);
+        //                     RCLCPP_INFO(logger, msg.c_str());
+        //                 } else {
+        //                     planning = true;
+        //                     if (use_urscript) {
+        //                         success = move_to_target_urscript(0, 0, -dz,
+        //                         0, 0, 0,
+        //                                                           logger,
+        //                                                           urscript_node,
+        //                                                           robot_vel,
+        //                                                           robot_acc);
+        //                         //
+        //                         rclcpp::sleep_for(std::chrono::milliseconds(3000));
+        //                     } else {
+        //                         target_pose =
+        //                             move_group_interface.getCurrentPose().pose;
+        //                         target_pose.position.z += dz;
+        //                         print_target(logger, target_pose);
+        //                         move_group_interface.setPoseTarget(target_pose);
+        //                         success =
+        //                         move_to_target(move_group_interface, logger);
+        //                     }
+        //
+        //                     if (!success) {
+        //                         msg = std::format("Z-height Planning
+        //                         Failed!"); RCLCPP_ERROR(logger, msg.c_str());
+        //                         publisher_node->set_msg(msg);
+        //                     }
+        //                 }
+        //             }
+        //
+        //             if (!angle_focused) {
+        //                 planning = true;
+        //                 rotmat_tf.getRotation(q);
+        //                 q.normalize();
+        //                 if (use_urscript) {
+        //                     double angle = 2.0 * std::acos(q.getW());
+        //                     double norm =
+        //                         std::sqrt(q.getX() * q.getX() + q.getY() *
+        //                         q.getY() +
+        //                                   q.getZ() * q.getZ());
+        //                     double rx = 0, ry = 0, rz = 0;
+        //                     if (norm < 1e-8) {
+        //                         rx = ry = rz = 0.0;
+        //                     } else {
+        //                         rx = (q.getX() / norm) * angle;
+        //                         ry = (q.getY() / norm) * angle;
+        //                         rz = (q.getZ() / norm) * angle;
+        //                     }
+        //
+        //                     success = move_to_target_urscript(
+        //                         radius * std::cos(to_radian(angle)),
+        //                         radius * std::sin(to_radian(angle)), dz, -rx,
+        //                         -ry, rz, logger, urscript_node, robot_vel,
+        //                         robot_acc);
+        //                     //
+        //                     rclcpp::sleep_for(std::chrono::milliseconds(3000));
+        //                 } else {
+        //                     target_pose =
+        //                     move_group_interface.getCurrentPose().pose;
+        //                     tf2::fromMsg(target_pose.orientation, target_q);
+        //                     target_q = target_q * q;
+        //                     target_pose.orientation = tf2::toMsg(target_q);
+        //                     target_pose.position.x +=
+        //                         radius * std::cos(to_radian(angle));
+        //                     target_pose.position.y +=
+        //                         radius * std::sin(to_radian(angle));
+        //                     dz = (z_height - center[1]) / (50 * 1000.0);
+        //                     target_pose.position.z += dz;
+        //                     print_target(logger, target_pose);
+        //                     move_group_interface.setPoseTarget(target_pose);
+        //                     success = move_to_target(move_group_interface,
+        //                     logger);
+        //                 }
+        //                 if (!success) {
+        //                     msg = "Angle Focus Planning Failed!";
+        //                     publisher_node->set_msg(msg);
+        //                     RCLCPP_ERROR(logger, msg.c_str());
+        //                 }
+        //             }
+        //
+        //             if (angle_focused && z_focused) {
+        //                 angle_focused = false;
+        //                 z_focused = false;
+        //                 planning = false;
+        //                 end_state = true;
+        //                 msg += "\nWithin tolerance";
+        //                 publisher_node->set_msg(msg);
+        //                 publisher_node->set_end_state(end_state);
+        //                 move_group_interface.setStartStateToCurrentState();
+        //                 target_pose =
+        //                 move_group_interface.getCurrentPose().pose; while
+        //                 (subscriber_node->autofocus()) {
+        //                     rclcpp::sleep_for(std::chrono::milliseconds(50));
+        //                 }
+        //             }
+        //         }
+
+        //             angle_increment = angle_limit / num_pt;
+        //             roll = 0.0, pitch = 0.0, yaw = 0.0;
+
         angle_increment_ = (num_pt_ == 0)
                                ? 0.0
                                : (angle_limit_ / static_cast<double>(num_pt_));
         if (next_) {
             yaw_ += to_radian(angle_increment_);
+            circle_state_++;
             RCLCPP_INFO(get_logger(),
                         "NEXT => new yaw=%.2f deg => sending MoveZAngle goal",
                         yaw_ * 180.0 / M_PI);
-            sendMoveZAngleGoal(yaw_);
+            sendMoveZAngleGoal(yaw_, robot_vel_, robot_acc_);
+            while (next_) {
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
+            }
         }
         if (previous_) {
             yaw_ -= to_radian(angle_increment_);
+            circle_state_--;
             RCLCPP_INFO(
                 get_logger(),
                 "PREVIOUS => new yaw=%.2f deg => sending MoveZAngle goal",
                 yaw_ * 180.0 / M_PI);
-            sendMoveZAngleGoal(yaw_);
+            sendMoveZAngleGoal(yaw_, robot_vel_, robot_acc_);
+            while (previous_) {
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
+            }
         }
         if (home_) {
-            double old_ang_deg = angle_;
-            yaw_ -= to_radian(old_ang_deg);
+            yaw_ -= to_radian(angle_);
+            circle_state_ = 1;
+            angle_ = 0.0;
             RCLCPP_INFO(get_logger(),
                         "HOME => revert yaw by %.2f deg => new yaw=%.2f => "
                         "sending MoveZAngle goal",
-                        old_ang_deg, yaw_ * 180.0 / M_PI);
-            sendMoveZAngleGoal(yaw_);
+                        angle_, yaw_ * 180.0 / M_PI);
+            sendMoveZAngleGoal(yaw_, robot_vel_, robot_acc_);
+            while (home) {
+                rclcpp::sleep_for(std::chrono::milliseconds(10));
+            }
         }
     }
 
-    // -----------------------
-    // ACTION SEND GOALS
-    // -----------------------
     void sendFocusGoal() {
         Focus::Goal goal_msg;
         goal_msg.angle_tolerance = angle_tolerance_;
         goal_msg.z_tolerance = z_tolerance_;
-        // etc...
 
         auto options = rclcpp_action::Client<Focus>::SendGoalOptions();
         options.result_callback =
             [this](const FocusGoalHandle::WrappedResult &result) {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
-                    RCLCPP_INFO(this->get_logger(), "Focus SUCCEEDED");
+                    RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
-                    RCLCPP_WARN(this->get_logger(), "Focus ABORTED");
+                    RCLCPP_WARN(this->get_logger(), "Focus action ABORTED");
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
-                    RCLCPP_WARN(this->get_logger(), "Focus CANCELED");
+                    RCLCPP_WARN(this->get_logger(), "Focus action CANCELED");
                     break;
                 default:
-                    RCLCPP_WARN(this->get_logger(), "Focus UNKNOWN code");
+                    RCLCPP_WARN(this->get_logger(),
+                                "Focus action UNKNOWN result code");
                     break;
                 }
             };
@@ -337,9 +530,15 @@ class ControlNode : public rclcpp::Node {
         options.feedback_callback =
             [this](FocusGoalHandle::SharedPtr,
                    const std::shared_ptr<const Focus::Feedback> fb) {
+                // Display feedback in real-time (current progress)
                 RCLCPP_INFO(this->get_logger(),
-                            "Focus feedback => current_angle=%.2f",
+                            "Focus progress => current_angle=%.2f",
                             fb->current_angle);
+                // Optionally, implement cancellation on the client side
+                if (/* condition to cancel */) {
+                    RCLCPP_INFO(this->get_logger(), "Canceling Focus action");
+                    focus_action_client_->cancel_all_goals();
+                }
             };
 
         focus_action_client_->async_send_goal(goal_msg, options);
@@ -347,7 +546,6 @@ class ControlNode : public rclcpp::Node {
 
     void sendMoveZAngleGoal(double yaw_rad) {
         MoveZAngle::Goal goal_msg;
-        // Suppose the action expects a float64 target_angle in degrees:
         goal_msg.target_angle = yaw_rad * 180.0 / M_PI;
 
         auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
@@ -356,6 +554,9 @@ class ControlNode : public rclcpp::Node {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
+                    // msg = "Planning Success!";
+                    // RCLCPP_INFO(logger, msg.c_str());
+
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
@@ -453,10 +654,8 @@ class ControlNode : public rclcpp::Node {
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-
     auto node = std::make_shared<ControlNode>();
     rclcpp::spin(node);
-
     rclcpp::shutdown();
     return 0;
 }

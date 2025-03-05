@@ -1,6 +1,7 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <csignal>
+#include <fmt/core.h>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
@@ -237,7 +238,7 @@ int main(int argc, char *argv[]) {
             for (const auto &point : pc_lines) {
                 pcd_lines.points_.emplace_back(point);
             }
-            auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
+            auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(true);
             Eigen::Vector3d center = boundbox.GetCenter();
             msg += std::format("\n[Center] x:{} y:{} z:{}", center[0],
                                center[1], center[2]);

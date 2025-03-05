@@ -321,7 +321,6 @@ def detect_lines2(image_path, save_dir):
 
     cv2.imwrite(base_name + "_sub.jpg", img)
 
-
     img = median_filter(img, size=(3, 11))
     img = gaussian_filter(img, sigma=3)
 
@@ -331,9 +330,8 @@ def detect_lines2(image_path, save_dir):
 
     cv2.imwrite(
         base_name + "_max.jpg",
-        draw_line(img_raw.copy(), np.column_stack([np.arange(500),surface])),
+        draw_line(img_raw.copy(), np.column_stack([np.arange(500), surface])),
     )
-
 
     observations = surface
 
@@ -386,20 +384,10 @@ def detect_lines2(image_path, save_dir):
     return ret_coords
 
 
-def detect_lines(image_path, save_dir):
-    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img_raw is None:
-        print("Error: Could not load image.")
-        return
-
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    base_name = os.path.join(save_dir, base_name)
-    # img = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
-    cv2.imwrite(base_name + "_raw.jpg", img_raw)
-
+def fourier_filter():
+    pass
     # fourier = cv2.dft(np.float32(img_raw))
-
-    img = cv2.medianBlur(img_raw, 5)
+    # img = cv2.GaussianBlur(img, (5,5), 0)
     # f = np.fft.fft2(img)
     # fshift = np.fft.fftshift(f)
     # magnitude_spectrum = 20 * np.log(np.abs(fshift))
@@ -428,41 +416,61 @@ def detect_lines(image_path, save_dir):
     # plt.savefig(base_name + "_plot2.jpg")
     # plt.close()
 
-    # img = fourier
 
-    # ref_img = cv2.imread("data/ref.jpg", cv2.IMREAD_GRAYSCALE)
-    # denoised_image = cv2.medianBlur(img, 5)
-    # img = denoised_image
+def zero_dc(img, zidx, window):
+    img = img.astype(np.float32)
+    for i in zidx:
+        start_idx = max(i - window // 2, 0)
+        end_idx = min(i + window // 2, 512)
+        filter_window = img[start_idx:end_idx, :]
+        mean_col = np.mean(filter_window, axis=1, keepdims=True)
+        img[start_idx:end_idx, :] -= mean_col
 
-    # bool_sub = np.full(img.shape[0], True)
-    # for i in range(img.shape[0]):
-    #     init_val = img[i, 0]
-    #     for j in range(img.shape[1]):
-    #         if abs(init_val - img[i, j]) > 300:
-    #             bool_sub[i] = False
-    # for row, b in enumerate(bool_sub):
-    #     if b:
-    #         img[row, :] = 0
+    img = np.clip(img, 0, 255).astype(np.uint8)
 
-    # img = img.copy() - np.mean(img, axis=1, keepdims=True)
-    # img = img.copy() - np.mean(ref_img, axis=1, keepdims=True)
+    return img
 
-    # _, img = cv2.threshold(img, 100, 255, cv2.THRESH_TOZERO_INV)
+
+def detect_lines(image_path, save_dir):
+    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    height, width = img_raw.shape
+    if img_raw is None:
+        print("Error: Could not load image.")
+        return
+
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    base_name = os.path.join(save_dir, base_name)
+    cv2.imwrite(base_name + "_raw.jpg", img_raw)
+    img = img_raw
+
+    # img = cv2.line(img, (0, 140), (499, 140), (255, 0, 0), 5)
+
+    img = cv2.Sobel(img, cv2.CV_8U, 0, 1, ksize=5)
+    cv2.imwrite(base_name + "_sobel.jpg", img)
+
+    img = cv2.medianBlur(img, 11)
+    img = cv2.GaussianBlur(img, (11, 11), 0)
+
+    mean_col = np.mean(img, axis=1, keepdims=True)
+
+    # ret_coords[:, 1] = medfilt(ret_coords[:, 1], kernel_size=15)
+
+    from scipy.signal import find_peaks
+
+    plt.figure()
+    plt.plot(mean_col[:150])
+    peaks, _ = find_peaks(mean_col[:150].squeeze())
+    plt.plot(peaks, mean_col[:150][peaks], "ro", label="Peaks")
+    # img = zero_dc(img, peaks, 12)
+    img = zero_dc(img, (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14)
+    mean_col = np.mean(img, axis=1, keepdims=True)
+
+    plt.plot(mean_col[:150])
+    plt.savefig(base_name + "_plot.jpg")
+    plt.close()
+    # plt.show()
 
     cv2.imwrite(base_name + "_sub.jpg", img)
-
-    sobely = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=1)
-    # cv2.imwrite(base_name + "_sobely.jpg", sobely)
-    # cv2.imwrite(
-    #     base_name + "_sobely_detected.jpg",
-    #     draw_line(img_raw.copy(), get_max_coor(sobely)),
-    # )
-    img = sobely
-    sobelx = cv2.Sobel(img.T, cv2.CV_64F, 0, 1, ksize=1)
-    img = sobelx.T
-    # sobelx = cv2.Sobel(img.T, cv2.CV_64F, 1, 0, ksize=0)
-    # img = sobelx
-    cv2.imwrite(base_name + "_sobel.jpg", img)
 
     ret_coords = get_max_coor(img)
     cv2.imwrite(
@@ -470,13 +478,10 @@ def detect_lines(image_path, save_dir):
         draw_line(img_raw.copy(), ret_coords),
     )
 
-    # from scipy.signal import medfilt
-    # ret_coords[:, 1] = medfilt(ret_coords[:, 1], kernel_size=15)
-
     observations = ret_coords[:, 1]
 
     obs_length = len(observations)
-    window = max(1, int(obs_length / 10))
+    window = max(1, int(obs_length / 20))
     old_val = 0
     for i, pt in enumerate(observations):
         start = max(0, i - window)
@@ -485,20 +490,67 @@ def detect_lines(image_path, save_dir):
         sigma = np.std(observations[start:end])
         med = np.median(observations[start:end])
         if sigma != 0:
-            z = (pt - mu) / sigma
+            z = abs(pt - mu) / sigma
         else:
-            z = pt - mu
+            z = abs(pt - mu)
         if z > 0.5:
-            # if ((med - mu) / sigma) > 3:
-            #     observations[i] = mu
-            # else:
-            #     observations[i] = med
             observations[i] = med
 
-    x_k = np.median(observations[:50])
+    ret_coords[:, 1] = observations
+    cv2.imwrite(
+        base_name + "_outlier.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    obs_length = len(observations)
+    window = max(1, int(obs_length / 5))
+    z_max = 15.0
+    for i in range(obs_length):
+        start = max(0, i - window)
+        end = min(obs_length, i - 1)
+        mu = np.mean(observations[start:end])
+        sigma = np.std(observations[start:end])
+        med = np.median(observations[start:end])
+        if sigma != 0:
+            z = abs(observations[i] - mu) / sigma
+        else:
+            z = abs(observations[i] - mu)
+        if z > z_max:
+            print(z)
+            found = False
+            for j in range(window):
+                idx = i + j
+                if idx >= obs_length:
+                    break
+                if sigma != 0:
+                    z = abs(observations[idx] - mu) / sigma
+                else:
+                    z = abs(observations[idx] - mu)
+                if z < z_max:
+                    found = True
+                    prev_idx = max(0, i - 1)
+                    dy = (observations[idx] - observations[prev_idx]) / (j + 1)
+                    for k in range(j + 1):
+                        if (i + k) < obs_length:
+                            observations[i + k] = observations[prev_idx] + k * dy
+                    # observations[i] = med
+                    break
+
+            end = min(obs_length, i - 1)
+            if not found:
+                observations[i : (i + window + 1)] = observations[i - 1]
+
+    ret_coords[:, 1] = observations
+    cv2.imwrite(
+        base_name + "_linear.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    # observations = ret_coords[:, 1][::-1]
+    x_k = np.median(observations[:10])
     P_k = 1
     Q = 0.01
-    R = 5.0
+    R = 0.5
     x_k_estimates = []
     P_k_values = []
     for z_k in observations:
@@ -516,27 +568,7 @@ def detect_lines(image_path, save_dir):
         draw_line(img_raw.copy(), ret_coords),
     )
 
-    observations = ret_coords[:, 1][::-1]
-    x_k = observations[0]
-    P_k = 1
-    Q = 0.01
-    R = 5.0
-    x_k_estimates = []
-    P_k_values = []
-    for z_k in observations:
-        x_k_pred = x_k
-        P_k_pred = P_k + Q
-        K_k = P_k_pred / (P_k_pred + R)
-        x_k = x_k_pred + K_k * (z_k - x_k_pred)
-        P_k = (1 - K_k) * P_k_pred
-        x_k_estimates.append(x_k)
-        P_k_values.append(P_k)
-    ret_coords[:, 1] = x_k_estimates[::-1]
-
-    cv2.imwrite(
-        base_name + "_detected.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
+    ret_coords[:, 1] = height - ret_coords[:, 1]
 
     return ret_coords
 
@@ -667,16 +699,17 @@ def align_to_direction(rot_matrix):
 def test_basic(file_list, data_path, result_path, interval):
     print("\n******************** TEST simple ********************\n")
     pc_lines = lines_3d(
-        file_list, data_path, result_path, interval, detect_lines2, acq_interval=False
+        file_list, data_path, result_path, interval, detect_lines, acq_interval=True
     )
     pc_lines = np.vstack(pc_lines)
+    print(pc_lines)
 
     pcd_lines = o3d.geometry.PointCloud()
     pcd_lines.points = o3d.utility.Vector3dVector(pc_lines)
     ref_coor = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=300, origin=[0, 0, 0]
     )
-    boundbox = pcd_lines.get_minimal_oriented_bounding_box(robust=False)
+    boundbox = pcd_lines.get_minimal_oriented_bounding_box(robust=True)
     # boundbox = pcd_lines.get_oriented_bounding_box()
     boundbox.color = (1, 0, 0)
     # box_pt = np.asarray(boundbox.get_box_points())
@@ -863,7 +896,7 @@ def test_ml(file_list, data_path, result_path, interval):
 
 
 def main(data_path, result_path, interval):
-    start_idx = 3
+    start_idx = 0
     shutil.rmtree(result_path)
     os.makedirs(result_path)
     file_list = sorted(os.listdir(data_path), key=lambda x: int(os.path.splitext(x)[0]))
@@ -882,10 +915,13 @@ if __name__ == "__main__":
     # path = "data/3d_not_aligned"
     # path = "data/3d_aligned"
     # path = "data/skin_oct"
-    # path = "data/skin_octa"
-    path = "data/no_background"
+    path = "data/skin_octa"
+    # path = "data/no_background"
     # path = "data/current"
 
+    # path = "data/real"
+    # path = "data/real2"
+
     save_path = "data/result"
-    interval = 4
+    interval = 6
     main(path, save_path, interval)
