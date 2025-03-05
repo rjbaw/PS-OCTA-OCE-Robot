@@ -279,7 +279,8 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
         for (size_t j = 0; j < pc.coordinates.size(); ++j) {
             double x = static_cast<double>(pc.coordinates[j].x);
             double y = static_cast<double>(pc.coordinates[j].y);
-            pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
+            //pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
+            pc_3d.emplace_back(Eigen::Vector3d(y, z_val, x));
         }
 
         if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {

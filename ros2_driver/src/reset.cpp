@@ -10,6 +10,9 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include "urscript_publisher.hpp"
+#include "utils.hpp"
+
 std::atomic<bool> running(true);
 moveit::planning_interface::MoveGroupInterface *move_group_ptr = nullptr;
 
@@ -109,8 +112,6 @@ void add_collision_obj(auto &move_group_interface) {
     planning_scene_interface.applyCollisionObject(collision_monitor);
 }
 
-double to_radian(double angle) { return (std::numbers::pi / 180 * angle); }
-
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
 
@@ -121,11 +122,13 @@ int main(int argc, char *argv[]) {
         "reset_program",
         rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(
             true));
+    auto urscript_node = std::make_shared<urscript_publisher>();
 
     auto const logger = rclcpp::get_logger("reset_program");
 
     rclcpp::executors::SingleThreadedExecutor executor;
     executor.add_node(node);
+    executor.add_node(urscript_node);
     std::thread([&executor]() { executor.spin(); }).detach();
 
     using moveit::planning_interface::MoveGroupInterface;
@@ -160,16 +163,15 @@ int main(int argc, char *argv[]) {
     move_group_interface.setJointValueTarget("wrist_3_joint", to_radian(45.0));
     // move_group_interface.setJointValueTarget("wrist_3_joint",
     // to_radian(135.0));
-    while (running) {
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        bool success = static_cast<bool>(move_group_interface.plan(plan));
-        if (success) {
-            move_group_interface.execute(plan);
-            break;
-        } else {
-            RCLCPP_ERROR(logger, "Planning failed!");
-            RCLCPP_INFO(logger, "Execution was cancelled!");
-        }
+
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    bool success = static_cast<bool>(move_group_interface.plan(plan));
+    if (success) {
+        move_group_interface.execute(plan);
+    } else {
+        RCLCPP_ERROR(logger, "Planning failed!");
+        //RCLCPP_INFO(logger, "Execution was cancelled!");
+        reset_robot_urscript(urscript_node, 0.8, 0.8);
     }
 
     rclcpp::shutdown();

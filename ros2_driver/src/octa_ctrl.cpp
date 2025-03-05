@@ -258,11 +258,14 @@ int main(int argc, char *argv[]) {
             double tmp_pitch;
             double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
-            roll = tmp_yaw;
-            pitch = -tmp_roll;
-            yaw = tmp_pitch;
-            rotmat_tf.setRPY(roll, pitch, yaw);
-            ///////////////////////
+            roll = tmp_roll;
+            pitch = tmp_pitch;
+            yaw = tmp_yaw;
+            //roll = tmp_yaw;
+            //pitch = -tmp_roll;
+            //yaw = tmp_pitch;
+            //rotmat_tf.setRPY(roll, pitch, yaw);
+            ////////////////////
 
             msg +=
                 std::format("\nCalculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",

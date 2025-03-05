@@ -72,7 +72,7 @@ target_link_libraries(
   test_moveit "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
-add_executable(reset src/reset.cpp)
+add_executable(reset src/reset.cpp src/urscript_publisher.cpp src/utils.cpp)
 ament_target_dependencies(reset rclcpp moveit_ros_planning_interface
                           geometry_msgs tf2_ros std_msgs)
 target_link_libraries(
