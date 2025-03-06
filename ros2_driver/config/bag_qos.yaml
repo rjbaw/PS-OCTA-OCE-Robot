@@ -1,4 +1,0 @@
-/oct_image:
-  reliability: best_effort
-  durability: volatile
-  depth: 10
