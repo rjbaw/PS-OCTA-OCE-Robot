@@ -209,13 +209,13 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     int height = gray.rows;
 
     cv::Mat sobely;
-    cv::Sobel(gray, sobely, CV_8U, 0, 1, 5);
+    cv::Sobel(gray, sobely, CV_8U, 0, 1, 3);
 
     cv::Mat denoised;
-    cv::medianBlur(sobely, denoised, 11);
+    cv::medianBlur(sobely, denoised, 3);
 
     cv::Mat img_gauss;
-    cv::GaussianBlur(denoised, img_gauss, cv::Size(11, 11), 0);
+    cv::GaussianBlur(denoised, img_gauss, cv::Size(3, 3), 0);
 
     std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126};
     zero_dc(img_gauss, zidx, 14);
@@ -279,8 +279,8 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
         for (size_t j = 0; j < pc.coordinates.size(); ++j) {
             double x = static_cast<double>(pc.coordinates[j].x);
             double y = static_cast<double>(pc.coordinates[j].y);
-            //pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
-            pc_3d.emplace_back(Eigen::Vector3d(y, z_val, x));
+            pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
+            //pc_3d.emplace_back(Eigen::Vector3d(-y, z_val, x));
         }
 
         if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {

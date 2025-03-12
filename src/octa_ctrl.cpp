@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
                 apply_config = true;
                 msg = "Starting 3D Scan";
                 RCLCPP_INFO(logger, msg.c_str());
-                publisher_node->set_msg(msg);
+                //publisher_node->set_msg(msg);
                 publisher_node->set_scan_3d(scan_3d);
                 while (subscriber_node->scan_3d() != scan_3d) {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
@@ -219,10 +219,10 @@ int main(int argc, char *argv[]) {
                 img_array.push_back(img);
                 msg = std::format("Collected image {}", i + 1);
                 RCLCPP_INFO(logger, msg.c_str());
-                publisher_node->set_msg(msg);
+                //publisher_node->set_msg(msg);
             }
             msg = "Calculating Rotations";
-            publisher_node->set_msg(msg);
+            //publisher_node->set_msg(msg);
             RCLCPP_INFO(logger, msg.c_str());
 
             scan_3d = false;
@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
             for (const auto &point : pc_lines) {
                 pcd_lines.points_.emplace_back(point);
             }
-            auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(true);
+            auto boundbox = pcd_lines.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
             msg += std::format("\n[Center] x:{} y:{} z:{}", center[0],
                                center[1], center[2]);
@@ -253,19 +253,14 @@ int main(int argc, char *argv[]) {
             RCLCPP_INFO_STREAM(logger, "\nAligned Rotation Matrix:\n"
                                            << rotmat_eigen);
 
-            /// temporary fix for swapped axis ///
             double tmp_roll;
             double tmp_pitch;
             double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
-            roll = tmp_roll;
-            pitch = tmp_pitch;
+            roll = tmp_pitch;
+            pitch = -tmp_roll;
             yaw = tmp_yaw;
-            // roll = tmp_yaw;
-            // pitch = -tmp_roll;
-            // yaw = tmp_pitch;
-            // rotmat_tf.setRPY(roll, pitch, yaw);
-            ////////////////////
+            rotmat_tf.setRPY(roll, pitch, yaw);
 
             msg +=
                 std::format("\nCalculated R:{:.2f}, P:{:.2f}, Y:{:.2f}",
@@ -289,7 +284,8 @@ int main(int argc, char *argv[]) {
 
             if (angle_focused && !z_focused) {
                 // dz = 0;
-                dz = (z_height - center[1]) / (50 * 1000.0);
+                // dz = -(z_height - center[2]) / (50 * 1000.0);
+                dz = -(z_height - center[2]) / (50 * 1000.0);
                 msg += std::format("\ndz = {}", dz);
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
@@ -329,7 +325,8 @@ int main(int argc, char *argv[]) {
                 target_pose.orientation = tf2::toMsg(target_q);
                 target_pose.position.x += radius * std::cos(to_radian(angle));
                 target_pose.position.y += radius * std::sin(to_radian(angle));
-                dz = (z_height - center[1]) / (50 * 1000.0);
+                //dz = (z_height - center[1]) / (50 * 1000.0);
+                dz = 0;
                 target_pose.position.z += dz;
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
@@ -449,6 +446,8 @@ int main(int argc, char *argv[]) {
         if (scan_3d && !subscriber_node->autofocus()) {
             scan_3d = false;
             apply_config = true;
+            angle_focused = false;
+            z_focused = false;
             publisher_node->set_scan_3d(scan_3d);
             while (subscriber_node->scan_3d() != scan_3d) {
                 rclcpp::sleep_for(std::chrono::milliseconds(10));
