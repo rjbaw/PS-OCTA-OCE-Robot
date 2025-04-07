@@ -301,15 +301,15 @@ def spatial_filter(base_name, img):
         return dft_filtered
 
     img_float = np.float32(img)
-    dft_complex = cv2.dft(img_float, flags=cv2.DFT_COMPLEX_OUTPUT)
+    dft_complex = np.fft.fft2(img_float)
     dft_shifted = np.fft.fftshift(dft_complex, axes=[0, 1])
 
-    real_s, imag_s = cv2.split(dft_shifted)
-    mag_s = cv2.magnitude(real_s, imag_s)
+    mag_s = np.abs(dft_shifted)
     title = "log_spectrum"
     mag_log = np.log1p(mag_s)  # log(1 + M)
     mag_norm = cv2.normalize(mag_log, None, 0, 255, cv2.NORM_MINMAX)
     mag_uint8 = np.uint8(np.around(mag_norm))
+
     plt.figure()
     plt.plot(np.mean(img, axis=1))
     plt.savefig(base_name + "_" + title + "_2d_x.jpg")
@@ -321,6 +321,59 @@ def spatial_filter(base_name, img):
     cv2.imwrite(base_name + "_" + title + ".jpg", mag_uint8)
     plt.close()
 
+    # mag, phase = cv2.cartToPolar(real_s, imag_s)
+    # log_mag_2ch = cv2.merge([log_dft, np.zeros_like(log_dft)])
+    # cepstrum = cv2.idft(log_mag_2ch, flags=cv2.DFT_REAL_OUTPUT | cv2.DFT_SCALE)
+
+    cepstrum = np.fft.ifft2(np.fft.ifftshift(mag_log))
+    cepstrum = np.real(cepstrum)
+    cepstrum_pic = np.log1p(cepstrum)
+    cepstrum_pic = cv2.normalize(cepstrum_pic, None, 0, 255, cv2.NORM_MINMAX)
+    cepstrum_pic = np.uint8(np.around(cepstrum_pic))
+    cv2.imwrite(base_name + "_cepstrum.jpg", cepstrum_pic)
+
+    plt.figure()
+    plt.plot(np.mean(cepstrum, axis=0))
+    plt.savefig(base_name + "_cepstrum" + "_2d_y.jpg")
+    plt.close()
+
+    plt.figure()
+    plt.plot(np.mean(cepstrum, axis=1))
+    plt.savefig(base_name + "_cepstrum" + "_2d_x.jpg")
+    plt.close()
+
+    threshold = 0.01 * np.max(cepstrum)  # tweak factor
+    filter_mask = cepstrum > threshold
+    cepstrum_filtered = np.copy(cepstrum)
+    cepstrum_filtered[filter_mask] = 0
+    # cepstrum_filtered = cepstrum
+
+    plt.figure()
+    plt.plot(np.mean(cepstrum_filtered, axis=0))
+    plt.savefig(base_name + "_fcepstrum" + "_2d_y.jpg")
+    plt.close()
+
+    plt.figure()
+    plt.plot(np.mean(cepstrum_filtered, axis=1))
+    plt.savefig(base_name + "_fcepstrum" + "_2d_x.jpg")
+    plt.close()
+
+    filtered_log_magnitude = np.fft.fftshift(np.fft.fft2(cepstrum_filtered))
+    filtered_magnitude = np.expm1(filtered_log_magnitude)  # or exp(...)
+
+    orig_phase = np.angle(dft_shifted)
+    filtered_dft_shift = filtered_magnitude * np.exp(1j * orig_phase)
+    filtered_dft = np.fft.ifftshift(filtered_dft_shift)
+    img_filtered_complex = np.fft.ifft2(filtered_dft)
+    img_filtered = np.real(img_filtered_complex)
+    img_filtered_8u = cv2.normalize(img_filtered, None, 0, 255, cv2.NORM_MINMAX)
+    img_filtered_8u = np.uint8(img_filtered_8u)
+    cv2.imwrite(base_name + "_fcepstrum.jpg", img_filtered_8u)
+    img_back_uint8 = img_filtered_8u
+
+    #######
+
+    dft_complex = cv2.dft(img_float, flags=cv2.DFT_COMPLEX_OUTPUT)
     dft_filtered = wiener_filter(dft_complex)
 
     dft_filtered = np.fft.fftshift(dft_filtered, axes=[0, 1])
