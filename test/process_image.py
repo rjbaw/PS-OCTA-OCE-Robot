@@ -4,6 +4,7 @@ import numpy as np
 import os
 import shutil
 import open3d as o3d
+from scipy.ndimage import _support_alternative_backends
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
@@ -122,6 +123,23 @@ def zero_dc(img, zidx, window):
     return img
 
 
+def zero_dc_refined(img):
+    # (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14
+    # zidx = [(0, 5), (19, 40), (26, 46), (50, 67), (70, 91), (90, 130)]
+    zidx = [(0, 130)]
+    img = img.astype(np.float32)
+    for i in range(len(zidx)):
+        start_idx = zidx[i][0]
+        end_idx = zidx[i][1]
+        filter_window = img[start_idx:end_idx, :]
+        mean_col = np.mean(filter_window, axis=1, keepdims=True)
+        img[start_idx:end_idx, :] -= mean_col
+
+    img = np.clip(img, 0, 255).astype(np.uint8)
+
+    return img
+
+
 def detect_lines_old(image_path, save_dir):
     img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     height, width = img_raw.shape
@@ -158,6 +176,7 @@ def detect_lines_old(image_path, save_dir):
 
     plt.plot(mean_col[:150])
     plt.savefig(base_name + "_plot.jpg")
+    plt.show()
     plt.close()
     # plt.show()
 
@@ -207,7 +226,7 @@ def detect_lines_old(image_path, save_dir):
         else:
             z = abs(observations[i] - mu)
         if z > z_max:
-            print(z)
+            print("z =", z, "> zmax =", z_max)
             found = False
             for j in range(window):
                 idx = i + j
@@ -274,23 +293,70 @@ def detect_lines_old(image_path, save_dir):
 
 
 def spatial_filter(base_name, img):
-    def wiener_filter(dft_complex):
-        dft_shifted = np.fft.fftshift(
-            dft_complex, axes=[0, 1]
-        )  # shift zero-freq to center
-        real_part, imag_part = cv2.split(dft_shifted)
-        magnitude = cv2.magnitude(real_part, imag_part)
+    def get_psd():
+        n = 8
+        power_spectrum = np.zeros((512, 500))
+        for i in range(n):
+            img = cv2.imread(
+                "data/background/new/" + str(i + 1) + ".jpg", flags=cv2.IMREAD_GRAYSCALE
+            )
+            img = img.astype(float)
+            dft = np.fft.fft2(img)
+            dft = np.fft.fftshift(dft)
+            power_spectrum += np.abs(dft) ** 2
+        power_spectrum /= n
+        return power_spectrum
+
+    def wiener_filter_dc(img_float):
+        dc_section = img_float[:130, :]
+        dft_complex = np.fft.fft2(dc_section)
+        dft_shifted = np.fft.fftshift(dft_complex, axes=[0, 1])
+        real_part = np.real(dft_shifted)
+        imag_part = np.imag(dft_shifted)
+        magnitude = np.abs(dft_shifted)
 
         S_xx = (cv2.medianBlur(magnitude.astype(np.float32), 3)) ** 2
-        background = np.sqrt(S_xx)
-        threshold_factor = 2.0
-        noise_mask = magnitude > (threshold_factor * np.sqrt(background))
-        noise_power = np.zeros_like(magnitude)
-        noise_power[noise_mask] = magnitude[noise_mask] ** 2
-        S_nn = noise_power
+        S_nn = get_psd()[:130, :]
 
-        eps = 1e-8
-        H = S_xx / (S_xx + S_nn + eps)
+        H = S_xx / (S_xx + S_nn + 1e-8)
+
+        filtered_real = real_part * H
+        filtered_imag = imag_part * H
+
+        dft_filtered_shifted = cv2.merge([filtered_real, filtered_imag])
+        dft_filtered = np.fft.ifftshift(dft_filtered_shifted, axes=[0, 1])
+
+        img_back = cv2.idft(dft_filtered, flags=cv2.DFT_REAL_OUTPUT | cv2.DFT_SCALE)
+        img_back_norm = cv2.normalize(img_back, None, 0, 255, cv2.NORM_MINMAX)
+        img_back = np.uint8(np.around(img_back_norm))
+        img_float[:130, :] = img_back
+
+        return img_float
+
+    def wiener_filter(img_float):
+        # img_float = wiener_filter_dc(img_float)
+        # img_float = zero_dc_refined(img_float)
+        img_float = zero_dc(
+            img_float, (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14
+        )
+        # dft_complex = cv2.dft(img_float, flags=cv2.DFT_COMPLEX_OUTPUT)
+        dft_complex = np.fft.fft2(img_float)
+        dft_shifted = np.fft.fftshift(dft_complex, axes=[0, 1])
+        real_part = np.real(dft_shifted)
+        imag_part = np.imag(dft_shifted)
+        magnitude = np.abs(dft_shifted)
+
+        # S_xx = (cv2.medianBlur(magnitude.astype(np.float32), 3)) ** 2
+        S_nn = get_psd()
+        S_xx = np.max(magnitude.astype(np.float32) ** 2 - S_nn, 0)
+
+        # background = np.sqrt(S_xx)
+        # noise_mask = magnitude > (1.0 * np.sqrt(background))
+        # noise_power = np.zeros_like(magnitude)
+        # noise_power[noise_mask] = magnitude[noise_mask] ** 2
+        # S_nn = noise_power
+
+        H = S_xx / (S_xx + S_nn + 1e-8)
 
         filtered_real = real_part * H
         filtered_imag = imag_part * H
@@ -321,60 +387,7 @@ def spatial_filter(base_name, img):
     cv2.imwrite(base_name + "_" + title + ".jpg", mag_uint8)
     plt.close()
 
-    # mag, phase = cv2.cartToPolar(real_s, imag_s)
-    # log_mag_2ch = cv2.merge([log_dft, np.zeros_like(log_dft)])
-    # cepstrum = cv2.idft(log_mag_2ch, flags=cv2.DFT_REAL_OUTPUT | cv2.DFT_SCALE)
-
-    cepstrum = np.fft.ifft2(np.fft.ifftshift(mag_log))
-    cepstrum = np.real(cepstrum)
-    cepstrum_pic = np.log1p(cepstrum)
-    cepstrum_pic = cv2.normalize(cepstrum_pic, None, 0, 255, cv2.NORM_MINMAX)
-    cepstrum_pic = np.uint8(np.around(cepstrum_pic))
-    cv2.imwrite(base_name + "_cepstrum.jpg", cepstrum_pic)
-
-    plt.figure()
-    plt.plot(np.mean(cepstrum, axis=0))
-    plt.savefig(base_name + "_cepstrum" + "_2d_y.jpg")
-    plt.close()
-
-    plt.figure()
-    plt.plot(np.mean(cepstrum, axis=1))
-    plt.savefig(base_name + "_cepstrum" + "_2d_x.jpg")
-    plt.close()
-
-    threshold = 0.01 * np.max(cepstrum)  # tweak factor
-    filter_mask = cepstrum > threshold
-    cepstrum_filtered = np.copy(cepstrum)
-    cepstrum_filtered[filter_mask] = 0
-    # cepstrum_filtered = cepstrum
-
-    plt.figure()
-    plt.plot(np.mean(cepstrum_filtered, axis=0))
-    plt.savefig(base_name + "_fcepstrum" + "_2d_y.jpg")
-    plt.close()
-
-    plt.figure()
-    plt.plot(np.mean(cepstrum_filtered, axis=1))
-    plt.savefig(base_name + "_fcepstrum" + "_2d_x.jpg")
-    plt.close()
-
-    filtered_log_magnitude = np.fft.fftshift(np.fft.fft2(cepstrum_filtered))
-    filtered_magnitude = np.expm1(filtered_log_magnitude)  # or exp(...)
-
-    orig_phase = np.angle(dft_shifted)
-    filtered_dft_shift = filtered_magnitude * np.exp(1j * orig_phase)
-    filtered_dft = np.fft.ifftshift(filtered_dft_shift)
-    img_filtered_complex = np.fft.ifft2(filtered_dft)
-    img_filtered = np.real(img_filtered_complex)
-    img_filtered_8u = cv2.normalize(img_filtered, None, 0, 255, cv2.NORM_MINMAX)
-    img_filtered_8u = np.uint8(img_filtered_8u)
-    cv2.imwrite(base_name + "_fcepstrum.jpg", img_filtered_8u)
-    img_back_uint8 = img_filtered_8u
-
-    #######
-
-    dft_complex = cv2.dft(img_float, flags=cv2.DFT_COMPLEX_OUTPUT)
-    dft_filtered = wiener_filter(dft_complex)
+    dft_filtered = wiener_filter(img_float)
 
     dft_filtered = np.fft.fftshift(dft_filtered, axes=[0, 1])
     real_f, imag_f = cv2.split(dft_filtered)
@@ -401,52 +414,8 @@ def spatial_filter(base_name, img):
     return img_back_uint8
 
 
-def detect_lines(image_path, save_dir):
-    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    height, width = img_raw.shape
-    if img_raw is None:
-        print("Error: Could not load image.")
-        return
-
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    base_name = os.path.join(save_dir, base_name)
-    cv2.imwrite(base_name + "_raw.jpg", img_raw)
-    img = img_raw
-
-    img = spatial_filter(base_name, img)
-    cv2.imwrite(base_name + "_spatial.jpg", img)
-
-    ret_coords = get_max_coor(img)
-    cv2.imwrite(
-        base_name + "_max.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
-
+def linearization(ret_coords):
     observations = ret_coords[:, 1]
-
-    obs_length = len(observations)
-    window = max(1, int(obs_length / 50))
-    old_val = 0
-    for i, pt in enumerate(observations):
-        start = max(0, i - window)
-        end = min(obs_length, i + window + 1)
-        if len(observations[start:end]) > 0:
-            mu = np.mean(observations[start:end])
-            sigma = np.std(observations[start:end])
-            med = np.median(observations[start:end])
-            if sigma != 0:
-                z = abs(pt - mu) / sigma
-            else:
-                z = abs(pt - mu)
-            if z > 0.5:
-                observations[i] = med
-
-    ret_coords[:, 1] = observations
-    cv2.imwrite(
-        base_name + "_outlier.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
-
     obs_length = len(observations)
     window = max(1, int(obs_length / 5))
     z_max = 18.0
@@ -462,7 +431,7 @@ def detect_lines(image_path, save_dir):
             else:
                 z = abs(observations[i] - mu)
             if z > z_max:
-                print(z)
+                print("z =", z, "> zmax =", z_max)
                 found = False
                 for j in range(window):
                     idx = i + j
@@ -486,26 +455,35 @@ def detect_lines(image_path, save_dir):
                 if not found:
                     observations[i : (i + window + 1)] = observations[i - 1]
     ret_coords[:, 1] = observations
-    cv2.imwrite(
-        base_name + "_linear.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
+    return ret_coords
 
-    signal = observations
-    window_size = 21
-    half_win = window_size // 2
-    padded_signal = np.pad(signal, (half_win, half_win), mode="edge")
-    filtered_signal = np.zeros_like(signal)
-    for i in range(len(signal)):
-        window = padded_signal[i : i + window_size]
-        observations[i] = np.median(window)
 
-    cv2.imwrite(
-        base_name + "_median.jpg",
-        draw_line(img_raw.copy(), ret_coords),
-    )
+def outlier_removal(ret_coords):
+    observations = ret_coords[:, 1]
+    obs_length = len(observations)
+    window = max(1, int(obs_length / 50))
+    old_val = 0
+    for i, pt in enumerate(observations):
+        start = max(0, i - window)
+        end = min(obs_length, i + window + 1)
+        if len(observations[start:end]) > 0:
+            mu = np.mean(observations[start:end])
+            sigma = np.std(observations[start:end])
+            med = np.median(observations[start:end])
+            if sigma != 0:
+                z = abs(pt - mu) / sigma
+            else:
+                z = abs(pt - mu)
+            if z > 0.5:
+                observations[i] = med
+    ret_coords[:, 1] = observations
 
+    return ret_coords
+
+
+def kalman_filter(ret_coords):
     # observations = ret_coords[:, 1][::-1]
+    observations = ret_coords[:, 1]
     x_k = np.median(observations[:10])
     P_k = 1
     Q = 0.01
@@ -521,6 +499,142 @@ def detect_lines(image_path, save_dir):
         x_k_estimates.append(x_k)
         P_k_values.append(P_k)
     ret_coords[:, 1] = x_k_estimates
+    return ret_coords
+
+
+def median_filter(ret_coords):
+    observations = ret_coords[:, 1]
+    signal = observations
+    window_size = 21
+    half_win = window_size // 2
+    padded_signal = np.pad(signal, (half_win, half_win), mode="edge")
+    for i in range(len(signal)):
+        window = padded_signal[i : i + window_size]
+        observations[i] = np.median(window)
+    ret_coords[:, 1] = observations
+    return ret_coords
+
+
+def med_filter(observations, window_size):
+    signal = observations
+    window_size = max(1, window_size)
+    half_win = window_size // 2
+    padded_signal = np.pad(signal, (half_win, half_win), mode="edge")
+    for i in range(len(signal)):
+        window = padded_signal[i : i + window_size]
+        observations[i] = np.median(window)
+    return observations
+
+
+def ol_removal(ret_coords):
+    observations = ret_coords[:, 1]
+    obs_length = len(observations)
+    window = max(1, obs_length // 3)
+    z_max = 30.0
+    m = 0
+    sigma_seg = np.inf
+    for w in range(obs_length // 3):
+        start = max(0, w * window)
+        end = min((w + 1) * window, obs_length - 1)
+        segment = np.copy(observations[start:end])
+        if len(segment) > 0:
+            sigma = np.std(segment)
+            segment_f = med_filter(segment, window)
+            if sigma < sigma_seg:
+                sigma_seg = sigma
+                start_seg = segment_f[0]
+                end_seg = segment_f[-1]
+                m_new = (end_seg - start_seg) / len(segment_f)
+                if abs(m_new) < z_max:
+                    m = m_new
+
+    for i, pt in enumerate(observations):
+        if i > 0:
+            # mu = np.mean(observations[start:end])
+            # sigma = np.std(observations[start:end])
+            # med = np.median(observations[start:end])
+            # z = abs(pt - mu) / (sigma + 1e-8)
+
+            # print("z =", z, "> zmax =", z_max)
+            prev_pt = observations[i - 1]
+            mse = np.sqrt((pt - prev_pt) ** 2)
+            if mse > z_max:
+                print(mse)
+                # observations[i] = m * i + np.median(observations[:10])
+                observations[i] = m + prev_pt
+                # found = False
+                # for j in range(window):
+                #     idx = i + j
+                #     if idx >= obs_length:
+                #         break
+                #     z = abs(pt - mu) / (sigma + 1e-8)
+                #     if z < z_max:
+                #         found = True
+                #         prev_idx = max(0, i - 1)
+                #         dy = (observations[idx] - observations[prev_idx]) / (j + 1)
+                #         for k in range(j + 1):
+                #             if (i + k) < obs_length:
+                #                 observations[i + k] = observations[prev_idx] + k * dy
+                #         # observations[i] = med
+                #         break
+
+                # end = min(obs_length, i - 1)
+                # if not found:
+                #     observations[i : (i + window + 1)] = observations[i - 1]
+        else:
+            observations[0] = np.median(observations[:20])
+
+    ret_coords[:, 1] = observations
+
+    return ret_coords
+
+
+def detect_lines(image_path, save_dir):
+    img_raw = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    height, width = img_raw.shape
+    if img_raw is None:
+        print("Error: Could not load image.")
+        return
+
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    base_name = os.path.join(save_dir, base_name)
+    cv2.imwrite(base_name + "_raw.jpg", img_raw)
+    img = img_raw
+
+    img = spatial_filter(base_name, img)
+    cv2.imwrite(base_name + "_spatial.jpg", img)
+
+    ret_coords = get_max_coor(img)
+    cv2.imwrite(
+        base_name + "_max.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    ret_coords = ol_removal(ret_coords)
+    cv2.imwrite(
+        base_name + "_ol.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+
+    # ret_coords = outlier_removal(ret_coords)
+    # cv2.imwrite(
+    #     base_name + "_outlier.jpg",
+    #     draw_line(img_raw.copy(), ret_coords),
+    # )
+
+    # ret_coords = linearization(ret_coords)
+    # cv2.imwrite(
+    #     base_name + "_linear.jpg",
+    #     draw_line(img_raw.copy(), ret_coords),
+    # )
+
+    # ret_coords = median_filter(ret_coords)
+    # cv2.imwrite(
+    #     base_name + "_median.jpg",
+    #     draw_line(img_raw.copy(), ret_coords),
+    # )
+
+    ret_coords = kalman_filter(ret_coords)
 
     cv2.imwrite(
         base_name + "_detected_pre.jpg",
@@ -530,41 +644,6 @@ def detect_lines(image_path, save_dir):
     ret_coords[:, 1] = height - ret_coords[:, 1]
 
     return ret_coords
-
-
-def segment_white(image):
-    dpoints = []
-    height, width = image.shape
-    for x in range(width):
-        intensity = image[:, x]
-
-        is_white = intensity > 20
-        white_regions = np.where(is_white)[0]
-
-        diff = np.diff(white_regions)
-        split_indices = np.where(diff > 1)[0] + 1
-        segments = np.split(white_regions, split_indices)
-        max_segment = max(segments, key=len)
-        detected_y = int(max_segment.min())
-        dpoints.append((x, detected_y))
-
-        # if len(white_regions) > 0:
-        #     diff = np.diff(white_regions)
-        #     split_indices = np.where(diff > 1)[0] + 1
-        #     segments = np.split(white_regions, split_indices)
-        #     max_segment = max(segments, key=len)
-        #     detected_y = int(max_segment.min())
-        #     dpoints.append((x, detected_y))
-
-    dpoints = np.array(dpoints)
-    dpoints_x = dpoints[:, 0]
-    dpoints_y = dpoints[:, 1].astype(np.float32)
-
-    dpoints_y = cv2.GaussianBlur(dpoints_y, (0, 0), sigmaX=40)
-    dpoints_y = np.squeeze(dpoints_y)
-
-    ret_coord = np.column_stack([dpoints_x, dpoints_y])
-    return ret_coord
 
 
 def lines_3d(
@@ -769,8 +848,7 @@ if __name__ == "__main__":
     # path = "data/3d_aligned"
     # path = "data/skin_oct"
     # path = "data/skin_octa"
-    path = "data/no_background"
-    # path = "data/current"
+    # path = "data/no_background"
 
     path = "data/real"
     # path = "data/current"

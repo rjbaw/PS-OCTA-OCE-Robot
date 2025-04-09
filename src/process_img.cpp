@@ -1,5 +1,20 @@
 #include "process_img.hpp"
 
+Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
+    Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
+    for (int col = 0; col < 3; ++col) {
+        int max_idx;
+        rot_matrix.col(col).cwiseAbs().maxCoeff(&max_idx);
+        out_matrix.col(max_idx) = rot_matrix.col(col);
+    }
+    for (int col = 0; col < 3; ++col) {
+        if (out_matrix(col, col) < 0) {
+            out_matrix.col(col) *= -1.0;
+        }
+    }
+    return out_matrix;
+}
+
 double median(std::vector<double> &vals) {
     size_t n = vals.size();
     if (n == 0)
@@ -280,7 +295,7 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
             double x = static_cast<double>(pc.coordinates[j].x);
             double y = static_cast<double>(pc.coordinates[j].y);
             pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
-            //pc_3d.emplace_back(Eigen::Vector3d(-y, z_val, x));
+            // pc_3d.emplace_back(Eigen::Vector3d(-y, z_val, x));
         }
 
         if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {
@@ -289,19 +304,4 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     }
 
     return pc_3d;
-}
-
-Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
-    Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
-    for (int col = 0; col < 3; ++col) {
-        int max_idx;
-        rot_matrix.col(col).cwiseAbs().maxCoeff(&max_idx);
-        out_matrix.col(max_idx) = rot_matrix.col(col);
-    }
-    for (int col = 0; col < 3; ++col) {
-        if (out_matrix(col, col) < 0) {
-            out_matrix.col(col) *= -1.0;
-        }
-    }
-    return out_matrix;
 }

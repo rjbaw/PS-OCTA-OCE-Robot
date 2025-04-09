@@ -19,6 +19,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -139,6 +140,7 @@ target_link_libraries(test_img_rot "${cpp_typesupport_target}" "${OpenCV_LIBS}"
                       Open3D::Open3D Eigen3::Eigen)
 
 add_executable(test_detect src/test_detect.cpp)
+ament_target_dependencies(test_detect ament_index_cpp OpenCV)
 target_link_libraries(test_detect ${OpenCV_LIBS})
 
 install(

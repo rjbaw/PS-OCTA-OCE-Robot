@@ -1,6 +1,7 @@
 #!/bin/bash
 #DATASET_NAME="no_background"
-DATASET_NAME="current"
+#DATASET_NAME="current"
+DATASET_NAME="real"
 RESULT_DIR="result"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd ${SCRIPT_DIR}
