@@ -31,29 +31,6 @@ void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     }
 }
 
-std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
-                                   double Q, double R, double x0) {
-    std::vector<double> x_k_estimates;
-    x_k_estimates.reserve(observations.size());
-    if (observations.empty()) {
-        return x_k_estimates;
-    }
-
-    double x_k = x0;
-    double P_k = 1.0;
-
-    for (double z_k : observations) {
-        double x_k_pred = x_k;
-        double P_k_pred = P_k + Q;
-        double K_k = P_k_pred / (P_k_pred + R);
-        x_k = x_k_pred + K_k * (z_k - x_k_pred);
-        P_k = (1.0 - K_k) * P_k_pred;
-
-        x_k_estimates.push_back(x_k);
-    }
-    return x_k_estimates;
-}
-
 void computeMeanStd(const std::vector<double> &data, int start, int end,
                     double &mean, double &stddev) {
     if (end <= start) {
@@ -213,59 +190,235 @@ std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
     return ret_coords;
 }
 
-SegmentResult detect_lines(const cv::Mat &inputImg) {
-    CV_Assert(!inputImg.empty());
-    cv::Mat gray;
-    if (inputImg.channels() == 3) {
-        cv::cvtColor(inputImg, gray, cv::COLOR_BGR2GRAY);
-    } else {
-        gray = inputImg.clone();
+static void medianFilter1D(std::vector<double> &signal, int window_size) {
+    int half_win = window_size / 2;
+    std::vector<double> extended;
+    extended.reserve(signal.size() + 2 * half_win);
+
+    for (int i = 0; i < half_win; ++i)
+        extended.push_back(signal.front());
+    for (double val : signal)
+        extended.push_back(val);
+    for (int i = 0; i < half_win; ++i)
+        extended.push_back(signal.back());
+
+    for (int i = 0; i < (int)signal.size(); ++i) {
+        std::vector<double> window(extended.begin() + i,
+                                   extended.begin() + i + window_size);
+        std::nth_element(window.begin(), window.begin() + window_size / 2,
+                         window.end());
+        double med = window[window_size / 2];
+        signal[i] = med;
     }
-    int height = gray.rows;
+}
 
-    cv::Mat sobely;
-    cv::Sobel(gray, sobely, CV_8U, 0, 1, 3);
+cv::Mat getPSD() {
+    std::string pkg_share =
+        ament_index_cpp::get_package_share_directory("octa_ros");
+    std::string psd_path = pkg_share + "/config/psd.yml";
 
-    cv::Mat denoised;
-    cv::medianBlur(sobely, denoised, 3);
+    cv::FileStorage fs(psd_path, cv::FileStorage::READ);
+    if (!fs.isOpened()) {
+        std::cerr << "Error: Could not open PSD: " << psd_path << std::endl;
+        return cv::Mat();
+    }
+    cv::Mat psd;
+    fs["psd"] >> psd;
+    return psd;
+}
 
-    cv::Mat img_gauss;
-    cv::GaussianBlur(denoised, img_gauss, cv::Size(3, 3), 0);
+cv::Mat wienerFilter(const cv::Mat &input) {
 
+    cv::Mat floatImg;
+    input.convertTo(floatImg, CV_32F);
+
+    cv::Mat dft_complex;
+    cv::dft(floatImg, dft_complex, cv::DFT_COMPLEX_OUTPUT);
+
+    cv::Mat S_nn = getPSD();
+    if (S_nn.empty()) {
+        std::cerr << "[wienerFilter] PSD is empty. Returning input.\n";
+        return input.clone();
+    }
+
+    std::vector<cv::Mat> channels(2);
+    cv::split(dft_complex, channels);
+
+    cv::Mat mag;
+    cv::magnitude(channels[0], channels[1], mag);
+    cv::Mat mag2 = mag.mul(mag);
+
+    cv::Mat S_xx = mag2 - S_nn;
+    cv::max(S_xx, 0.0f, S_xx);
+
+    float eps = 1e-8f;
+    cv::Mat denom = S_xx + S_nn + eps;
+    cv::Mat H;
+    cv::divide(S_xx, denom, H);
+
+    channels[0] = channels[0].mul(H);
+    channels[1] = channels[1].mul(H);
+
+    cv::Mat dft_filt;
+    cv::merge(channels, dft_filt);
+
+    cv::Mat out_float;
+    cv::dft(dft_filt, out_float,
+            cv::DFT_REAL_OUTPUT | cv::DFT_SCALE | cv::DFT_INVERSE);
+
+    double minVal, maxVal;
+    cv::minMaxLoc(out_float, &minVal, &maxVal);
+    cv::Mat out_8u;
+    double eps_d = 1e-8;
+    out_float.convertTo(out_8u, CV_8U, 255.0 / (maxVal - minVal + eps_d),
+                        -minVal * 255.0 / (maxVal - minVal + eps_d));
+
+    return out_8u;
+}
+
+cv::Mat spatialFilter(cv::Mat input) {
     std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126};
-    zero_dc(img_gauss, zidx, 14);
+    zero_dc(input, zidx, 14);
+    return wienerFilter(input);
+}
 
-    std::vector<cv::Point> rawCoords = get_max_coor(img_gauss);
+std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
+                                   double Q = 0.01, double R = 0.5) {
+    std::vector<double> x_k_estimates;
+    x_k_estimates.reserve(observations.size());
+    if (observations.empty()) {
+        return x_k_estimates;
+    }
+
+    int initCount = std::min((int)observations.size(), 10);
+    double x0 = 0.0;
+    if (initCount > 0) {
+        std::vector<double> initSeg(observations.begin(),
+                                    observations.begin() + initCount);
+        std::nth_element(initSeg.begin(), initSeg.begin() + initSeg.size() / 2,
+                         initSeg.end());
+        x0 = initSeg[initSeg.size() / 2];
+    }
+
+    double x_k = x0;
+    double P_k = 1.0;
+
+    for (double z_k : observations) {
+        double x_k_pred = x_k;
+        double P_k_pred = P_k + Q;
+        double K_k = P_k_pred / (P_k_pred + R);
+        x_k = x_k_pred + K_k * (z_k - x_k_pred);
+        P_k = (1.0 - K_k) * P_k_pred;
+
+        x_k_estimates.push_back(x_k);
+    }
+    return x_k_estimates;
+}
+
+std::vector<cv::Point> ol_removal(const std::vector<cv::Point> &coords) {
+    if (coords.empty()) {
+        return {};
+    }
 
     std::vector<double> observations;
-    observations.reserve(rawCoords.size());
-    for (const auto &pt : rawCoords) {
-        observations.push_back(static_cast<double>(pt.y));
+    observations.reserve(coords.size());
+    for (auto &pt : coords) {
+        observations.push_back(pt.y);
     }
 
-    removeOutliers(observations, 0.5, 20);
-    linearizeOutliers(observations, 18.0, 5);
+    int obs_length = (int)observations.size();
+    int window = std::max(1, obs_length / 3);
+    double z_max = 30.0;
 
-    double x0 = 0.0;
-    if (!observations.empty()) {
-        int n_init = std::min<int>(10, (int)observations.size());
-        std::vector<double> firstN(observations.begin(),
-                                   observations.begin() + n_init);
-        x0 = median(firstN);
+    double best_slope = 0.0;
+    double best_sigma = std::numeric_limits<double>::infinity();
+
+    int segmentCount = obs_length / 3;
+    for (int w = 0; w < segmentCount; ++w) {
+        int start = w * window;
+        int end = std::min(start + window, obs_length - 1);
+        if (end <= start) {
+            continue;
+        }
+
+        std::vector<double> segment(observations.begin() + start,
+                                    observations.begin() + end);
+
+        double meanVal = std::accumulate(segment.begin(), segment.end(), 0.0) /
+                         segment.size();
+        double accum = 0.0;
+        for (double val : segment) {
+            accum += (val - meanVal) * (val - meanVal);
+        }
+        double stdv = std::sqrt(accum / segment.size());
+
+        medianFilter1D(segment, window);
+        double slopeCandidate =
+            (segment.back() - segment.front()) / (double)segment.size();
+
+        if (stdv < best_sigma && std::fabs(slopeCandidate) < z_max) {
+            best_sigma = stdv;
+            best_slope = slopeCandidate;
+        }
     }
-    std::vector<double> x_est = kalmanFilter1D(observations, 0.01, 0.5, x0);
 
-    std::vector<cv::Point> img_coords(rawCoords.size());
-    std::vector<cv::Point> ret_coords(rawCoords.size());
-    for (size_t i = 0; i < x_est.size(); ++i) {
-        int x = static_cast<int>(i);
-        int y = static_cast<int>(x_est[i]);
-        img_coords[i] = cv::Point(x, y);
-        ret_coords[i] = cv::Point(x, height - y);
+    for (int i = 0; i < obs_length; ++i) {
+        if (i == 0) {
+            int end = std::min(20, obs_length);
+            std::vector<double> firstChunk(observations.begin(),
+                                           observations.begin() + end);
+            std::nth_element(firstChunk.begin(),
+                             firstChunk.begin() + firstChunk.size() / 2,
+                             firstChunk.end());
+            observations[0] = firstChunk[firstChunk.size() / 2];
+        } else {
+            double prev_pt = observations[i - 1];
+            double pt = observations[i];
+            double mse = std::fabs(pt - prev_pt);
+            if (mse > z_max) {
+                observations[i] = prev_pt + best_slope;
+            }
+        }
     }
 
-    cv::Mat detected_img = gray.clone();
-    draw_line(detected_img, img_coords);
+    std::vector<cv::Point> new_coords;
+    new_coords.reserve(coords.size());
+    for (int i = 0; i < obs_length; ++i) {
+        new_coords.push_back(
+            cv::Point(coords[i].x, (int)std::round(observations[i])));
+    }
+    return new_coords;
+}
+
+SegmentResult detect_lines(const cv::Mat &inputImg) {
+    CV_Assert(!inputImg.empty());
+
+    cv::Mat img_raw;
+    if (inputImg.channels() == 3) {
+        cv::cvtColor(inputImg, img_raw, cv::COLOR_BGR2GRAY);
+    } else {
+        img_raw = inputImg.clone();
+    }
+
+    cv::Mat denoised_image = spatialFilter(img_raw.clone());
+
+    std::vector<cv::Point> ret_coords = get_max_coor(denoised_image);
+
+    ret_coords = ol_removal(ret_coords);
+
+    std::vector<double> obs;
+    obs.reserve(ret_coords.size());
+    for (auto &pt : ret_coords) {
+        obs.push_back(pt.y);
+    }
+    std::vector<double> kf_out = kalmanFilter1D(obs, 0.01, 0.5);
+    for (size_t i = 0; i < ret_coords.size(); ++i) {
+        ret_coords[i].y = static_cast<int>(std::round(kf_out[i]));
+    }
+
+    cv::Mat detected_img = img_raw.clone();
+    draw_line(detected_img, ret_coords);
+
     SegmentResult result;
     result.image = detected_img;
     result.coordinates = ret_coords;
