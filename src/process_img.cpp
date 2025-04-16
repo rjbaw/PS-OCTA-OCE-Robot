@@ -92,6 +92,38 @@ void zero_dc(cv::Mat &img, const std::vector<int> &zidx, int window) {
     img.convertTo(img, CV_8U);
 }
 
+void mean_sub(cv::Mat &img, int start_idx, int end_idx) {
+    img.convertTo(img, CV_32F);
+
+    int rows = img.rows;
+    int cols = img.cols;
+
+    for (int r = start_idx; r < end_idx; ++r) {
+        double sumRow = 0.0;
+        for (int c = 0; c < cols; ++c) {
+             sumRow += img.at<float>(r, c);
+        }
+        double meanRow = sumRow / cols;
+        for (int c = 0; c < cols; ++c) {
+            float val = img.at<float>(r, c);
+            img.at<float>(r, c) = val - static_cast<float>(meanRow);
+        }
+    }
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            float val = img.at<float>(r, c);
+            if (val < 0.0f) {
+                val = 0.0f;
+            }
+            if (val > 255.0f) {
+                val = 255.0f;
+            }
+            img.at<float>(r, c) = val;
+        }
+    }
+    img.convertTo(img, CV_8U);
+}
+
 void removeOutliers(std::vector<double> &vals, double z_threshold,
                     int window_fraction) {
     if (vals.empty())
@@ -277,8 +309,9 @@ cv::Mat wienerFilter(const cv::Mat &input) {
 }
 
 cv::Mat spatialFilter(cv::Mat input) {
-    std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126};
-    zero_dc(input, zidx, 14);
+    std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126, 132, 149, 156};
+    //zero_dc(input, zidx, 14);
+    mean_sub(input, 0, 200);
     return wienerFilter(input);
 }
 

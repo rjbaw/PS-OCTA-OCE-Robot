@@ -257,8 +257,8 @@ int main(int argc, char *argv[]) {
             double tmp_pitch;
             double tmp_yaw;
             rotmat_tf.getRPY(tmp_roll, tmp_pitch, tmp_yaw);
-            roll = tmp_pitch;
-            pitch = -tmp_roll;
+            roll = -tmp_pitch;
+            pitch = tmp_roll;
             yaw = tmp_yaw;
             rotmat_tf.setRPY(roll, pitch, yaw);
 
@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
             }
 
             if (angle_focused && !z_focused) {
-                dz = -(z_height - center[2]) / (50 * 1000.0);
+                dz = (z_height - center[2]) / (50 * 1000.0);
                 msg += std::format("\ndz = {}", dz);
                 publisher_node->set_msg(msg);
                 RCLCPP_INFO(logger, "dz: %f", dz);
@@ -323,7 +323,7 @@ int main(int argc, char *argv[]) {
                 target_pose.orientation = tf2::toMsg(target_q);
                 target_pose.position.x += radius * std::cos(to_radian(angle));
                 target_pose.position.y += radius * std::sin(to_radian(angle));
-                dz = (center[2] - z_height) / (50 * 1000.0);
+                dz = (z_height - center[2]) / (50 * 1000.0);
                 target_pose.position.z += dz;
                 print_target(logger, target_pose);
                 move_group_interface.setPoseTarget(target_pose);
