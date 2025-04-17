@@ -1,10 +1,9 @@
 FROM osrf/ros:jazzy-desktop-full
-#image: ros:jazzy
 
 RUN apt-get update &&\
     apt-get install -y \
     libopencv-dev \
-    ros-jazzy-ur \
+    ros-$ROS_DISTRO-ur \
     vim \
     tmux \
     curl \
@@ -13,8 +12,8 @@ RUN apt-get update &&\
     sudo \
     iproute2 \
     iputils-ping \
-    ros-rolling-ros2-control \ 
-    ros-rolling-ros2-controllers
+    ros-$ROS_DISTRO-ros2-control \ 
+    ros-$ROS_DISTRO-ros2-controllers
 
 RUN git clone https://github.com/isl-org/Open3D &&\
     cd Open3D &&\
