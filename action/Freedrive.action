@@ -1,6 +1,11 @@
-bool freedrive
+# Freedrive.action
 
+# Goal
+bool enable
+---
+# Result
 bool success
 string status
-
+---
+# Feedback
 string status

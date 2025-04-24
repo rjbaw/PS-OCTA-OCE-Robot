@@ -1,7 +1,6 @@
 #include <Eigen/Dense>
 #include <chrono>
 #include <csignal>
-#include <fmt/core.h>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>

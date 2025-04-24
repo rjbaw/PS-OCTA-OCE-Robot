@@ -1,6 +1,12 @@
+# MoveZAngle.action
+
+# Goal
 float64 target_angle
-
+float64 angle
+float64 radius
+---
+# Result
 string result
-
+---
+# Feedback
 float64 current_z_angle
-string debug_msg

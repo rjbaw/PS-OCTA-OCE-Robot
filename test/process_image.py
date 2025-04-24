@@ -126,7 +126,7 @@ def zero_dc(img, zidx, window):
 def zero_dc_refined(img):
     # (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14
     # zidx = [(0, 5), (19, 40), (26, 46), (50, 67), (70, 91), (90, 130)]
-    zidx = [(0, 130)]
+    zidx = [(0, 200)]
     img = img.astype(np.float32)
     for i in range(len(zidx)):
         start_idx = zidx[i][0]
@@ -292,21 +292,139 @@ def detect_lines_old(image_path, save_dir):
     return ret_coords
 
 
-def spatial_filter(base_name, img):
-    def get_psd():
-        n = 8
-        power_spectrum = np.zeros((512, 500))
-        for i in range(n):
-            img = cv2.imread(
-                "data/background/new/" + str(i + 1) + ".jpg", flags=cv2.IMREAD_GRAYSCALE
-            )
-            img = img.astype(float)
-            dft = np.fft.fft2(img)
-            dft = np.fft.fftshift(dft)
-            power_spectrum += np.abs(dft) ** 2
-        power_spectrum /= n
-        return power_spectrum
+def get_psd():
+    n = 8
+    power_spectrum = np.zeros((512, 500))
+    for i in range(n):
+        img = cv2.imread(
+            "data/background/current/" + str(i + 1) + ".jpg",
+            flags=cv2.IMREAD_GRAYSCALE,
+        )
+        img = img.astype(float)
+        dft = np.fft.fft2(img)
+        dft = np.fft.fftshift(dft)
+        power_spectrum += np.abs(dft) ** 2
+    power_spectrum /= n
+    return power_spectrum
 
+
+def load_bg():
+    n = 8
+    img_avg = None
+    for i in range(n):
+        img = cv2.imread(
+            "data/background/current/" + str(i + 1) + ".jpg",
+            flags=cv2.IMREAD_GRAYSCALE,
+        )
+        if i == 0:
+            img_avg = img.astype(float)
+        img = img.astype(float)
+        img_avg = (img + img_avg) / 2.0
+    return img_avg
+
+
+def med_bg_filter(raw):
+    row_median = np.median(raw, axis=1, keepdims=True)
+    tmp = raw - row_median
+    col_median = np.median(tmp, axis=0, keepdims=True)
+    clean = tmp - col_median
+    clean -= clean.min()
+    clean /= clean.max()
+    clean = (clean * 255).astype(np.uint8)
+    return clean
+
+
+def reg_bg_filter(raw):
+    bg = load_bg().astype(float)
+    raw = raw.astype(float)
+    h, w = raw.shape
+    clean = np.zeros_like(raw)
+    for i in range(h):
+        r = raw[i]
+        b = bg[i]
+        s = (r * b).sum() / (b * b).sum()
+        clean[i] = r - s * b
+    clean -= clean.min()
+    clean /= clean.max()
+    clean_u8 = (clean * 255).astype(np.uint8)
+    return clean_u8
+
+
+def bg_filter(raw):
+    bg = load_bg()
+    sub = raw.astype(np.int32) - bg.astype(np.int32)
+    sub -= sub.min()
+    sub = (sub / sub.max() * 255).astype(np.uint8)
+
+    # clahe = cv2.createCLAHE(
+    #     clipLimit=2.0,
+    #     tileGridSize=(8, 8),
+    # )
+    # sub_clahe = clahe.apply(sub)
+    # return sub_clahe
+    return sub
+
+
+def clahe_bg_filter(raw):
+    median_k = 51  # odd kernel for medianBlur
+    clahe_clip = 2.0  # CLAHE parameters
+    clahe_grid = (8, 8)
+
+    raw32 = raw.astype(np.float32)
+    bg32 = load_bg().astype(np.float32)
+    ratio = raw32 / (bg32 + 1e-8)
+
+    ratio_norm = cv2.normalize(ratio, None, 0, 255, cv2.NORM_MINMAX)
+    ratio_u8 = ratio_norm.astype(np.uint8)
+
+    # high‑pass
+    if median_k % 2 == 0:
+        median_k += 1
+    low_pass = cv2.medianBlur(ratio_u8, median_k)
+    high_pass = cv2.subtract(ratio_u8, low_pass)
+
+    clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_grid)
+    out = clahe.apply(high_pass)
+
+    return out
+
+
+def spatial_bg_filter(img_float):
+    # dft_complex = np.fft.fft2(img_float)
+    # dft_shifted = np.fft.fftshift(dft_complex, axes=[0, 1])
+    # real_part = np.real(dft_shifted)
+    # imag_part = np.imag(dft_shifted)
+    # S_bg = get_psd()
+    # H = 1 / (np.sqrt(S_bg) + 1e-8)
+    # filtered_real = real_part * H
+    # filtered_imag = imag_part * H
+    # dft_filtered_shifted = cv2.merge([filtered_real, filtered_imag])
+    # dft_filtered = np.fft.ifftshift(dft_filtered_shifted, axes=[0, 1])
+    # img_back = cv2.idft(dft_filtered, flags=cv2.DFT_REAL_OUTPUT | cv2.DFT_SCALE)
+    # img_back_norm = cv2.normalize(img_back, None, 0, 255, cv2.NORM_MINMAX)
+    # img_back_uint8 = np.uint8(np.around(img_back_norm))
+
+    dft_shifted = np.fft.fftshift(np.fft.fft2(img_float))
+    bg = load_bg()
+    S_bg = np.fft.fftshift(np.fft.fft2(bg))
+    S_filtered = dft_shifted * 1 / (np.abs(S_bg))
+    filtered = np.fft.ifft2(np.fft.ifftshift(S_filtered))
+    filtered = np.abs(filtered)
+    # filtered = np.real(filtered)
+
+    # filtered = cv2.bilateralFilter(
+    #     filtered.astype(np.float32), d=5, sigmaColor=15, sigmaSpace=3
+    # )
+    # img_back_norm = cv2.normalize(filtered, None, 0, 255, cv2.NORM_MINMAX)
+    filtered -= filtered.min()
+    filtered /= filtered.max()
+    img_back = np.uint8(np.around(filtered * 255))
+    img_back_uint8 = img_back
+
+    return img_back_uint8
+
+
+def spatial_filter(base_name, img):
     def wiener_filter_dc(img_float):
         dc_section = img_float[:130, :]
         dft_complex = np.fft.fft2(dc_section)
@@ -335,10 +453,11 @@ def spatial_filter(base_name, img):
 
     def wiener_filter(img_float):
         # img_float = wiener_filter_dc(img_float)
-        # img_float = zero_dc_refined(img_float)
-        img_float = zero_dc(
-            img_float, (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14
-        )
+        img_float = zero_dc_refined(img_float)
+        # img_float = bg_filter(img_float)
+        # img_float = zero_dc(
+        #     img_float, (0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126), 14
+        # )
         # dft_complex = cv2.dft(img_float, flags=cv2.DFT_COMPLEX_OUTPUT)
         dft_complex = np.fft.fft2(img_float)
         dft_shifted = np.fft.fftshift(dft_complex, axes=[0, 1])
@@ -346,9 +465,16 @@ def spatial_filter(base_name, img):
         imag_part = np.imag(dft_shifted)
         magnitude = np.abs(dft_shifted)
 
-        # S_xx = (cv2.medianBlur(magnitude.astype(np.float32), 3)) ** 2
         S_nn = get_psd()
-        S_xx = np.max(magnitude.astype(np.float32) ** 2 - S_nn, 0)
+
+        # f = np.fft.fft2(img_float)
+        # fshift = np.fft.fftshift(f)
+        # fshift_filtered = np.abs(fshift**2 / S_nn)
+        # S_xx = fshift_filtered
+
+        # S_xx = (cv2.medianBlur(magnitude.astype(np.float32), 3)) ** 2
+        # S_xx = np.max((magnitude.astype(np.float32) ** 2) - S_nn, 0)
+        S_xx = np.max((magnitude.astype(np.float32) ** 2), 0)
 
         # background = np.sqrt(S_xx)
         # noise_mask = magnitude > (1.0 * np.sqrt(background))
@@ -360,7 +486,6 @@ def spatial_filter(base_name, img):
 
         filtered_real = real_part * H
         filtered_imag = imag_part * H
-
         dft_filtered_shifted = cv2.merge([filtered_real, filtered_imag])
         dft_filtered = np.fft.ifftshift(dft_filtered_shifted, axes=[0, 1])
 
@@ -530,7 +655,7 @@ def ol_removal(ret_coords):
     observations = ret_coords[:, 1]
     obs_length = len(observations)
     window = max(1, obs_length // 3)
-    z_max = 30.0
+    z_max = 40.0
     m = 0
     sigma_seg = np.inf
     for w in range(obs_length // 3):
@@ -582,11 +707,63 @@ def ol_removal(ret_coords):
                 # if not found:
                 #     observations[i : (i + window + 1)] = observations[i - 1]
         else:
-            observations[0] = np.median(observations[:20])
+            observations[0] = np.median(observations[:30])
 
     ret_coords[:, 1] = observations
 
     return ret_coords
+
+
+def gradient(img):
+    img_f = img.astype(np.float32)
+    kx = np.array([[0, 0, 0], [-0.5, 0, 0.5], [0, 0, 0]], np.float32)
+    ky = kx.T
+    gy = cv2.filter2D(img_f, -1, ky, borderType=cv2.BORDER_REPLICATE)
+    gx = cv2.filter2D(img_f, -1, kx, borderType=cv2.BORDER_REPLICATE)
+    return np.sqrt(0.65 * gy**2 + gx**2, dtype=np.float32)
+
+
+def build_gaussian_filter(nx, ny):
+    x = np.arange(nx, dtype=np.float32) - (nx - 1) / 2
+    y = np.arange(ny, dtype=np.float32) - (ny - 1) / 2
+    xx, yy = np.meshgrid(x, y)
+    k = np.exp(-(xx**2) / (nx / 4) ** 2) * np.exp(-(yy**2) / (ny / 4) ** 2)
+    k /= k.sum()
+    return k
+
+
+def lowpass(img, nx, ny):
+    # f = np.fft.fft2(img)
+    # fshift = np.fft.fftshift(f)
+    # rows, cols = img.shape
+    # crow, ccol = rows // 2, cols // 2
+    # mask = np.zeros((rows, cols), np.uint8)
+    # mask[crow - nx : crow + nx, ccol - ny : ccol + ny] = 0
+    # fshift_filtered = fshift * mask
+    # f_ishift = np.fft.ifftshift(fshift_filtered)
+    # img_back = np.fft.ifft2(f_ishift)
+    # img = np.abs(img_back).astype(np.uint8)
+
+    k = build_gaussian_filter(nx, ny)
+    img = cv2.filter2D(img, ddepth=-1, kernel=k, borderType=cv2.BORDER_REPLICATE)
+
+    return img
+
+
+def central_gradient(img):
+    f = img.astype(np.float32)
+    gx = np.empty_like(f)
+    gy = np.empty_like(f)
+
+    gx[:, 1:-1] = 0.5 * (f[:, 2:] - f[:, :-2])
+    gy[1:-1, :] = 0.5 * (f[2:, :] - f[:-2, :])
+
+    gx[:, 0] = f[:, 1] - f[:, 0]
+    gx[:, -1] = f[:, -1] - f[:, -2]
+    gy[0, :] = f[1, :] - f[0, :]
+    gy[-1, :] = f[-1, :] - f[-2, :]
+
+    return np.sqrt(0.65 * gy**2 + gx**2, dtype=np.float32)
 
 
 def detect_lines(image_path, save_dir):
@@ -601,12 +778,54 @@ def detect_lines(image_path, save_dir):
     cv2.imwrite(base_name + "_raw.jpg", img_raw)
     img = img_raw
 
+    # # img = ed_bg_filter(img)
+    # # img = spatial_bg_filter(img)
+    # img = reg_bg_filter(img)
+    # # img = bg_filter(img).astype(np.float32)
+    # # img = clahe_bg_filter(img)
+    # # img = spatial_filter(base_name, img)
+
+    # cv2.imwrite(base_name + "_spatial.jpg", img)
+
+    # # img = cv2.GaussianBlur(img, (5, 11), 5 / 2, 11 / 2)
+    # img = lowpass(img, 11, 5)
+    # cv2.imwrite(base_name + "_lowpass.jpg", img)
+
+    # img_diffy = cv2.Sobel(img.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
+    # img_diffx = cv2.Sobel(img.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
+    # img_diff = np.sqrt(0.65 * img_diffy**2 + img_diffx**2)
+    # # img_diff = gradient(img)
+    # # img_diff = central_gradient(img)
+    # # img_diff = cv2.GaussianBlur(img_diff, (3, 1), 3 / 2, 1 / 2)
+    # img_diff = lowpass(img_diff, 1, 3)
+    # cv2.imwrite(base_name + "_gradient.jpg", img_diff)
+    # img = img.astype(np.float32) * img_diff.astype(np.float32)
+    # img -= img.min()
+    # img /= img.max()
+    # img = (img * 255).astype(np.uint8)
+
+    # cv2.imwrite(base_name + "_mult.jpg", img)
+
     img = spatial_filter(base_name, img)
     cv2.imwrite(base_name + "_spatial.jpg", img)
 
     ret_coords = get_max_coor(img)
     cv2.imwrite(
         base_name + "_max.jpg",
+        draw_line(img_raw.copy(), ret_coords),
+    )
+    # from scipy.ndimage import median_filter
+    # ret_coords[:, 1] = median_filter(ret_coords[:, 1], 15)
+    signal = ret_coords[:, 1]
+    window_size = 15
+    half_win = window_size // 2
+    padded_signal = np.pad(signal, (half_win, half_win), mode="edge")
+    filtered_signal = np.zeros_like(signal)
+    for i in range(len(signal)):
+        window = padded_signal[i : i + window_size]
+        ret_coords[i, 1] = np.median(window)
+    cv2.imwrite(
+        base_name + "_med.jpg",
         draw_line(img_raw.copy(), ret_coords),
     )
 
@@ -853,6 +1072,7 @@ if __name__ == "__main__":
     path = "data/real"
     # path = "data/current"
     # path = "data/real2"
+    path = "data/new_capture"
 
     save_path = "data/result"
     interval = 6

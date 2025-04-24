@@ -31,67 +31,6 @@ void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     }
 }
 
-void computeMeanStd(const std::vector<double> &data, int start, int end,
-                    double &mean, double &stddev) {
-    if (end <= start) {
-        mean = 0.0;
-        stddev = 0.0;
-        return;
-    }
-
-    double sum = 0.0;
-    for (int i = start; i < end; ++i) {
-        sum += data[i];
-    }
-    mean = sum / (end - start);
-
-    double var = 0.0;
-    for (int i = start; i < end; ++i) {
-        double diff = data[i] - mean;
-        var += diff * diff;
-    }
-    var /= (end - start);
-    stddev = std::sqrt(var);
-}
-
-void zero_dc(cv::Mat &img, const std::vector<int> &zidx, int window) {
-    img.convertTo(img, CV_32F);
-
-    int rows = img.rows;
-    int cols = img.cols;
-
-    for (int center : zidx) {
-        int half = window / 2;
-        int start_idx = std::max(center - half, 0);
-        int end_idx = std::min(center + half, rows);
-
-        for (int r = start_idx; r < end_idx; ++r) {
-            double sumRow = 0.0;
-            for (int c = 0; c < cols; ++c) {
-                sumRow += img.at<float>(r, c);
-            }
-            double meanRow = sumRow / cols;
-            for (int c = 0; c < cols; ++c) {
-                float val = img.at<float>(r, c);
-                img.at<float>(r, c) = val - static_cast<float>(meanRow);
-            }
-        }
-    }
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            float val = img.at<float>(r, c);
-            if (val < 0.0f) {
-                val = 0.0f;
-            }
-            if (val > 255.0f) {
-                val = 255.0f;
-            }
-            img.at<float>(r, c) = val;
-        }
-    }
-    img.convertTo(img, CV_8U);
-}
-
 void mean_sub(cv::Mat &img, int start_idx, int end_idx) {
     img.convertTo(img, CV_32F);
 
@@ -101,7 +40,7 @@ void mean_sub(cv::Mat &img, int start_idx, int end_idx) {
     for (int r = start_idx; r < end_idx; ++r) {
         double sumRow = 0.0;
         for (int c = 0; c < cols; ++c) {
-             sumRow += img.at<float>(r, c);
+            sumRow += img.at<float>(r, c);
         }
         double meanRow = sumRow / cols;
         for (int c = 0; c < cols; ++c) {
@@ -122,89 +61,6 @@ void mean_sub(cv::Mat &img, int start_idx, int end_idx) {
         }
     }
     img.convertTo(img, CV_8U);
-}
-
-void removeOutliers(std::vector<double> &vals, double z_threshold,
-                    int window_fraction) {
-    if (vals.empty())
-        return;
-    size_t obs_length = vals.size();
-    int window = std::max(1, static_cast<int>(obs_length) / window_fraction);
-
-    for (size_t i = 0; i < obs_length; ++i) {
-        int start = std::max(0, static_cast<int>(i) - window);
-        int end = std::min(static_cast<int>(obs_length),
-                           static_cast<int>(i) + window + 1);
-        double mu, sigma;
-        computeMeanStd(vals, start, end, mu, sigma);
-
-        std::vector<double> local(vals.begin() + start, vals.begin() + end);
-        double med = median(local);
-
-        double diff = vals[i] - mu;
-        double z = (sigma != 0.0) ? std::abs(diff / sigma) : std::abs(diff);
-        if (z > z_threshold) {
-            vals[i] = med;
-        }
-    }
-}
-
-void linearizeOutliers(std::vector<double> &observations, double z_threshold,
-                       int window_fraction) {
-    int obs_length = (int)observations.size();
-    if (obs_length < 2)
-        return;
-
-    int window = std::max(1, obs_length / window_fraction);
-
-    for (int i = 0; i < obs_length; ++i) {
-        int start = std::max(0, i - window);
-        int end = i - 1;
-        if (end <= start)
-            continue;
-
-        double mu, stdv;
-        computeMeanStd(observations, start, end, mu, stdv);
-
-        double diff = observations[i] - mu;
-        double z = (stdv != 0.0) ? std::abs(diff / stdv) : std::abs(diff);
-        if (z > z_threshold) {
-            bool found = false;
-            int jmax = window;
-            for (int j = 0; j < jmax; ++j) {
-                int idx = i + j;
-                if (idx >= obs_length)
-                    break;
-
-                double diff2 = observations[idx] - mu;
-                double z2 =
-                    (stdv != 0.0) ? std::abs(diff2 / stdv) : std::abs(diff2);
-                if (z2 < z_threshold) {
-                    found = true;
-                    int prev_idx = std::max(0, i - 1);
-                    double dy = (observations[idx] - observations[prev_idx]) /
-                                double(j + 1);
-
-                    for (int k = 0; k <= j; ++k) {
-                        int cur_i = prev_idx + 1 + k;
-                        if (cur_i < obs_length) {
-                            observations[cur_i] =
-                                observations[prev_idx] + k * dy;
-                        }
-                    }
-                    break;
-                }
-            }
-            if (!found) {
-                int last_good_idx = std::max(0, i - 1);
-                double last_good_val = observations[last_good_idx];
-                int limit = std::min(obs_length, i + window + 1);
-                for (int m = i; m < limit; ++m) {
-                    observations[m] = last_good_val;
-                }
-            }
-        }
-    }
 }
 
 std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
@@ -309,8 +165,8 @@ cv::Mat wienerFilter(const cv::Mat &input) {
 }
 
 cv::Mat spatialFilter(cv::Mat input) {
-    std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126, 132, 149, 156};
-    //zero_dc(input, zidx, 14);
+    // std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126};
+    // zero_dc(input, zidx, 14);
     mean_sub(input, 0, 200);
     return wienerFilter(input);
 }
@@ -491,3 +347,64 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
 
     return pc_3d;
 }
+
+/////////
+
+void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
+    if (vals.empty())
+        return;
+    size_t obs_length = vals.size();
+    int window = std::max(1, (int)obs_length / 10);
+    for (size_t i = 0; i < obs_length; ++i) {
+        int start = std::max(0, (int)i - window);
+        int end = std::min((int)obs_length, (int)i + window + 1);
+        std::vector<double> local(vals.begin() + start, vals.begin() + end);
+        double mu =
+            std::accumulate(local.begin(), local.end(), 0.0) / local.size();
+        double accum = 0.0;
+        for (double val : local) {
+            accum += (val - mu) * (val - mu);
+        }
+        double sigma = std::sqrt(accum / local.size());
+        std::nth_element(local.begin(), local.begin() + local.size() / 2,
+                         local.end());
+        double med = local[local.size() / 2];
+        double z = (sigma != 0.0) ? (vals[i] - mu) / sigma : 0.0;
+        if (z > z_threshold) {
+            vals[i] = med;
+        }
+    }
+}
+
+// void zero_dc(cv::Mat &img, const std::vector<int> &zidx, int window) {
+//     img.convertTo(img, CV_32F);
+
+//     int rows = img.rows;
+//     int cols = img.cols;
+
+//     for (int center : zidx) {
+//         int half = window / 2;
+//         int start_idx = std::max(center - half, 0);
+//         int end_idx = std::min(center + half, rows);
+
+//         for (int r = start_idx; r < end_idx; ++r) {
+//             double sumRow = 0.0;
+//             for (int c = 0; c < cols; ++c) {
+//                 sumRow += img.at<float>(r, c);
+//             }
+//             double meanRow = sumRow / cols;
+//             for (int c = 0; c < cols; ++c) {
+//                 float val = img.at<float>(r, c);
+//                 img.at<float>(r, c) = val - static_cast<float>(meanRow);
+//             }
+//         }
+//     }
+//     for (int r = 0; r < rows; ++r) {
+//         for (int c = 0; c < cols; ++c) {
+//             float val = img.at<float>(r, c);
+//             val = std::max(0.0f, std::min(val, 255.0f));
+//             img.at<float>(r, c) = val;
+//         }
+//     }
+//     img.convertTo(img, CV_8U);
+// }

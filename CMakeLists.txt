@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -fmodules-ts)
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # option(GLIBCXX_USE_CXX11_ABI ON) option(BUILD_SHARED_LIBS ON)
@@ -23,6 +23,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -35,25 +36,29 @@ find_package(action_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(ur_dashboard_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(unique_identifier_msgs REQUIRED)
+find_package(controller_manager_msgs REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${Open3D_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
 
-# set(msg_files msg/ProgramState.msg msg/RobotMode.msg msg/SafetyMode.msg )
-
-# set(srv_files srv/AddToLog.srv srv/GetLoadedProgram.srv
-# srv/GetProgramState.srv srv/GetRobotMode.srv srv/GetSafetyMode.srv
-# srv/IsProgramRunning.srv srv/IsProgramSaved.srv srv/Load.srv srv/Popup.srv
-# srv/RawRequest.srv )
-
-# set(action_files action/SetMode.action )
-
-rosidl_generate_interfaces(
-  ${PROJECT_NAME} "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
-  "msg/Labviewdata.msg" # ${msg_files} ${srv_files} ${action_files} DEPENDENCIES
-                        # action_msgs builtin_interfaces
+set(msg_files
+    "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
+    "msg/Labviewdata.msg" "msg/CancelAction.msg"
+    # msg/ProgramState.msg msg/RobotMode.msg msg/SafetyMode.msg
 )
+
+set(srv_files srv/Activate3Dscan.srv srv/Deactivate3Dscan.srv
+              srv/DeactivateFocus.srv)
+
+set(action_files action/Focus.action action/Freedrive.action
+                 action/MoveZAngle.action action/Reset.action)
+
+set(ROSIDL_DEPS builtin_interfaces action_msgs unique_identifier_msgs)
+
+rosidl_generate_interfaces(${PROJECT_NAME} ${msg_files} ${srv_files}
+                           ${action_files} DEPENDENCIES ${ROSIDL_DEPS})
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}
                               rosidl_typesupport_cpp)
@@ -107,6 +112,87 @@ target_link_libraries(
   Open3D::Open3D
   Eigen3::Eigen)
 
+add_executable(coordinator_node src/coordinator_node.cpp)
+ament_target_dependencies(
+  coordinator_node
+  rclcpp
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  geometry_msgs
+  tf2_ros
+  std_msgs
+  OpenCV
+  Open3D
+  Eigen3)
+target_link_libraries(
+  coordinator_node
+  "${cpp_typesupport_target}"
+  "${moveit_ros_planning_interface_LIBRARIES}"
+  "${geometry_msgs_LIBRARIES}"
+  "${OpenCV_LIBS}"
+  Open3D::Open3D
+  Eigen3::Eigen)
+
+add_executable(focus_node src/focus_node.cpp src/process_img.cpp)
+ament_target_dependencies(
+  focus_node
+  rclcpp
+  rclcpp_action
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  geometry_msgs
+  tf2_ros
+  std_msgs
+  OpenCV
+  Open3D
+  Eigen3)
+target_link_libraries(
+  focus_node
+  "${cpp_typesupport_target}"
+  "${moveit_ros_planning_interface_LIBRARIES}"
+  "${geometry_msgs_LIBRARIES}"
+  "${OpenCV_LIBS}"
+  Open3D::Open3D
+  Eigen3::Eigen)
+
+add_executable(move_z_angle_node src/move_z_angle_node.cpp)
+ament_target_dependencies(
+  move_z_angle_node
+  rclcpp
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  geometry_msgs
+  tf2_ros
+  std_msgs)
+target_link_libraries(
+  move_z_angle_node "${cpp_typesupport_target}"
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+
+add_executable(reset_node src/reset_node.cpp src/urscript_publisher.cpp
+                          src/utils.cpp)
+ament_target_dependencies(
+  reset_node
+  rclcpp
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  geometry_msgs
+  tf2_ros
+  std_msgs)
+target_link_libraries(
+  reset_node "${cpp_typesupport_target}"
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+
+add_executable(freedrive_node src/freedrive_node.cpp)
+ament_target_dependencies(
+  freedrive_node
+  rclcpp
+  rclcpp_action
+  ur_dashboard_msgs
+  controller_manager_msgs
+  std_srvs
+  std_msgs)
+target_link_libraries(freedrive_node "${cpp_typesupport_target}")
+
 add_executable(get_robot_state src/get_robot_state.cpp)
 ament_target_dependencies(get_robot_state rclcpp ur_dashboard_msgs)
 
@@ -139,7 +225,7 @@ ament_target_dependencies(test_img_rot rclcpp std_msgs OpenCV Open3D Eigen3)
 target_link_libraries(test_img_rot "${cpp_typesupport_target}" "${OpenCV_LIBS}"
                       Open3D::Open3D Eigen3::Eigen)
 
-add_executable(test_detect src/test_detect.cpp)
+add_executable(test_detect src/test_detect.cpp src/process_img.cpp)
 ament_target_dependencies(test_detect ament_index_cpp OpenCV)
 target_link_libraries(test_detect ${OpenCV_LIBS})
 
@@ -157,6 +243,11 @@ install(
           reset
           get_robot_state
           reconnect_client
+          coordinator_node
+          focus_node
+          move_z_angle_node
+          reset_node
+          freedrive_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})

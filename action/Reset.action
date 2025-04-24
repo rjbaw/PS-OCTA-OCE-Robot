@@ -1,6 +1,11 @@
-bool reset
+# Reset.action
 
+# Goal
+bool reset
+---
+# Result
 bool success
 string status
-
+---
+# Feedback
 string status

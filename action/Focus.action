@@ -1,7 +1,13 @@
+# Focus.action
+
+# Goal
 float64 angle_tolerance
 float64 z_tolerance
-
+float64 z_height
+---
+# Result
 string result
-
-float64 current_angle
+---
+# Feedback
+string progress
 string debug_msg
