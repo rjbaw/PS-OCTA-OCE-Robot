@@ -3,6 +3,7 @@ FROM osrf/ros:jazzy-desktop-full
 RUN apt-get update &&\
     apt-get install -y \
     libopencv-dev \
+    libglfw3-dev \
     ros-$ROS_DISTRO-ur \
     vim \
     tmux \

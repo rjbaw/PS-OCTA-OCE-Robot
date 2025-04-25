@@ -473,15 +473,15 @@ class CoordinatorNode : public rclcpp::Node {
                 (num_pt_ == 0) ? 0.0
                                : (angle_limit_ / static_cast<double>(num_pt_));
             if (next_) {
-                yaw_ = to_radian_(angle_increment_);
-                msg_ = std::format("[Action] Next: {}", yaw_ * 180.0 / M_PI);
+                yaw_ = angle_increment_;
+                msg_ = std::format("[Action] Next: {}", yaw_);
             } else if (previous_) {
-                yaw_ = -to_radian_(angle_increment_);
+                yaw_ = -angle_increment_;
                 msg_ =
-                    std::format("[Action] Previous: {}", yaw_ * 180.0 / M_PI);
+                    std::format("[Action] Previous: {}", yaw_);
             } else if (home_) {
-                yaw_ = -to_radian_(angle_);
-                msg_ = std::format("[Action] Home: {}", yaw_ * 180.0 / M_PI);
+                yaw_ = -angle_;
+                msg_ = std::format("[Action] Home: {}", yaw_);
                 angle_ = 0.0;
             } else {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
@@ -540,9 +540,9 @@ class CoordinatorNode : public rclcpp::Node {
         focus_action_client_->async_send_goal(goal_msg, options);
     }
 
-    void sendMoveZAngleGoal(double yaw_rad) {
+    void sendMoveZAngleGoal(double yaw) {
         MoveZAngle::Goal goal_msg;
-        goal_msg.target_angle = yaw_rad * 180.0 / M_PI;
+        goal_msg.target_angle = yaw;
         goal_msg.radius = radius_;
         goal_msg.angle = angle_;
 
