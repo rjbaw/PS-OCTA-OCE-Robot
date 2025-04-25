@@ -68,6 +68,12 @@ class FocusActionServer : public rclcpp::Node {
                // options
                rclcpp::NodeOptions(options)
                    .automatically_declare_parameters_from_overrides(true)) {}
+    ~FocusActionServer() override {
+        stop_requested_.store(true);
+        if (worker_ && worker_->joinable())
+            worker_->join();
+    }
+
     void init() {
         action_server_ = rclcpp_action::create_server<Focus>(
             this, "focus_action",
@@ -160,12 +166,6 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp::Time start;
 
-    ~FocusActionServer() override {
-        stop_requested_.store(true);
-        if (worker_ && worker_->joinable())
-            worker_->join();
-    }
-
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const Focus::Goal> goal) {
@@ -198,9 +198,15 @@ class FocusActionServer : public rclcpp::Node {
     }
 
     void handle_accepted(const std::shared_ptr<GoalHandleFocus> goal_handle) {
+        auto res = std::make_shared<Focus::Result>();
+        res->result = "Pre-empted by new goal";
+        RCLCPP_INFO(get_logger(), "Preempting old goal...");
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            RCLCPP_INFO(get_logger(), "Preempting old goal...");
-            active_goal_handle_->canceled(std::make_shared<Focus::Result>());
+            if (active_goal_handle_->is_canceling()) {
+                active_goal_handle_->canceled(res);
+            } else {
+                active_goal_handle_->abort(res);
+            }
         }
 
         if (worker_ && worker_->joinable()) {
@@ -319,7 +325,11 @@ class FocusActionServer : public rclcpp::Node {
         const std::shared_ptr<GoalHandleFocus> &goal_handle,
         const std::shared_ptr<Focus::Result> &result) {
         if (goal_handle->is_active() && goal_handle->is_canceling()) {
-            goal_handle->canceled(result);
+            if (active_goal_handle_->is_canceling()) {
+                active_goal_handle_->canceled(result);
+            } else {
+                active_goal_handle_->abort(result);
+            }
             return true;
         }
         return false;
