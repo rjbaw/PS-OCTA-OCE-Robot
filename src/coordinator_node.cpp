@@ -269,7 +269,7 @@ class CoordinatorNode : public rclcpp::Node {
     double angle_ = 0.0;
     int circle_state_ = 1;
     bool fast_axis_ = true;
-    bool apply_config_ = false;
+    bool apply_config_ = true;
     bool end_state_ = false;
     bool scan_3d_ = false;
 
@@ -363,8 +363,13 @@ class CoordinatorNode : public rclcpp::Node {
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - apply_config_time_)
                     .count();
+	    //while (elapsedms < 300) { 
+            //    elapsedms = std::chrono::duration_cast<std::chrono::milliseconds>(now - apply_config_time_).count();
+	    //    pub_handle_->publish(msg);
+	    //}
             if (elapsedms >= 300) {
                 apply_config_ = false;
+	    //    pub_handle_->publish(msg);
             }
         }
         old_pub_msg_ = msg;
@@ -664,12 +669,12 @@ class CoordinatorNode : public rclcpp::Node {
             triggered_service_ = true;
         }
         if (scan_3d_read_) {
-            response->done = false;
-        } else {
             // wait for scan to actually trigger
             rclcpp::sleep_for(std::chrono::milliseconds(1000));
             response->done = true;
             triggered_service_ = false;
+        } else {
+            response->done = false;
         }
     }
 
@@ -677,17 +682,17 @@ class CoordinatorNode : public rclcpp::Node {
         [[maybe_unused]] const std::shared_ptr<Deactivate3Dscan::Request>
             request,
         std::shared_ptr<Deactivate3Dscan::Response> response) {
-        if (triggered_service_) {
+        if (!triggered_service_) {
             scan_3d_ = false;
             apply_config_ = true;
             apply_config_time_ = std::chrono::steady_clock::now();
             triggered_service_ = true;
         }
         if (!scan_3d_read_) {
-            response->done = false;
-        } else {
             response->done = true;
             triggered_service_ = false;
+        } else {
+            response->done = false;
         }
     }
 
@@ -695,17 +700,17 @@ class CoordinatorNode : public rclcpp::Node {
         [[maybe_unused]] const std::shared_ptr<DeactivateFocus::Request>
             request,
         std::shared_ptr<DeactivateFocus::Response> response) {
-        if (triggered_service_) {
+        if (!triggered_service_) {
             end_state_ = true;
             apply_config_ = true;
             apply_config_time_ = std::chrono::steady_clock::now();
             triggered_service_ = true;
         }
-        if (autofocus_) {
-            response->done = false;
-        } else {
+        if (!autofocus_) {
             response->done = true;
             triggered_service_ = false;
+        } else {
+            response->done = false;
         }
     }
 };
