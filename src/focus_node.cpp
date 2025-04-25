@@ -104,6 +104,7 @@ class FocusActionServer : public rclcpp::Node {
 
   private:
     std::atomic_bool stop_requested_ = false;
+    std::optional<std::thread> worker_;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFocus> active_goal_handle_;
@@ -159,6 +160,12 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp::Time start;
 
+    ~FocusActionServer() override {
+        stop_requested_.store(true);
+        if (worker_ && worker_->joinable())
+            worker_->join();
+    }
+
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const Focus::Goal> goal) {
@@ -185,6 +192,8 @@ class FocusActionServer : public rclcpp::Node {
         img_timer_->cancel();
         stop_requested_.store(true);
         RCLCPP_INFO(get_logger(), "Focus action canceled");
+        if (worker_ && worker_->joinable())
+            worker_->join();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -194,9 +203,15 @@ class FocusActionServer : public rclcpp::Node {
             active_goal_handle_->canceled(std::make_shared<Focus::Result>());
         }
 
+        if (worker_ && worker_->joinable()) {
+            stop_requested_.store(true);
+            worker_->join();
+        }
+
+        stop_requested_.store(false);
         img_timer_->reset();
         active_goal_handle_ = goal_handle;
-        std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
+        worker_.emplace([this, goal_handle] { execute(goal_handle); });
     }
 
     cv::Mat get_img() {
@@ -415,7 +430,7 @@ class FocusActionServer : public rclcpp::Node {
                                                  << rotmat_eigen_);
             rotmat_tf_.getRPY(tmp_roll_, tmp_pitch_, tmp_yaw_);
             roll_ = -tmp_pitch_;
-            pitch_ = tmp_roll_;
+            pitch_ = -tmp_roll_;
             yaw_ = tmp_yaw_;
             rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
