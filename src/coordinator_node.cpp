@@ -6,7 +6,6 @@
  * Actions are toggled using rising edge to prevent multiple triggers.
  */
 
-#include "octa_ros/msg/cancel_action.hpp"
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -14,6 +13,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <std_msgs/msg/bool.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -86,7 +87,7 @@ class CoordinatorNode : public rclcpp::Node {
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             cancel_handle_ =
-                this->create_subscription<octa_ros::msg::CancelAction>(
+                this->create_subscription<std_msgs::msg::Bool>(
                     "cancel_current_action", qos,
                     std::bind(&CoordinatorNode::cancelCallback, this,
                               std::placeholders::_1));
@@ -185,7 +186,7 @@ class CoordinatorNode : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "Collision objects added to planning scene.");
 
         pub_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(50),
+            std::chrono::milliseconds(5),
             std::bind(&CoordinatorNode::publisherCallback, this));
 
         focus_action_client_ =
@@ -198,7 +199,7 @@ class CoordinatorNode : public rclcpp::Node {
             rclcpp_action::create_client<Reset>(this, "reset_action");
 
         main_loop_timer_ = this->create_wall_timer(
-            std::chrono::seconds(2),
+            std::chrono::milliseconds(5),
             std::bind(&CoordinatorNode::mainLoop, this));
 
         if (!focus_action_client_->wait_for_action_server(
@@ -233,7 +234,7 @@ class CoordinatorNode : public rclcpp::Node {
 
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr sub_handle_;
-    rclcpp::Subscription<octa_ros::msg::CancelAction>::SharedPtr cancel_handle_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cancel_handle_;
 
     rclcpp::Service<Activate3Dscan>::SharedPtr activate_3d_srv_;
     rclcpp::Service<Deactivate3Dscan>::SharedPtr deactivate_3d_srv_;
@@ -487,18 +488,18 @@ class CoordinatorNode : public rclcpp::Node {
             } else if (home_) {
                 yaw_ = -angle_;
                 msg_ = std::format("[Action] Home: {}", yaw_);
-                angle_ = 0.0;
             } else {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendMoveZAngleGoal(yaw_);
-                if (angle_ == 0) {
-                    circle_state_ = 1;
-                } else if (yaw_ > 0.0) {
+                if (yaw_ > 0.0) {
                     circle_state_++;
                 } else {
                     circle_state_--;
                 }
                 angle_ += yaw_;
+                if (angle_ == 0) {
+                    circle_state_ = 1;
+                }
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
             }
@@ -654,7 +655,7 @@ class CoordinatorNode : public rclcpp::Node {
         reset_action_client_->async_send_goal(goal_msg, options);
     }
 
-    void cancelCallback(const octa_ros::msg::CancelAction::SharedPtr msg) {
+    void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         cancel_action_ = msg->data;
     }
