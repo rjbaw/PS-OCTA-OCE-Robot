@@ -86,11 +86,10 @@ class CoordinatorNode : public rclcpp::Node {
         }
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-            cancel_handle_ =
-                this->create_subscription<std_msgs::msg::Bool>(
-                    "cancel_current_action", qos,
-                    std::bind(&CoordinatorNode::cancelCallback, this,
-                              std::placeholders::_1));
+            cancel_handle_ = this->create_subscription<std_msgs::msg::Bool>(
+                "cancel_current_action", qos,
+                std::bind(&CoordinatorNode::cancelCallback, this,
+                          std::placeholders::_1));
         }
 
         {
@@ -364,13 +363,14 @@ class CoordinatorNode : public rclcpp::Node {
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - apply_config_time_)
                     .count();
-	    //while (elapsedms < 300) { 
-            //    elapsedms = std::chrono::duration_cast<std::chrono::milliseconds>(now - apply_config_time_).count();
-	    //    pub_handle_->publish(msg);
-	    //}
+            // while (elapsedms < 300) {
+            //     elapsedms =
+            //     std::chrono::duration_cast<std::chrono::milliseconds>(now -
+            //     apply_config_time_).count(); pub_handle_->publish(msg);
+            // }
             if (elapsedms >= 300) {
                 apply_config_ = false;
-	    //    pub_handle_->publish(msg);
+                //    pub_handle_->publish(msg);
             }
         }
         old_pub_msg_ = msg;
@@ -483,8 +483,7 @@ class CoordinatorNode : public rclcpp::Node {
                 msg_ = std::format("[Action] Next: {}", yaw_);
             } else if (previous_) {
                 yaw_ = -angle_increment_;
-                msg_ =
-                    std::format("[Action] Previous: {}", yaw_);
+                msg_ = std::format("[Action] Previous: {}", yaw_);
             } else if (home_) {
                 yaw_ = -angle_;
                 msg_ = std::format("[Action] Home: {}", yaw_);

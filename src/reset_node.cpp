@@ -156,6 +156,12 @@ class ResetActionServer : public rclcpp::Node {
         goal_handle->succeed(result);
         RCLCPP_INFO(get_logger(), "Reset completed.");
         active_goal_handle_.reset();
+
+        // std::string pkg_share =
+        //     ament_index_cpp::get_package_share_directory("octa_ros");
+        // std::string bg_path = pkg_share + "/config/bg.jpg";
+        // cv::Mat bg;
+        // cv::imwrite(bg_path, bg, cv::IMREAD_GRAYSCALE);
     }
 };
 

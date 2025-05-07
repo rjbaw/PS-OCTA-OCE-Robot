@@ -89,6 +89,13 @@ class FocusActionServer : public rclcpp::Node {
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
+        auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
+        auto psm = std::const_pointer_cast<
+            planning_scene_monitor::PlanningSceneMonitor>(psm_const);
+        psm->requestPlanningSceneState();
+        psm->updateFrameTransforms();
+        psm->startSceneMonitor();
+
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
@@ -179,8 +186,10 @@ class FocusActionServer : public rclcpp::Node {
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
-    rclcpp_action::CancelResponse handle_cancel(
-        [[maybe_unused]] const std::shared_ptr<GoalHandleFocus> goal_handle) {
+    rclcpp_action::CancelResponse
+    handle_cancel(const std::shared_ptr<GoalHandleFocus> goal_handle) {
+        auto res = std::make_shared<Focus::Result>();
+        res->result = "Focus action canceled by user request";
         while (!call_deactivate3Dscan()) {
             rclcpp::sleep_for(50ms);
         }
@@ -191,6 +200,7 @@ class FocusActionServer : public rclcpp::Node {
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();
         stop_requested_.store(true);
+        goal_handle->canceled(res);
         RCLCPP_INFO(get_logger(), "Focus action canceled");
         if (worker_ && worker_->joinable())
             worker_->join();
@@ -453,8 +463,6 @@ class FocusActionServer : public rclcpp::Node {
                     ->getPlanningScene()
                     ->getPlanningFrame();
             target_pose_.pose = tf2::toMsg(current_pose);
-            // planning_component_->setMaxVelocityScalingFactor(0.5);
-            // planning_component_->setMaxAccelerationScalingFactor(0.3);
 
             tf2::Matrix3x3 rotmat_tf_(
                 rotmat_eigen_(0, 0), rotmat_eigen_(0, 1), rotmat_eigen_(0, 2),
@@ -520,7 +528,16 @@ class FocusActionServer : public rclcpp::Node {
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
             if (planning_) {
+                // moveit_cpp::PlanningComponent::PlanRequestParameters params;
+                // params.max_velocity_scaling_factor = 0.1;
+                // params.max_acceleration_scaling_factor = 0.1;
+
                 planning_ = false;
+                auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
+                auto psm = std::const_pointer_cast<
+                    planning_scene_monitor::PlanningSceneMonitor>(psm_const);
+                psm->updateFrameTransforms();
+                psm->requestPlanningSceneState();
                 planning_component_->setGoal(target_pose_, "tcp");
                 auto plan_solution = planning_component_->plan();
                 if (plan_solution) {

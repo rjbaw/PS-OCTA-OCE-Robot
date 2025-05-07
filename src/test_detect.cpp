@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
     std::string inputFile = argv[1];
     std::string outputFile = (argc > 2) ? argv[2] : "result.jpg";
 
-    cv::Mat inputImage = cv::imread(inputFile, cv::IMREAD_COLOR);
+    cv::Mat inputImage = cv::imread(inputFile, cv::IMREAD_GRAYSCALE);
     if (inputImage.empty()) {
         std::cerr << "Cannot open " << inputFile << std::endl;
         return 1;

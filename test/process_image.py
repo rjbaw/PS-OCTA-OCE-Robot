@@ -320,6 +320,7 @@ def load_bg():
             img_avg = img.astype(float)
         img = img.astype(float)
         img_avg = (img + img_avg) / 2.0
+    cv2.imwrite("bg.jpg", img_avg)
     return img_avg
 
 
@@ -778,35 +779,35 @@ def detect_lines(image_path, save_dir):
     cv2.imwrite(base_name + "_raw.jpg", img_raw)
     img = img_raw
 
-    # # img = ed_bg_filter(img)
-    # # img = spatial_bg_filter(img)
+    # img = ed_bg_filter(img)
+    # img = spatial_bg_filter(img)
     # img = reg_bg_filter(img)
-    # # img = bg_filter(img).astype(np.float32)
-    # # img = clahe_bg_filter(img)
-    # # img = spatial_filter(base_name, img)
+    img = bg_filter(img).astype(np.float32)
+    # img = clahe_bg_filter(img)
+    # img = spatial_filter(base_name, img)
 
-    # cv2.imwrite(base_name + "_spatial.jpg", img)
+    cv2.imwrite(base_name + "_spatial.jpg", img)
 
-    # # img = cv2.GaussianBlur(img, (5, 11), 5 / 2, 11 / 2)
-    # img = lowpass(img, 11, 5)
-    # cv2.imwrite(base_name + "_lowpass.jpg", img)
+    # img = cv2.GaussianBlur(img, (5, 11), 5 / 2, 11 / 2)
+    img = lowpass(img, 11, 5)
+    cv2.imwrite(base_name + "_lowpass.jpg", img)
 
     # img_diffy = cv2.Sobel(img.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
     # img_diffx = cv2.Sobel(img.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
     # img_diff = np.sqrt(0.65 * img_diffy**2 + img_diffx**2)
-    # # img_diff = gradient(img)
-    # # img_diff = central_gradient(img)
-    # # img_diff = cv2.GaussianBlur(img_diff, (3, 1), 3 / 2, 1 / 2)
-    # img_diff = lowpass(img_diff, 1, 3)
-    # cv2.imwrite(base_name + "_gradient.jpg", img_diff)
-    # img = img.astype(np.float32) * img_diff.astype(np.float32)
-    # img -= img.min()
-    # img /= img.max()
-    # img = (img * 255).astype(np.uint8)
+    img_diff = gradient(img)
+    # img_diff = central_gradient(img)
+    # img_diff = cv2.GaussianBlur(img_diff, (3, 1), 3 / 2, 1 / 2)
+    img_diff = lowpass(img_diff, 1, 3)
+    cv2.imwrite(base_name + "_gradient.jpg", img_diff)
+    img = img.astype(np.float32) * img_diff.astype(np.float32)
+    img -= img.min()
+    img /= img.max()
+    img = (img * 255).astype(np.uint8)
 
-    # cv2.imwrite(base_name + "_mult.jpg", img)
+    cv2.imwrite(base_name + "_mult.jpg", img)
 
-    img = spatial_filter(base_name, img)
+    # img = spatial_filter(base_name, img)
     cv2.imwrite(base_name + "_spatial.jpg", img)
 
     ret_coords = get_max_coor(img)

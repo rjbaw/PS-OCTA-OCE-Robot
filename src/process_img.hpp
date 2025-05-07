@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <ament_index_cpp/get_package_share_directory.hpp>
+#include <cmath>
 #include <open3d/Open3D.h>
 #include <opencv2/opencv.hpp>
 

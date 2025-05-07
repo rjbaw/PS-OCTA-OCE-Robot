@@ -15,52 +15,12 @@ Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
     return out_matrix;
 }
 
-double median(std::vector<double> &vals) {
-    size_t n = vals.size();
-    if (n == 0)
-        return 0.0;
-    std::nth_element(vals.begin(), vals.begin() + n / 2, vals.end());
-    return vals[n / 2];
-}
-
 void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
         cv::Point pt1 = ret_coord[i];
         cv::Point pt2 = ret_coord[i + 1];
-        cv::line(image, pt1, pt2, cv::Scalar(255, 0, 0), 2);
+        cv::line(image, pt1, pt2, cv::Scalar(255, 255, 255), 2);
     }
-}
-
-void mean_sub(cv::Mat &img, int start_idx, int end_idx) {
-    img.convertTo(img, CV_32F);
-
-    int rows = img.rows;
-    int cols = img.cols;
-
-    for (int r = start_idx; r < end_idx; ++r) {
-        double sumRow = 0.0;
-        for (int c = 0; c < cols; ++c) {
-            sumRow += img.at<float>(r, c);
-        }
-        double meanRow = sumRow / cols;
-        for (int c = 0; c < cols; ++c) {
-            float val = img.at<float>(r, c);
-            img.at<float>(r, c) = val - static_cast<float>(meanRow);
-        }
-    }
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            float val = img.at<float>(r, c);
-            if (val < 0.0f) {
-                val = 0.0f;
-            }
-            if (val > 255.0f) {
-                val = 255.0f;
-            }
-            img.at<float>(r, c) = val;
-        }
-    }
-    img.convertTo(img, CV_8U);
 }
 
 std::vector<cv::Point> get_max_coor(const cv::Mat &img) {
@@ -100,75 +60,187 @@ static void medianFilter1D(std::vector<double> &signal, int window_size) {
     }
 }
 
-cv::Mat getPSD() {
+cv::Mat gradient(const cv::Mat &img) {
+    CV_Assert(img.channels() == 1);
+
+    // img_f = img.astype(np.float32);
+    // kx = np.array([ [ 0, 0, 0 ], [ -0.5, 0, 0.5 ], [ 0, 0, 0 ] ],
+    // np.float32); ky = kx.T; cv::Mat gy; cv::Mat gx; cv::filter2D(img_f, gy,
+    // -1, ky, borderType = cv::BORDER_REPLICATE); cv::filter2D(img_f, gx, -1,
+    // kx, borderType = cv::BORDER_REPLICATE); return np.sqrt(0.65 * gy * *2 +
+    // gx * *2, dtype = np.float32);
+
+    cv::Mat img_f;
+    img.convertTo(img_f, CV_32F);
+
+    float kxVals[9] = {0.f, 0.f, 0.f, -0.5f, 0.f, 0.5f, 0.f, 0.f, 0.f};
+    cv::Mat kx(3, 3, CV_32F, kxVals);
+
+    cv::Mat ky = kx.t();
+
+    cv::Mat gx, gy;
+    cv::filter2D(img_f, gx, -1, kx, cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+    cv::filter2D(img_f, gy, -1, ky, cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+
+    cv::Mat gx2, gy2, mag;
+    cv::multiply(gx, gx, gx2);
+    cv::multiply(gy, gy, gy2);
+
+    gy2 *= 0.65f;
+    cv::add(gx2, gy2, mag);
+    cv::sqrt(mag, mag);
+
+    return mag;
+}
+
+cv::Mat build_gaussian_filter(int nx, int ny) {
+    // def build_gaussian_filter(nx, ny):
+    //     x = np.arange(nx, dtype=np.float32) - (nx - 1) / 2
+    //     y = np.arange(ny, dtype=np.float32) - (ny - 1) / 2
+    //     xx, yy = np.meshgrid(x, y)
+    //     k = np.exp(-(xx**2) / (nx / 4) ** 2) * np.exp(-(yy**2) / (ny / 4) **
+    //     2) k /= k.sum() return k
+
+    cv::Mat kernel(ny, nx, CV_32F);
+
+    float cx = (nx - 1) / 2.0f;
+    float cy = (ny - 1) / 2.0f;
+    float sigmaX = nx / 4.0f;
+    float sigmaY = ny / 4.0f;
+
+    double sumVal = 0.0;
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            float x = static_cast<float>(i) - cx;
+            float y = static_cast<float>(j) - cy;
+            float val = std::exp(-(x * x) / (sigmaX * sigmaX)) *
+                        std::exp(-(y * y) / (sigmaY * sigmaY));
+            kernel.at<float>(j, i) = val;
+            sumVal += val;
+        }
+    }
+
+    kernel /= sumVal;
+
+    return kernel;
+}
+
+cv::Mat lowpass(const cv::Mat &img, int nx, int ny) {
+    cv::Mat kernel = build_gaussian_filter(nx, ny);
+
+    cv::Mat dst;
+    cv::filter2D(img, dst, -1, kernel, cv::Point(-1, -1), 0,
+                 cv::BORDER_REPLICATE);
+
+    return dst;
+}
+
+cv::Mat load_bg() {
     std::string pkg_share =
         ament_index_cpp::get_package_share_directory("octa_ros");
-    std::string psd_path = pkg_share + "/config/psd.yml";
-
-    cv::FileStorage fs(psd_path, cv::FileStorage::READ);
-    if (!fs.isOpened()) {
-        std::cerr << "Error: Could not open PSD: " << psd_path << std::endl;
-        return cv::Mat();
+    std::string bg_path = pkg_share + "/config/bg.jpg";
+    cv::Mat bg = cv::imread(bg_path, cv::IMREAD_GRAYSCALE);
+    if (bg.empty()) {
+        std::cerr << "Failed to load background image: " << bg_path
+                  << std::endl;
     }
-    cv::Mat psd;
-    fs["psd"] >> psd;
-    return psd;
+    return bg;
 }
 
-cv::Mat wienerFilter(const cv::Mat &input) {
+cv::Mat bg_sub(const cv::Mat &input) {
+    cv::Mat bg = load_bg();
+    CV_Assert(input.size() == bg.size() && input.type() == bg.type());
 
-    cv::Mat floatImg;
-    input.convertTo(floatImg, CV_32F);
+    cv::Mat input_f;
+    cv::Mat bg_f;
+    input.convertTo(input_f, CV_32F);
+    bg.convertTo(bg_f, CV_32F);
 
-    cv::Mat dft_complex;
-    cv::dft(floatImg, dft_complex, cv::DFT_COMPLEX_OUTPUT);
+    cv::Mat sub_f = input_f - bg_f;
+    cv::Mat output;
+    cv::normalize(sub_f, output, 0, 255, cv::NORM_MINMAX, CV_8U);
 
-    cv::Mat S_nn = getPSD();
-    if (S_nn.empty()) {
-        std::cerr << "[wienerFilter] PSD is empty. Returning input.\n";
-        return input.clone();
-    }
-
-    std::vector<cv::Mat> channels(2);
-    cv::split(dft_complex, channels);
-
-    cv::Mat mag;
-    cv::magnitude(channels[0], channels[1], mag);
-    cv::Mat mag2 = mag.mul(mag);
-
-    cv::Mat S_xx = mag2 - S_nn;
-    cv::max(S_xx, 0.0f, S_xx);
-
-    float eps = 1e-8f;
-    cv::Mat denom = S_xx + S_nn + eps;
-    cv::Mat H;
-    cv::divide(S_xx, denom, H);
-
-    channels[0] = channels[0].mul(H);
-    channels[1] = channels[1].mul(H);
-
-    cv::Mat dft_filt;
-    cv::merge(channels, dft_filt);
-
-    cv::Mat out_float;
-    cv::dft(dft_filt, out_float,
-            cv::DFT_REAL_OUTPUT | cv::DFT_SCALE | cv::DFT_INVERSE);
-
-    double minVal, maxVal;
-    cv::minMaxLoc(out_float, &minVal, &maxVal);
-    cv::Mat out_8u;
-    double eps_d = 1e-8;
-    out_float.convertTo(out_8u, CV_8U, 255.0 / (maxVal - minVal + eps_d),
-                        -minVal * 255.0 / (maxVal - minVal + eps_d));
-
-    return out_8u;
+    return output;
 }
 
-cv::Mat spatialFilter(cv::Mat input) {
-    // std::vector<int> zidx = {0, 5, 12, 24, 37, 51, 63, 75, 87, 99, 112, 126};
-    // zero_dc(input, zidx, 14);
-    mean_sub(input, 0, 200);
-    return wienerFilter(input);
+// cv::Mat wienerFilter(const cv::Mat &input) {
+
+//     cv::Mat floatImg;
+//     input.convertTo(floatImg, CV_32F);
+
+//     cv::Mat dft_complex;
+//     cv::dft(floatImg, dft_complex, cv::DFT_COMPLEX_OUTPUT);
+
+//     cv::Mat S_nn = getPSD();
+//     if (S_nn.empty()) {
+//         std::cerr << "[wienerFilter] PSD is empty. Returning input.\n";
+//         return input.clone();
+//     }
+
+//     std::vector<cv::Mat> channels(2);
+//     cv::split(dft_complex, channels);
+
+//     cv::Mat mag;
+//     cv::magnitude(channels[0], channels[1], mag);
+//     cv::Mat mag2 = mag.mul(mag);
+
+//     cv::Mat S_xx = mag2 - S_nn;
+//     cv::max(S_xx, 0.0f, S_xx);
+
+//     float eps = 1e-8f;
+//     cv::Mat denom = S_xx + S_nn + eps;
+//     cv::Mat H;
+//     cv::divide(S_xx, denom, H);
+
+//     channels[0] = channels[0].mul(H);
+//     channels[1] = channels[1].mul(H);
+
+//     cv::Mat dft_filt;
+//     cv::merge(channels, dft_filt);
+
+//     cv::Mat out_float;
+//     cv::dft(dft_filt, out_float,
+//             cv::DFT_REAL_OUTPUT | cv::DFT_SCALE | cv::DFT_INVERSE);
+
+//     double minVal, maxVal;
+//     cv::minMaxLoc(out_float, &minVal, &maxVal);
+//     cv::Mat out_8u;
+//     double eps_d = 1e-8;
+//     out_float.convertTo(out_8u, CV_8U, 255.0 / (maxVal - minVal + eps_d),
+//                         -minVal * 255.0 / (maxVal - minVal + eps_d));
+
+//     return out_8u;
+// }
+
+cv::Mat spatialFilter(cv::Mat &input) {
+
+    cv::Mat raw;
+    input.convertTo(raw, CV_32F);
+    cv::Mat lp = lowpass(raw, 11, 5);
+    cv::Mat grad = gradient(lp);
+    cv::Mat grad_lp = lowpass(grad, 1, 3);
+    cv::Mat output = lp.mul(grad_lp);
+    cv::normalize(output, output, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+    return output;
+}
+
+double median(const std::vector<double> &values, int N) {
+    int initCount = std::min(static_cast<int>(values.size()), N);
+    if (initCount == 0) {
+        return 0.0;
+    }
+
+    std::vector<double> subset(values.begin(), values.begin() + initCount);
+    std::sort(subset.begin(), subset.end());
+
+    if (initCount % 2 == 1) {
+        return subset[initCount / 2];
+    } else {
+        double lower = subset[(initCount / 2) - 1];
+        double upper = subset[initCount / 2];
+        return 0.5 * (lower + upper);
+    }
 }
 
 std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
@@ -179,16 +251,7 @@ std::vector<double> kalmanFilter1D(const std::vector<double> &observations,
         return x_k_estimates;
     }
 
-    int initCount = std::min((int)observations.size(), 10);
-    double x0 = 0.0;
-    if (initCount > 0) {
-        std::vector<double> initSeg(observations.begin(),
-                                    observations.begin() + initCount);
-        std::nth_element(initSeg.begin(), initSeg.begin() + initSeg.size() / 2,
-                         initSeg.end());
-        x0 = initSeg[initSeg.size() / 2];
-    }
-
+    double x0 = median(observations, 10);
     double x_k = x0;
     double P_k = 1.0;
 
@@ -217,7 +280,7 @@ std::vector<cv::Point> ol_removal(const std::vector<cv::Point> &coords) {
 
     int obs_length = (int)observations.size();
     int window = std::max(1, obs_length / 3);
-    double z_max = 30.0;
+    double z_max = 40.0;
 
     double best_slope = 0.0;
     double best_sigma = std::numeric_limits<double>::infinity();
@@ -289,9 +352,18 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
         img_raw = inputImg.clone();
     }
 
-    cv::Mat denoised_image = spatialFilter(img_raw.clone());
+    cv::Mat sub_image = bg_sub(img_raw);
+    cv::Mat denoised_image = spatialFilter(sub_image);
 
     std::vector<cv::Point> ret_coords = get_max_coor(denoised_image);
+
+    // std::vector<double> ys;
+    // ys.reserve(ret_coords.size());
+    // for (const auto &pt : ret_coords)
+    //     ys.push_back(static_cast<double>(pt.y));
+    // medianFilter1D(ys, 15);
+    // for (std::size_t i = 0; i < ret_coords.size(); ++i)
+    //     ret_coords[i].y = static_cast<int>(std::round(ys[i]));
 
     ret_coords = ol_removal(ret_coords);
 
@@ -347,64 +419,3 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
 
     return pc_3d;
 }
-
-/////////
-
-void removeOutliers(std::vector<double> &vals, double z_threshold = 0.5) {
-    if (vals.empty())
-        return;
-    size_t obs_length = vals.size();
-    int window = std::max(1, (int)obs_length / 10);
-    for (size_t i = 0; i < obs_length; ++i) {
-        int start = std::max(0, (int)i - window);
-        int end = std::min((int)obs_length, (int)i + window + 1);
-        std::vector<double> local(vals.begin() + start, vals.begin() + end);
-        double mu =
-            std::accumulate(local.begin(), local.end(), 0.0) / local.size();
-        double accum = 0.0;
-        for (double val : local) {
-            accum += (val - mu) * (val - mu);
-        }
-        double sigma = std::sqrt(accum / local.size());
-        std::nth_element(local.begin(), local.begin() + local.size() / 2,
-                         local.end());
-        double med = local[local.size() / 2];
-        double z = (sigma != 0.0) ? (vals[i] - mu) / sigma : 0.0;
-        if (z > z_threshold) {
-            vals[i] = med;
-        }
-    }
-}
-
-// void zero_dc(cv::Mat &img, const std::vector<int> &zidx, int window) {
-//     img.convertTo(img, CV_32F);
-
-//     int rows = img.rows;
-//     int cols = img.cols;
-
-//     for (int center : zidx) {
-//         int half = window / 2;
-//         int start_idx = std::max(center - half, 0);
-//         int end_idx = std::min(center + half, rows);
-
-//         for (int r = start_idx; r < end_idx; ++r) {
-//             double sumRow = 0.0;
-//             for (int c = 0; c < cols; ++c) {
-//                 sumRow += img.at<float>(r, c);
-//             }
-//             double meanRow = sumRow / cols;
-//             for (int c = 0; c < cols; ++c) {
-//                 float val = img.at<float>(r, c);
-//                 img.at<float>(r, c) = val - static_cast<float>(meanRow);
-//             }
-//         }
-//     }
-//     for (int r = 0; r < rows; ++r) {
-//         for (int c = 0; c < cols; ++c) {
-//             float val = img.at<float>(r, c);
-//             val = std::max(0.0f, std::min(val, 255.0f));
-//             img.at<float>(r, c) = val;
-//         }
-//     }
-//     img.convertTo(img, CV_8U);
-// }
