@@ -11,11 +11,19 @@ moveit_cpp:
 planning_pipelines:
   pipeline_names: ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"]
 
+#plan_request_params:
+#  planning_pipeline: ompl
+#  max_velocity_scaling_factor: 0.5
+#  max_acceleration_scaling_factor: 0.3
+#  planning_attempts: 1
+
 plan_request_params:
-  planning_attempts: 1
-  planning_pipeline: ompl
+  planning_pipeline: pilz_industrial_motion_planner
+  planner_id: PTP
   max_velocity_scaling_factor: 1.0
   max_acceleration_scaling_factor: 1.0
+  planning_time: 0.5
+  planning_attempts: 5
 
 planning_scene_monitor_options:
   name: "planning_scene_monitor"
@@ -38,3 +46,11 @@ ompl:
     - default_planning_response_adapters/ValidateSolution
     - default_planning_response_adapters/DisplayMotionPath
   #start_state_max_bounds_error: 0.1
+
+pilz_industrial_motion_planner:
+  default_planner_config: LIN
+  planner_configs:
+    LIN:
+      type: LIN
+      velocity_scaling: 0.20
+      acceleration_scaling: 0.20

@@ -528,16 +528,13 @@ class FocusActionServer : public rclcpp::Node {
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
             if (planning_) {
-                // moveit_cpp::PlanningComponent::PlanRequestParameters params;
-                // params.max_velocity_scaling_factor = 0.1;
-                // params.max_acceleration_scaling_factor = 0.1;
-
                 planning_ = false;
                 auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
                 auto psm = std::const_pointer_cast<
                     planning_scene_monitor::PlanningSceneMonitor>(psm_const);
                 psm->updateFrameTransforms();
                 psm->requestPlanningSceneState();
+                planning_component_->setStartStateToCurrentState();
                 planning_component_->setGoal(target_pose_, "tcp");
                 auto plan_solution = planning_component_->plan();
                 if (plan_solution) {

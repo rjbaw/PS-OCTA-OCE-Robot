@@ -20,6 +20,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 
 #include <octa_ros/msg/cancel_action.hpp>
@@ -109,13 +110,11 @@ class CoordinatorNode : public rclcpp::Node {
 
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
-        auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
-        auto psm = std::const_pointer_cast<
-            planning_scene_monitor::PlanningSceneMonitor>(psm_const);
 
         moveit_msgs::msg::CollisionObject collision_floor;
-        collision_floor.header.frame_id =
-            psm->getPlanningScene()->getPlanningFrame();
+        collision_floor.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
+                                              ->getPlanningScene()
+                                              ->getPlanningFrame();
         collision_floor.id = "floor";
         collision_floor.operation = collision_floor.ADD;
 
@@ -135,8 +134,9 @@ class CoordinatorNode : public rclcpp::Node {
         }
 
         moveit_msgs::msg::CollisionObject collision_base;
-        collision_base.header.frame_id =
-            psm->getPlanningScene()->getPlanningFrame();
+        collision_base.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
+                                             ->getPlanningScene()
+                                             ->getPlanningFrame();
         collision_base.id = "robot_base";
         collision_base.operation = collision_base.ADD;
 
@@ -157,7 +157,9 @@ class CoordinatorNode : public rclcpp::Node {
 
         moveit_msgs::msg::CollisionObject collision_monitor;
         collision_monitor.header.frame_id =
-            psm->getPlanningScene()->getPlanningFrame();
+            moveit_cpp_->getPlanningSceneMonitor()
+                ->getPlanningScene()
+                ->getPlanningFrame();
         collision_monitor.id = "monitor";
         collision_monitor.operation = collision_monitor.ADD;
 
@@ -176,12 +178,12 @@ class CoordinatorNode : public rclcpp::Node {
             collision_monitor.primitive_poses.push_back(box_pose);
         }
 
-        {
-            planning_scene_monitor::LockedPlanningSceneRW scene(psm);
-            scene->processCollisionObjectMsg(collision_floor);
-            scene->processCollisionObjectMsg(collision_base);
-            scene->processCollisionObjectMsg(collision_monitor);
-        }
+        std::vector<moveit_msgs::msg::CollisionObject> collision_objects;
+        collision_objects.push_back(collision_floor);
+        collision_objects.push_back(collision_base);
+        collision_objects.push_back(collision_monitor);
+        psi.addCollisionObjects(collision_objects);
+
         RCLCPP_INFO(get_logger(), "Collision objects added to planning scene.");
 
         pub_timer_ = this->create_wall_timer(
@@ -230,6 +232,7 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp_action::Client<Reset>::SharedPtr reset_action_client_;
 
     moveit_cpp::MoveItCppPtr moveit_cpp_;
+    moveit::planning_interface::PlanningSceneInterface psi;
 
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr sub_handle_;
