@@ -123,9 +123,6 @@ class MoveZAngleActionServer : public rclcpp::Node {
         }
 
         planning_component_->setStartStateToCurrentState();
-        // planning_component_->setMaxVelocityScalingFactor(0.5);
-        // planning_component_->setMaxAccelerationScalingFactor(0.3);
-
         moveit::core::RobotStatePtr current_state =
             moveit_cpp_->getCurrentState();
         Eigen::Isometry3d current_pose =
@@ -157,13 +154,33 @@ class MoveZAngleActionServer : public rclcpp::Node {
             return;
         }
 
+        auto req =
+            moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
+                shared_from_this(), {"pilz_ptp", "pilz_lin", "ompl_rrtc"});
+
+        // auto stop_on_first =
+        //     [](const PlanningComponent::PlanSolutions &sols,
+        //        const auto &) { return sols.hasSuccessfulSolution();
+        //        };
+        auto choose_shortest =
+            [](const std::vector<planning_interface::MotionPlanResponse>
+                   &sols) {
+                return *std::min_element(
+                    sols.begin(), sols.end(), [](const auto &a, const auto &b) {
+                        if (a && b)
+                            return robot_trajectory::pathLength(*a.trajectory) <
+                                   robot_trajectory::pathLength(*b.trajectory);
+                        return static_cast<bool>(a);
+                    });
+            };
         planning_interface::MotionPlanResponse plan_solution =
-            planning_component_->plan();
+            planning_component_->plan(req, choose_shortest);
         if (plan_solution.error_code.val !=
             moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
             RCLCPP_WARN(get_logger(), "Planning failed!");
             result->result = "Planning failed!";
             goal_handle->abort(result);
+            goal_handle->canceled(result);
             return;
         }
 
@@ -178,6 +195,7 @@ class MoveZAngleActionServer : public rclcpp::Node {
             RCLCPP_ERROR(get_logger(), "Execution failed!");
             result->result = "Execution failed!";
             goal_handle->abort(result);
+            goal_handle->canceled(result);
             return;
         }
 

@@ -529,14 +529,34 @@ class FocusActionServer : public rclcpp::Node {
 
             if (planning_) {
                 planning_ = false;
-                auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
-                auto psm = std::const_pointer_cast<
-                    planning_scene_monitor::PlanningSceneMonitor>(psm_const);
-                psm->updateFrameTransforms();
-                psm->requestPlanningSceneState();
                 planning_component_->setStartStateToCurrentState();
                 planning_component_->setGoal(target_pose_, "tcp");
-                auto plan_solution = planning_component_->plan();
+
+                auto req = moveit_cpp::PlanningComponent::
+                    MultiPipelinePlanRequestParameters(
+                        shared_from_this(),
+                        {"pilz_ptp", "pilz_lin", "ompl_rrtc"});
+                // auto stop_on_first =
+                //     [](const PlanningComponent::PlanSolutions &sols,
+                //        const auto &) { return sols.hasSuccessfulSolution();
+                //        };
+                auto choose_shortest =
+                    [](const std::vector<planning_interface::MotionPlanResponse>
+                           &sols) {
+                        return *std::min_element(
+                            sols.begin(), sols.end(),
+                            [](const auto &a, const auto &b) {
+                                if (a && b)
+                                    return robot_trajectory::pathLength(
+                                               *a.trajectory) <
+                                           robot_trajectory::pathLength(
+                                               *b.trajectory);
+                                return static_cast<bool>(a);
+                            });
+                    };
+
+                planning_interface::MotionPlanResponse plan_solution =
+                    planning_component_->plan(req, choose_shortest);
                 if (plan_solution) {
                     if (stop_requested_.load() || goal_handle->is_canceling()) {
                         result->result = "Cancel requested!";

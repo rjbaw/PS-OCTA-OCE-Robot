@@ -72,6 +72,7 @@ class CoordinatorNode : public rclcpp::Node {
                    .automatically_declare_parameters_from_overrides(true)) {}
 
     void init() {
+        apply_config_ = true;
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
@@ -272,7 +273,7 @@ class CoordinatorNode : public rclcpp::Node {
     double angle_ = 0.0;
     int circle_state_ = 1;
     bool fast_axis_ = true;
-    bool apply_config_ = true;
+    bool apply_config_ = false;
     bool end_state_ = false;
     bool scan_3d_ = false;
 
@@ -337,6 +338,25 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void publisherCallback() {
+
+        if (apply_config_) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsedms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - apply_config_time_)
+                    .count();
+            // apply_config_time_ = std::chrono::steady_clock::now();
+            // while (elapsedms < 300) {
+            //     elapsedms =
+            //     std::chrono::duration_cast<std::chrono::milliseconds>(now -
+            //     apply_config_time_).count(); pub_handle_->publish(msg);
+            // }
+            if (elapsedms >= 300) {
+                apply_config_ = false;
+                //    pub_handle_->publish(msg);
+            }
+        }
+
         octa_ros::msg::Robotdata msg;
         msg.msg = msg_;
         msg.angle = angle_;
@@ -359,23 +379,6 @@ class CoordinatorNode : public rclcpp::Node {
         }
 
         pub_handle_->publish(msg);
-
-        if (apply_config_) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - apply_config_time_)
-                    .count();
-            // while (elapsedms < 300) {
-            //     elapsedms =
-            //     std::chrono::duration_cast<std::chrono::milliseconds>(now -
-            //     apply_config_time_).count(); pub_handle_->publish(msg);
-            // }
-            if (elapsedms >= 300) {
-                apply_config_ = false;
-                //    pub_handle_->publish(msg);
-            }
-        }
         old_pub_msg_ = msg;
     }
 
