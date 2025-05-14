@@ -1,0 +1,9 @@
+# Scan3d.srv
+
+# Request
+bool activate
+
+---
+
+# Response
+bool done

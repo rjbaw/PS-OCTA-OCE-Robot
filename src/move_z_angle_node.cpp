@@ -180,7 +180,6 @@ class MoveZAngleActionServer : public rclcpp::Node {
             RCLCPP_WARN(get_logger(), "Planning failed!");
             result->result = "Planning failed!";
             goal_handle->abort(result);
-            goal_handle->canceled(result);
             return;
         }
 
@@ -195,7 +194,6 @@ class MoveZAngleActionServer : public rclcpp::Node {
             RCLCPP_ERROR(get_logger(), "Execution failed!");
             result->result = "Execution failed!";
             goal_handle->abort(result);
-            goal_handle->canceled(result);
             return;
         }
 

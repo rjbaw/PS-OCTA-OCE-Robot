@@ -23,7 +23,6 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 
-#include <octa_ros/msg/cancel_action.hpp>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
 

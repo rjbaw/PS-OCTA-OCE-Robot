@@ -50,7 +50,7 @@ set(msg_files
 )
 
 set(srv_files srv/Activate3Dscan.srv srv/Deactivate3Dscan.srv
-              srv/DeactivateFocus.srv)
+              srv/DeactivateFocus.srv srv/Focus.srv srv/Scan3d.srv)
 
 set(action_files action/Focus.action action/Freedrive.action
                  action/MoveZAngle.action action/Reset.action)
