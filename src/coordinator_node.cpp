@@ -262,8 +262,6 @@ class CoordinatorNode : public rclcpp::Node {
     double yaw_ = 0.0;
     bool success_ = false;
     double angle_increment_ = 0.0;
-    std::chrono::steady_clock::time_point apply_config_time_ =
-        std::chrono::steady_clock::now();
     std::mutex data_mutex_;
     bool changed_ = false;
 
@@ -295,6 +293,20 @@ class CoordinatorNode : public rclcpp::Node {
     bool fast_axis_read_ = true;
     bool scan_3d_read_ = false;
     int num_pt_ = 1;
+
+    rclcpp::TimerBase::SharedPtr apply_timer_;
+
+    void trigger_apply_config() {
+        std::chrono::milliseconds duration = std::chrono::milliseconds(300);
+        if (!apply_config_) {
+            apply_config_ = true;
+            auto callback = [this]() {
+                apply_config_ = false;
+                apply_timer_->cancel();
+            };
+            apply_timer_ = this->create_wall_timer(duration, callback);
+        }
+    }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
@@ -337,25 +349,6 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void publisherCallback() {
-
-        if (apply_config_) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsedms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - apply_config_time_)
-                    .count();
-            // apply_config_time_ = std::chrono::steady_clock::now();
-            // while (elapsedms < 300) {
-            //     elapsedms =
-            //     std::chrono::duration_cast<std::chrono::milliseconds>(now -
-            //     apply_config_time_).count(); pub_handle_->publish(msg);
-            // }
-            if (elapsedms >= 300) {
-                apply_config_ = false;
-                //    pub_handle_->publish(msg);
-            }
-        }
-
         octa_ros::msg::Robotdata msg;
         msg.msg = msg_;
         msg.angle = angle_;
@@ -669,8 +662,7 @@ class CoordinatorNode : public rclcpp::Node {
         std::shared_ptr<Activate3Dscan::Response> response) {
         if (!triggered_service_) {
             scan_3d_ = true;
-            apply_config_ = true;
-            apply_config_time_ = std::chrono::steady_clock::now();
+            trigger_apply_config();
             triggered_service_ = true;
         }
         if (scan_3d_read_) {
@@ -689,8 +681,7 @@ class CoordinatorNode : public rclcpp::Node {
         std::shared_ptr<Deactivate3Dscan::Response> response) {
         if (!triggered_service_) {
             scan_3d_ = false;
-            apply_config_ = true;
-            apply_config_time_ = std::chrono::steady_clock::now();
+            trigger_apply_config();
             triggered_service_ = true;
         }
         if (!scan_3d_read_) {
@@ -707,8 +698,7 @@ class CoordinatorNode : public rclcpp::Node {
         std::shared_ptr<DeactivateFocus::Response> response) {
         if (!triggered_service_) {
             end_state_ = true;
-            apply_config_ = true;
-            apply_config_time_ = std::chrono::steady_clock::now();
+            trigger_apply_config();
             triggered_service_ = true;
         }
         if (!autofocus_) {
