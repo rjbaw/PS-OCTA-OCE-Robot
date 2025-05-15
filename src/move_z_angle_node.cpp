@@ -54,6 +54,7 @@ class MoveZAngleActionServer : public rclcpp::Node {
     void init() {
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
@@ -75,6 +76,8 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
+    std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
+        tem_;
 
     double radius_ = 0.0;
     double angle_ = 0.0;
@@ -82,6 +85,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const MoveZAngle::Goal> goal) {
+        if (active_goal_handle_ && active_goal_handle_->is_active()) {
+            return rclcpp_action::GoalResponse::REJECT;
+        }
         RCLCPP_INFO(this->get_logger(),
                     "Received Move Z Angle goal with target_angle = %.2f",
                     goal->target_angle);
@@ -94,6 +100,7 @@ class MoveZAngleActionServer : public rclcpp::Node {
     handle_cancel(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
         RCLCPP_INFO(this->get_logger(),
                     "Cancel request received for Move Z Angle.");
+        tem_->stopExecution(true);
         goal_handle->canceled(std::make_shared<MoveZAngle::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;
     }

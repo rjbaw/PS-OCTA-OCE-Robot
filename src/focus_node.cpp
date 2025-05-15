@@ -87,6 +87,7 @@ class FocusActionServer : public rclcpp::Node {
 
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
@@ -130,6 +131,8 @@ class FocusActionServer : public rclcpp::Node {
 
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
+    std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
+        tem_;
 
     cv::Mat img_;
     cv::Mat img_hash_;
@@ -200,10 +203,7 @@ class FocusActionServer : public rclcpp::Node {
         while (!call_deactivate3Dscan()) {
             rclcpp::sleep_for(50ms);
         }
-        auto tem = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
-        if (tem) {
-            tem->stopExecution(true);
-        }
+        tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();
         stop_requested_.store(true);
@@ -380,7 +380,6 @@ class FocusActionServer : public rclcpp::Node {
                 if (stop_requested_.load() || goal_handle->is_canceling()) {
                     result->result = "Cancel requested!";
                     if (!publish_cancel_if_requested(goal_handle, result)) {
-                        // goal_handle->abort(result);
                         goal_handle->canceled(result);
                     }
                     RCLCPP_INFO(get_logger(), "Cancel requested!");

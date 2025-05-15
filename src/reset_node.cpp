@@ -17,6 +17,12 @@
 #include <moveit/moveit_cpp/planning_component.hpp>
 #include <octa_ros/action/reset.hpp>
 
+#include <moveit/robot_state/conversions.hpp>
+#include <moveit_msgs/msg/constraints.hpp>
+#include <moveit_msgs/msg/orientation_constraint.hpp>
+#include <moveit_msgs/msg/position_constraint.hpp>
+#include <shape_msgs/msg/solid_primitive.hpp>
+
 #include "utils.hpp"
 
 using namespace std::chrono_literals;
@@ -48,6 +54,7 @@ class ResetActionServer : public rclcpp::Node {
             create_client<std_srvs::srv::Trigger>("deactivate_focus");
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
     }
@@ -59,9 +66,54 @@ class ResetActionServer : public rclcpp::Node {
         service_capture_background_;
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
+    std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
+        tem_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+
     bool failed_ = false;
+
+    moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
+                                               double lin_radius_m,
+                                               double ang_radius_rad) const {
+        moveit_msgs::msg::Constraints c;
+
+        const std::string planning_frame =
+            moveit_cpp_->getPlanningSceneMonitor()
+                ->getPlanningScene()
+                ->getPlanningFrame();
+
+        moveit_msgs::msg::PositionConstraint pc;
+        pc.header.frame_id = planning_frame;
+        pc.link_name = "tcp";
+        pc.weight = 1.0;
+        shape_msgs::msg::SolidPrimitive sphere;
+        sphere.type = sphere.SPHERE;
+        sphere.dimensions = {lin_radius_m};
+        pc.constraint_region.primitives.push_back(sphere);
+        geometry_msgs::msg::Pose centre_pose;
+        centre_pose.position.x = centre.translation().x();
+        centre_pose.position.y = centre.translation().y();
+        centre_pose.position.z = centre.translation().z();
+        centre_pose.orientation.w = 1.0;
+        pc.constraint_region.primitive_poses.push_back(centre_pose);
+
+        moveit_msgs::msg::OrientationConstraint oc;
+        oc.header.frame_id = planning_frame;
+        oc.link_name = "tcp";
+        oc.weight = 1.0;
+        Eigen::Quaterniond q(centre.rotation());
+        oc.orientation.x = q.x();
+        oc.orientation.y = q.y();
+        oc.orientation.z = q.z();
+        oc.orientation.w = q.w();
+        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
+            oc.absolute_z_axis_tolerance = ang_radius_rad;
+
+        c.position_constraints.push_back(pc);
+        c.orientation_constraints.push_back(oc);
+        return c;
+    }
 
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
@@ -79,7 +131,9 @@ class ResetActionServer : public rclcpp::Node {
     handle_cancel(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
         RCLCPP_INFO(get_logger(), "Reset action canceled");
         publish_stop();
+        tem_->stopExecution(true);
         goal_handle->canceled(std::make_shared<ResetAction::Result>());
+        active_goal_handle_.reset();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -115,6 +169,9 @@ class ResetActionServer : public rclcpp::Node {
         feedback->status = "Resetting... Please wait";
         goal_handle->publish_feedback(feedback);
 
+        moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
+        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
+
         planning_component_->setStartStateToCurrentState();
 
         std::vector<double> joint_values = {
@@ -128,10 +185,27 @@ class ResetActionServer : public rclcpp::Node {
         moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
         goal_state.setToDefaultValues();
         goal_state.setJointGroupPositions("ur_manipulator", joint_values);
+
+        auto envelope = makeEnvelope(start_tcp,   // centre pose
+                                     0.05,        // 5 cm translation radius
+                                     M_PI / 3.0); // 60 deg rotation radius
+        // planning_component_->setPathConstraints(envelope);
+
+        // moveit_msgs::msg::Constraints env;
+        // moveit_msgs::msg::JointConstraint jc;
+        // jc.joint_name = "elbow_joint";
+        // double q0 = cur_state->getVariablePosition("elbow_joint");
+        // jc.position = q0;
+        // jc.tolerance_above = jc.tolerance_below = to_radian(10.0);
+        // jc.weight = 1.0;
+        // env.joint_constraints.push_back(jc);
+        // planning_component_->setPathConstraints(env);
+
         planning_component_->setGoal(goal_state);
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(), {"pilz_ptp", "pilz_lin", "ompl_rrtc"});
+                shared_from_this(),
+                {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
         // auto stop_on_first =
         //     [](const PlanningComponent::PlanSolutions &sols,
         //        const auto &) { return sols.hasSuccessfulSolution();
@@ -149,6 +223,8 @@ class ResetActionServer : public rclcpp::Node {
             };
         planning_interface::MotionPlanResponse plan_solution =
             planning_component_->plan(req, choose_shortest);
+        planning_component_->setPathConstraints(
+            moveit_msgs::msg::Constraints());
         if (plan_solution) {
             if (goal_handle->is_canceling()) {
                 result->success = false;
@@ -158,12 +234,35 @@ class ResetActionServer : public rclcpp::Node {
                 planning_component_->setStartStateToCurrentState();
                 return;
             }
+
+            // if (tem_->getLastExecutionStatus() ==
+            //     moveit_controller_manager::ExecutionStatus::RUNNING) {
+            //     tem_->stopExecution(true);
+            //     tem_->waitForExecution();
+            // }
+
             bool execute_success =
                 moveit_cpp_->execute(plan_solution.trajectory);
+
+            // moveit_msgs::msg::RobotTrajectory trajectory_msg;
+            // plan_solution.trajectory->getRobotTrajectoryMsg(trajectory_msg);
+            // tem_->push(trajectory_msg);
+            // tem_->execute(execute_callback);
+            // // tem_->waitForExecution();
+            // rclcpp::Rate rate(10);
+            // while (tem_->getLastExecutionStatus() ==
+            //        moveit_controller_manager::ExecutionStatus::RUNNING) {
+            //     rate.sleep();
+            // }
+            // auto status = tem_->getLastExecutionStatus();
+            // bool execute_success =
+            //     status ==
+            //     moveit_controller_manager::ExecutionStatus::SUCCEEDED;
+
             if (execute_success) {
                 RCLCPP_INFO(get_logger(), "Execute Success!");
             } else {
-                RCLCPP_INFO(get_logger(), "Execute Failed_!");
+                RCLCPP_INFO(get_logger(), "Execute Failed!");
                 failed_ = true;
             }
         } else {
@@ -206,23 +305,21 @@ class ResetActionServer : public rclcpp::Node {
                 }
             }
             publisher_->publish(message);
-        }
-
-        for (int i = 0; i < 40; ++i) {
-            if (goal_handle->is_canceling()) {
-                result->success = false;
-                result->status = "Cancel requested!";
-                goal_handle->canceled(result);
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                return;
+            for (int i = 0; i < 40; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
         call_capturebackground();
         result->success = true;
         result->status = "Reset action completed successfully";
-        goal_handle->succeed(result);
+        if (goal_handle->is_active()) {
+            if (failed_) {
+                goal_handle->abort(result);
+            } else {
+                goal_handle->succeed(result);
+            }
+        }
         RCLCPP_INFO(get_logger(), "Reset completed.");
         active_goal_handle_.reset();
     }

@@ -46,6 +46,18 @@ ompl_rrtc:
     planning_time: 0.5
     planning_attempts: 1
 
+stomp_joint:
+  plan_request_params:
+    planning_pipeline: stomp
+    planning_time: 1.0
+    planning_attempts: 1
+    max_velocity_scaling_factor: 0.25
+    max_acceleration_scaling_factor: 0.25
+  stomp_moveit:
+    optimization:
+      num_timesteps: 30
+      joint_costs: [1.0, 4.0, 1.0, 4.0, 0.2, 0.2]
+
 pilz_industrial_motion_planner:
   planning_plugins: ["pilz_industrial_motion_planner/CommandPlanner"]
   default_planner_config: PTP
