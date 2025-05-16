@@ -520,7 +520,7 @@ class FocusActionServer : public rclcpp::Node {
                 auto req = moveit_cpp::PlanningComponent::
                     MultiPipelinePlanRequestParameters(
                         shared_from_this(),
-                        {"pilz_ptp", "pilz_lin", "ompl_rrtc"});
+                        {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
                 // auto stop_on_first =
                 //     [](const PlanningComponent::PlanSolutions &sols,
                 //        const auto &) { return sols.hasSuccessfulSolution();
@@ -610,6 +610,7 @@ class FocusActionServer : public rclcpp::Node {
                 ament_index_cpp::get_package_share_directory("octa_ros");
             std::string bg_path = pkg_share + "/config/bg.jpg";
             cv::imwrite(bg_path.c_str(), frame);
+            cv::imwrite("config/bg.jpg", frame);
             response->success = true;
         } else {
             RCLCPP_INFO(get_logger(),

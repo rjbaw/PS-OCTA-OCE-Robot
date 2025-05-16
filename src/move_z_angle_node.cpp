@@ -16,6 +16,12 @@
 #include <moveit/moveit_cpp/planning_component.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 
+#include <moveit/robot_state/conversions.hpp>
+#include <moveit_msgs/msg/constraints.hpp>
+#include <moveit_msgs/msg/orientation_constraint.hpp>
+#include <moveit_msgs/msg/position_constraint.hpp>
+#include <shape_msgs/msg/solid_primitive.hpp>
+
 #include <octa_ros/action/move_z_angle.hpp>
 
 double to_radian_(const double degree) {
@@ -114,6 +120,48 @@ class MoveZAngleActionServer : public rclcpp::Node {
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
 
+    moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
+                                               double lin_radius_m,
+                                               double ang_radius_rad) const {
+        moveit_msgs::msg::Constraints c;
+
+        const std::string planning_frame =
+            moveit_cpp_->getPlanningSceneMonitor()
+                ->getPlanningScene()
+                ->getPlanningFrame();
+
+        moveit_msgs::msg::PositionConstraint pc;
+        pc.header.frame_id = planning_frame;
+        pc.link_name = "tcp";
+        pc.weight = 1.0;
+        shape_msgs::msg::SolidPrimitive sphere;
+        sphere.type = sphere.SPHERE;
+        sphere.dimensions = {lin_radius_m};
+        pc.constraint_region.primitives.push_back(sphere);
+        geometry_msgs::msg::Pose centre_pose;
+        centre_pose.position.x = centre.translation().x();
+        centre_pose.position.y = centre.translation().y();
+        centre_pose.position.z = centre.translation().z();
+        centre_pose.orientation.w = 1.0;
+        pc.constraint_region.primitive_poses.push_back(centre_pose);
+
+        moveit_msgs::msg::OrientationConstraint oc;
+        oc.header.frame_id = planning_frame;
+        oc.link_name = "tcp";
+        oc.weight = 1.0;
+        Eigen::Quaterniond q(centre.rotation());
+        oc.orientation.x = q.x();
+        oc.orientation.y = q.y();
+        oc.orientation.z = q.z();
+        oc.orientation.w = q.w();
+        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
+            oc.absolute_z_axis_tolerance = ang_radius_rad;
+
+        c.position_constraints.push_back(pc);
+        c.orientation_constraints.push_back(oc);
+        return c;
+    }
+
     void execute(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
         RCLCPP_INFO(get_logger(),
                     "Starting Move Z Angle execution with MoveItCpp...");
@@ -153,6 +201,11 @@ class MoveZAngleActionServer : public rclcpp::Node {
         target_pose.pose.position.y += radius_ * std::sin(to_radian_(angle_));
         print_target_(get_logger(), target_pose.pose);
 
+        moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
+        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
+        auto envelope = makeEnvelope(start_tcp, 0.05, M_PI);
+        planning_component_->setPathConstraints(envelope);
+
         planning_component_->setGoal(target_pose, "tcp");
 
         if (goal_handle->is_canceling()) {
@@ -163,7 +216,8 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(), {"pilz_ptp", "pilz_lin", "ompl_rrtc"});
+                shared_from_this(),
+                {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
 
         // auto stop_on_first =
         //     [](const PlanningComponent::PlanSolutions &sols,

@@ -169,9 +169,6 @@ class ResetActionServer : public rclcpp::Node {
         feedback->status = "Resetting... Please wait";
         goal_handle->publish_feedback(feedback);
 
-        moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
-        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
-
         planning_component_->setStartStateToCurrentState();
 
         std::vector<double> joint_values = {
@@ -186,6 +183,8 @@ class ResetActionServer : public rclcpp::Node {
         goal_state.setToDefaultValues();
         goal_state.setJointGroupPositions("ur_manipulator", joint_values);
 
+        moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
+        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
         auto envelope = makeEnvelope(start_tcp,   // centre pose
                                      0.05,        // 5 cm translation radius
                                      M_PI / 3.0); // 60 deg rotation radius
@@ -204,8 +203,7 @@ class ResetActionServer : public rclcpp::Node {
         planning_component_->setGoal(goal_state);
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(),
-                {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
+                shared_from_this(), {"stomp_joint", "ompl_rrtc"});
         auto choose_shortest =
             [](const std::vector<planning_interface::MotionPlanResponse>
                    &sols) {
