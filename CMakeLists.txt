@@ -43,11 +43,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${Open3D_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
 
-set(msg_files
-    "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
-    "msg/Labviewdata.msg"
-    # msg/ProgramState.msg msg/RobotMode.msg msg/SafetyMode.msg
-)
+set(msg_files "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
+              "msg/Labviewdata.msg")
 
 set(srv_files srv/Scan3d.srv)
 
