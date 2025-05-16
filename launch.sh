@@ -99,9 +99,9 @@ if [[ $debug == "true" ]]; then
     trap - EXIT
     stop_ros
     if  [[ $sim == "true" ]]; then
-        ros2 launch octa_ros launch_new.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true
+        ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true
     else
-        ros2 launch octa_ros launch_new.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true reverse_ip:=192.168.0.2
+        ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true reverse_ip:=192.168.0.2
     fi
     stop_ros
     exit 0

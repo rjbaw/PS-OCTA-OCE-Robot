@@ -6,4 +6,4 @@ bool activate
 ---
 
 # Response
-bool done
+bool success

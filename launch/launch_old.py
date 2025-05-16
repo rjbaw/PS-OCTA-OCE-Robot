@@ -10,6 +10,7 @@ from launch_ros.substitutions import FindPackageShare
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    IncludeLaunchDescription,
     RegisterEventHandler,
     Shutdown,
     TimerAction,
@@ -24,6 +25,7 @@ from launch.substitutions import (
     NotSubstitution,
     PathJoinSubstitution,
 )
+from launch.launch_description_sources import AnyLaunchDescriptionSource
 
 from moveit_configs_utils import MoveItConfigsBuilder
 from ament_index_python.packages import get_package_share_directory
@@ -36,7 +38,7 @@ def load_yaml(package_name, file_path):
     try:
         with open(absolute_file_path) as file:
             return yaml.safe_load(file)
-    except OSError:
+    except OSError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
 
@@ -44,7 +46,9 @@ def launch_setup():
     # Initialize Arguments
     ur_type = LaunchConfiguration("ur_type")
     robot_ip = LaunchConfiguration("robot_ip")
+    # General arguments
     controllers_file = LaunchConfiguration("controllers_file")
+    description_launchfile = LaunchConfiguration("description_launchfile")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
     controller_spawner_timeout = LaunchConfiguration("controller_spawner_timeout")
     initial_joint_controller = LaunchConfiguration("initial_joint_controller")
@@ -56,6 +60,7 @@ def launch_setup():
     use_tool_communication = LaunchConfiguration("use_tool_communication")
     tool_device_name = LaunchConfiguration("tool_device_name")
     tool_tcp_port = LaunchConfiguration("tool_tcp_port")
+    # Moveit Arguments
     warehouse_sqlite_path = LaunchConfiguration("warehouse_sqlite_path")
     launch_servo = LaunchConfiguration("launch_servo")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -63,21 +68,29 @@ def launch_setup():
         "publish_robot_description_semantic"
     )
 
+    # Robot Description
+
     safety_limits = LaunchConfiguration("safety_limits")
     safety_pos_margin = LaunchConfiguration("safety_pos_margin")
     safety_k_position = LaunchConfiguration("safety_k_position")
+    # General arguments
     kinematics_params_file = LaunchConfiguration("kinematics_params_file")
     physical_params_file = LaunchConfiguration("physical_params_file")
     visual_params_file = LaunchConfiguration("visual_params_file")
     joint_limit_params_file = LaunchConfiguration("joint_limit_params_file")
     description_file = LaunchConfiguration("description_file")
     tf_prefix = LaunchConfiguration("tf_prefix")
+    use_mock_hardware = LaunchConfiguration("use_mock_hardware")
     mock_sensor_commands = LaunchConfiguration("mock_sensor_commands")
+    headless_mode = LaunchConfiguration("headless_mode")
+    use_tool_communication = LaunchConfiguration("use_tool_communication")
     tool_parity = LaunchConfiguration("tool_parity")
     tool_baud_rate = LaunchConfiguration("tool_baud_rate")
     tool_stop_bits = LaunchConfiguration("tool_stop_bits")
     tool_rx_idle_chars = LaunchConfiguration("tool_rx_idle_chars")
     tool_tx_idle_chars = LaunchConfiguration("tool_tx_idle_chars")
+    tool_device_name = LaunchConfiguration("tool_device_name")
+    tool_tcp_port = LaunchConfiguration("tool_tcp_port")
     tool_voltage = LaunchConfiguration("tool_voltage")
     reverse_ip = LaunchConfiguration("reverse_ip")
     script_command_port = LaunchConfiguration("script_command_port")
@@ -92,6 +105,8 @@ def launch_setup():
         parameters=[
             LaunchConfiguration("update_rate_config_file"),
             ParameterFile(controllers_file, allow_substs=True),
+            # We use the tf_prefix as substitution in there, so that's why we keep it as an
+            # argument for this launchfile
         ],
         output="screen",
     )
@@ -174,7 +189,7 @@ def launch_setup():
         "speed_scaling_state_broadcaster",
         "force_torque_sensor_broadcaster",
     ]
-    controllers_inactive = ["forward_position_controller", "freedrive_mode_controller"]
+    controllers_inactive = ["forward_position_controller"]
 
     controller_spawners = [controller_spawner(controllers_active)] + [
         controller_spawner(controllers_inactive, active=False)
@@ -322,31 +337,24 @@ def launch_setup():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
-        output="screen",
+        output="both",
         parameters=[{"robot_description": robot_description_content}],
     )
 
+    # static_tf = Node(
+    #     package="tf2_ros",
+    #     executable="static_transform_publisher",
+    #     name="static_transform_publisher",
+    #     output="log",
+    #     arguments=["--frame-id", "world", "--child-frame-id", "base_link"],
+    # )
+
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="octa_ros")
-        .robot_description(
-            file_path=Path("urdf") / "oct_setup.xacro",
-            mappings={
-                "ur_type": ur_type,
-                "tf_prefix": tf_prefix,
-                "safety_limits": safety_limits,
-                "robot_ip": robot_ip,
-                "joint_limit_params": joint_limit_params_file,
-                "kinematics_params": kinematics_params_file,
-                "physical_params": physical_params_file,
-                "name": ur_type,
-                "reverse_ip": reverse_ip,
-            },
-        )
+        .robot_description()
         .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": ur_type})
-        .planning_pipelines()
         .to_moveit_configs()
     )
-    # .moveit_cpp(file_path=get_package_share_directory("moveit_config") + "/config/moveit_cpp.yaml)
 
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",
@@ -359,44 +367,12 @@ def launch_setup():
         output="screen",
     )
 
-    OMPL_CFG = {
-        "planning_pipelines": ["ompl"],
-        "ompl": {
-            "planning_plugins": "ompl_interface/OMPLPlanner",
-            "request_adapters": [
-                "default_planning_request_adapters/ResolveConstraintFrames",
-                "default_planning_request_adapters/ValidateWorkspaceBounds",
-                "default_planning_request_adapters/CheckStartStateBounds",
-                "default_planning_request_adapters/CheckStartStateCollision",
-            ],
-            "response_adapters": [
-                "default_planning_response_adapters/AddTimeOptimalParameterization",
-                "default_planning_response_adapters/ValidateSolution",
-                "default_planning_response_adapters/DisplayMotionPath",
-            ],
-            "start_state_max_bounds_error": 0.1,
-        },
-        "moveit_cpp": {  # MoveItCpp mirror (harmless duplicate)
-            "planning_scene_monitor_options": {
-                "name": "planning_scene_monitor",
-                "robot_description": "robot_description",
-                "joint_state_topic": "/joint_states",
-                "publish_planning_scene": True,
-                "publish_geometry_updates": True,
-                "publish_state_updates": True,
-                "publish_transforms_updates": True,
-            },
-            "planning_pipelines": ["ompl"],
-        },
-    }
-
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
         output="screen",
         parameters=[
             moveit_config.to_dict(),
-            # OMPL_CFG,
             warehouse_ros_config,
             {
                 "use_sim_time": use_sim_time,
@@ -442,102 +418,26 @@ def launch_setup():
         output="screen",
     )
 
-    # moveit_cpp_yaml = PathJoinSubstitution(
-    #     [FindPackageShare("octa_ros"), "config", "moveit_cpp.yaml"]
-    # )
-
-    moveit_cpp_yaml = load_yaml("octa_ros", "config/moveit_cpp.yaml")
-    # moveit_cpp_params = {
-    #     "moveit_cpp": {
-    #         "planning_scene_monitor_options": {
-    #             "name": "planning_scene_monitor",
-    #             "robot_description": "robot_description",
-    #             "joint_state_topic": "/joint_states",
-    #             "publish_planning_scene": True,
-    #             "publish_geometry_updates": True,
-    #             "publish_state_updates": True,
-    #             "publish_transforms_updates": True,
-    #         },
-    #         # Add this line:
-    #         "planning_pipelines": ["ompl"],
-    #     },
-    #     "ompl": {
-    #         "planning_plugin": "ompl_interface/OMPLPlanner",
-    #         "request_adapters": [
-    #             "default_planning_request_adapters/ResolveConstraintFrames",
-    #             "default_planning_request_adapters/ValidateWorkspaceBounds",
-    #             "default_planning_request_adapters/CheckStartStateBounds",
-    #             "default_planning_request_adapters/CheckStartStateCollision",
-    #         ],
-    #         "response_adapters": [
-    #             "default_planning_response_adapters/AddTimeOptimalParameterization",
-    #             "default_planning_response_adapters/ValidateSolution",
-    #             "default_planning_response_adapters/DisplayMotionPath",
-    #         ],
-    #         "start_state_max_bounds_error": 0.1,
-    #     },
-    # }
-
-    # parameters=[
-    #     moveit_config.robot_description,
-    #     moveit_config.robot_description_semantic,
-    #     moveit_config.robot_description_kinematics,
-    #     # moveit_config.planning_pipelines,
-    #     ParameterFile(moveit_cpp_yaml, allow_substs=True),
-    #     moveit_config.joint_limits,
-    #     warehouse_ros_config,
-    # ],
-
-    common_parameters = [
-        # {"robot_description": robot_description_content},
-        # moveit_config.robot_description_semantic,
-        # moveit_config.robot_description_kinematics,
-        # moveit_config.joint_limits,
-        moveit_config.to_dict(),
-        moveit_cpp_yaml,
-        # OMPL_CFG,
-        # moveit_cpp_params,
-        warehouse_ros_config,
-    ]
-
-    coordinator_node = Node(
+    octa_node = Node(
         package="octa_ros",
-        executable="coordinator_node",
-        name="coordinator_node",
-        output="screen",
-        parameters=common_parameters,
+        executable="octa_ctrl",
+        name="octa_ctrl",
+        output="log",
+        parameters=[
+            moveit_config.robot_description,
+            moveit_config.robot_description_semantic,
+            moveit_config.robot_description_kinematics,
+            moveit_config.planning_pipelines,
+            moveit_config.joint_limits,
+            warehouse_ros_config,
+        ],
     )
 
-    freedrive_node = Node(
+    reconnect_client = Node(
         package="octa_ros",
-        executable="freedrive_node",
-        name="freedrive_node",
+        executable="reconnect_client",
+        name="reconnect_client",
         output="screen",
-        parameters=common_parameters,
-    )
-
-    focus_node = Node(
-        package="octa_ros",
-        executable="focus_node",
-        name="focus_node",
-        output="screen",
-        parameters=common_parameters,
-    )
-
-    reset_node = Node(
-        package="octa_ros",
-        executable="reset_node",
-        name="reset_node",
-        output="screen",
-        parameters=common_parameters,
-    )
-
-    move_z_angle_node = Node(
-        package="octa_ros",
-        executable="move_z_angle_node",
-        name="move_z_angle_node",
-        output="screen",
-        parameters=common_parameters,
     )
 
     nodes_after_driver = RegisterEventHandler(
@@ -548,11 +448,7 @@ def launch_setup():
                 move_group_node,
                 servo_node,
                 robot_state_node,
-                coordinator_node,
-                freedrive_node,
-                focus_node,
-                reset_node,
-                move_z_angle_node,
+                octa_node,
             ],
         )
     )
@@ -573,25 +469,8 @@ def launch_setup():
     joint_publisher_exit_handler = RegisterEventHandler(
         OnProcessExit(target_action=robot_state_node, on_exit=[Shutdown()])
     )
-
-    coordinator_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=coordinator_node, on_exit=[Shutdown()])
-    )
-
-    freedrive_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=freedrive_node, on_exit=[Shutdown()])
-    )
-
-    focus_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=focus_node, on_exit=[Shutdown()])
-    )
-
-    reset_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=reset_node, on_exit=[Shutdown()])
-    )
-
-    move_z_angle_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=move_z_angle_node, on_exit=[Shutdown()])
+    octa_exit_handler = RegisterEventHandler(
+        OnProcessExit(target_action=octa_node, on_exit=[Shutdown()])
     )
 
     nodes_to_start = (
@@ -608,14 +487,7 @@ def launch_setup():
         ]
         + controller_spawners
         + [nodes_after_driver]
-        + [
-            joint_publisher_exit_handler,
-            coordinator_exit_handler,
-            freedrive_exit_handler,
-            focus_exit_handler,
-            reset_exit_handler,
-            move_z_angle_exit_handler,
-        ]
+        + [joint_publisher_exit_handler, octa_exit_handler]
         + [reconnect_client_action]
     )
 
@@ -689,6 +561,10 @@ def generate_launch_description():
             "kinematics_params_file",
             default_value=PathJoinSubstitution(
                 [
+                    # FindPackageShare("ur_description"),
+                    # "config",
+                    # ur_type,
+                    # "default_kinematics.yaml",
                     FindPackageShare("octa_ros"),
                     "config",
                     "ur_calibration.yaml",
@@ -732,6 +608,15 @@ def generate_launch_description():
                 [FindPackageShare("octa_ros"), "urdf", "oct_setup.xacro"]
             ),
             description="URDF/XACRO description file with the robot.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "tf_prefix",
+            default_value="",
+            description="tf_prefix of the joint names, useful for "
+            "multi-robot setup. If changed, also joint names in the controllers' configuration "
+            "have to be updated.",
         )
     )
     declared_arguments.append(
@@ -815,6 +700,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "rviz_config_file",
             default_value=PathJoinSubstitution(
+                # [FindPackageShare("octa_ros"), "config", "moveit.rviz"]
                 [FindPackageShare("ur_moveit_config"), "config", "moveit.rviz"]
             ),
             description="RViz config file (absolute path) to use when launching rviz.",

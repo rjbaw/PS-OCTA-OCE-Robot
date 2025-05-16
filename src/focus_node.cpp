@@ -24,9 +24,7 @@
 
 #include <octa_ros/action/focus.hpp>
 #include <octa_ros/msg/img.hpp>
-#include <octa_ros/srv/activate3_dscan.hpp>
-#include <octa_ros/srv/deactivate3_dscan.hpp>
-#include <octa_ros/srv/deactivate_focus.hpp>
+#include <octa_ros/srv/scan3d.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "process_img.hpp"
@@ -58,9 +56,7 @@ void print_target_(rclcpp::Logger const &logger,
 class FocusActionServer : public rclcpp::Node {
     using Focus = octa_ros::action::Focus;
     using GoalHandleFocus = rclcpp_action::ServerGoalHandle<Focus>;
-    using Activate3Dscan = octa_ros::srv::Activate3Dscan;
-    using Deactivate3Dscan = octa_ros::srv::Deactivate3Dscan;
-    using DeactivateFocus = octa_ros::srv::DeactivateFocus;
+    using Scan3d = octa_ros::srv::Scan3d;
 
   public:
     FocusActionServer(
@@ -91,12 +87,12 @@ class FocusActionServer : public rclcpp::Node {
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
-        auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
-        auto psm = std::const_pointer_cast<
-            planning_scene_monitor::PlanningSceneMonitor>(psm_const);
-        psm->requestPlanningSceneState();
-        psm->updateFrameTransforms();
-        psm->startSceneMonitor();
+        // auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
+        // auto psm = std::const_pointer_cast<
+        //     planning_scene_monitor::PlanningSceneMonitor>(psm_const);
+        // psm->requestPlanningSceneState();
+        // psm->updateFrameTransforms();
+        // psm->startSceneMonitor();
 
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
@@ -109,17 +105,9 @@ class FocusActionServer : public rclcpp::Node {
             std::bind(&FocusActionServer::imageTimerCallback, this));
         img_timer_->cancel();
 
-        service_activate_scan_ =
-            create_client<Activate3Dscan>("activate_3d_scan");
-        service_deactivate_scan_ =
-            create_client<Deactivate3Dscan>("deactivate_3d_scan");
+        service_scan_3d_ = create_client<Scan3d>("scan_3d");
         service_deactivate_focus_ =
-            create_client<DeactivateFocus>("deactivate_focus");
-
-        capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
-            "capture_background",
-            std::bind(&FocusActionServer::CaptureBackgroundCallback, this,
-                      std::placeholders::_1, std::placeholders::_2));
+            create_client<std_srvs::srv::Trigger>("deactivate_focus");
     }
 
   private:
@@ -158,10 +146,8 @@ class FocusActionServer : public rclcpp::Node {
     bool z_focused_ = false;
     bool planning_ = false;
 
-    rclcpp::Client<Activate3Dscan>::SharedPtr service_activate_scan_;
-    rclcpp::Client<Deactivate3Dscan>::SharedPtr service_deactivate_scan_;
-    rclcpp::Client<DeactivateFocus>::SharedPtr service_deactivate_focus_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
+    rclcpp::Client<Scan3d>::SharedPtr service_scan_3d_;
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr service_deactivate_focus_;
 
     double roll_ = 0.0;
     double pitch_ = 0.0;
@@ -200,7 +186,7 @@ class FocusActionServer : public rclcpp::Node {
     handle_cancel(const std::shared_ptr<GoalHandleFocus> goal_handle) {
         auto res = std::make_shared<Focus::Result>();
         res->result = "Focus action canceled by user request";
-        while (!call_deactivate3Dscan()) {
+        while (!call_scan3d(false)) {
             rclcpp::sleep_for(50ms);
         }
         tem_->stopExecution(true);
@@ -302,42 +288,24 @@ class FocusActionServer : public rclcpp::Node {
         img_hash_ = current_hash.clone();
     }
 
-    bool call_activate3Dscan() {
-        if (!service_activate_scan_->wait_for_service(0s))
+    bool call_scan3d(bool activate) {
+        if (!service_scan_3d_->wait_for_service(0s))
             return false;
-        auto req = std::make_shared<Activate3Dscan::Request>();
-        auto fut = service_activate_scan_->async_send_request(req);
-        return fut.wait_for(2s) == std::future_status::ready && fut.get()->done;
-    }
-
-    bool call_deactivate3Dscan() {
-        if (!service_deactivate_scan_->wait_for_service(0s))
-            return false;
-
-        auto req = std::make_shared<Deactivate3Dscan::Request>();
-        auto fut = service_deactivate_scan_->async_send_request(req);
-        return fut.wait_for(2s) == std::future_status::ready && fut.get()->done;
+        auto req = std::make_shared<Scan3d::Request>();
+        req->activate = activate;
+        auto fut = service_scan_3d_->async_send_request(req);
+        return fut.wait_for(2s) == std::future_status::ready &&
+               fut.get()->success;
     }
 
     bool call_deactivateFocus() {
         if (!service_deactivate_focus_->wait_for_service(0s))
             return false;
 
-        auto req = std::make_shared<DeactivateFocus::Request>();
+        auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
         auto fut = service_deactivate_focus_->async_send_request(req);
-        return fut.wait_for(2s) == std::future_status::ready && fut.get()->done;
-    }
-
-    void CaptureBackgroundCallback(
-        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
-            request,
-        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        cv::Mat frame = get_img();
-        std::string pkg_share =
-            ament_index_cpp::get_package_share_directory("octa_ros");
-        std::string bg_path = pkg_share + "/config/bg.jpg";
-        cv::imwrite(bg_path.c_str(), frame);
-        response->success = true;
+        return fut.wait_for(2s) == std::future_status::ready &&
+               fut.get()->success;
     }
 
     bool tol_measure(const double &roll, const double &pitch,
@@ -376,7 +344,7 @@ class FocusActionServer : public rclcpp::Node {
                 return;
             }
             start = now();
-            while (!call_activate3Dscan()) {
+            while (!call_scan3d(true)) {
                 if (stop_requested_.load() || goal_handle->is_canceling()) {
                     result->result = "Cancel requested!";
                     if (!publish_cancel_if_requested(goal_handle, result)) {
@@ -434,7 +402,7 @@ class FocusActionServer : public rclcpp::Node {
             }
 
             start = now();
-            while (!call_deactivate3Dscan()) {
+            while (!call_scan3d(false)) {
                 if (stop_requested_.load() || goal_handle->is_canceling()) {
                     result->result = "Cancel requested!";
                     if (!publish_cancel_if_requested(goal_handle, result)) {

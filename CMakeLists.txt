@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(octa_ros)
 
 set(CMAKE_GENERATOR "Ninja")
@@ -49,8 +49,7 @@ set(msg_files
     # msg/ProgramState.msg msg/RobotMode.msg msg/SafetyMode.msg
 )
 
-set(srv_files srv/Activate3Dscan.srv srv/Deactivate3Dscan.srv
-              srv/DeactivateFocus.srv srv/Focus.srv srv/Scan3d.srv)
+set(srv_files srv/Scan3d.srv)
 
 set(action_files action/Focus.action action/Freedrive.action
                  action/MoveZAngle.action action/Reset.action)

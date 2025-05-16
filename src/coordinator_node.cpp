@@ -31,9 +31,12 @@
 #include <octa_ros/action/move_z_angle.hpp>
 #include <octa_ros/action/reset.hpp>
 
-#include <octa_ros/srv/activate3_dscan.hpp>
-#include <octa_ros/srv/deactivate3_dscan.hpp>
-#include <octa_ros/srv/deactivate_focus.hpp>
+#include <octa_ros/msg/img.hpp>
+#include <octa_ros/srv/scan3d.hpp>
+#include <opencv2/opencv.hpp>
+#include <std_srvs/srv/trigger.hpp>
+
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 enum class UserAction {
     None,
@@ -49,24 +52,21 @@ double to_radian_(const double degree) {
 
 class CoordinatorNode : public rclcpp::Node {
   public:
-    using Focus = octa_ros::action::Focus;
+    using FocusAction = octa_ros::action::Focus;
     using MoveZAngle = octa_ros::action::MoveZAngle;
     using Freedrive = octa_ros::action::Freedrive;
     using Reset = octa_ros::action::Reset;
 
-    using FocusGoalHandle = rclcpp_action::ClientGoalHandle<Focus>;
+    using Scan3d = octa_ros::srv::Scan3d;
+
+    using FocusGoalHandle = rclcpp_action::ClientGoalHandle<FocusAction>;
     using MoveZGoalHandle = rclcpp_action::ClientGoalHandle<MoveZAngle>;
     using FreedriveGoalHandle = rclcpp_action::ClientGoalHandle<Freedrive>;
     using ResetGoalHandle = rclcpp_action::ClientGoalHandle<Reset>;
 
-    using Activate3Dscan = octa_ros::srv::Activate3Dscan;
-    using Deactivate3Dscan = octa_ros::srv::Deactivate3Dscan;
-    using DeactivateFocus = octa_ros::srv::DeactivateFocus;
-
     explicit CoordinatorNode(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
         : Node("coordinator_node",
-               // options
                rclcpp::NodeOptions(options)
                    .automatically_declare_parameters_from_overrides(true)) {}
 
@@ -94,17 +94,17 @@ class CoordinatorNode : public rclcpp::Node {
         }
 
         {
-            activate_3d_srv_ = create_service<Activate3Dscan>(
-                "activate_3d_scan",
-                std::bind(&CoordinatorNode::Activate3DscanCallback, this,
+            scan_3d_srv_ = create_service<Scan3d>(
+                "scan_3d",
+                std::bind(&CoordinatorNode::scan3dCallback, this,
                           std::placeholders::_1, std::placeholders::_2));
-            deactivate_3d_srv_ = create_service<Deactivate3Dscan>(
-                "deactivate_3d_scan",
-                std::bind(&CoordinatorNode::Deactivate3DscanCallback, this,
-                          std::placeholders::_1, std::placeholders::_2));
-            deactivate_focus_srv_ = create_service<DeactivateFocus>(
+            deactivate_focus_srv_ = create_service<std_srvs::srv::Trigger>(
                 "deactivate_focus",
-                std::bind(&CoordinatorNode::DeactivateFocusCallback, this,
+                std::bind(&CoordinatorNode::deactivateFocusCallback, this,
+                          std::placeholders::_1, std::placeholders::_2));
+            capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
+                "capture_background",
+                std::bind(&CoordinatorNode::captureBackgroundCallback, this,
                           std::placeholders::_1, std::placeholders::_2));
         }
 
@@ -191,13 +191,18 @@ class CoordinatorNode : public rclcpp::Node {
             std::bind(&CoordinatorNode::publisherCallback, this));
 
         focus_action_client_ =
-            rclcpp_action::create_client<Focus>(this, "focus_action");
+            rclcpp_action::create_client<FocusAction>(this, "focus_action");
         move_z_angle_action_client_ = rclcpp_action::create_client<MoveZAngle>(
             this, "move_z_angle_action");
         freedrive_action_client_ =
             rclcpp_action::create_client<Freedrive>(this, "freedrive_action");
         reset_action_client_ =
             rclcpp_action::create_client<Reset>(this, "reset_action");
+
+        img_subscriber_ = create_subscription<octa_ros::msg::Img>(
+            "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
+            std::bind(&CoordinatorNode::imageCallback, this,
+                      std::placeholders::_1));
 
         main_loop_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5),
@@ -226,7 +231,7 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
   private:
-    rclcpp_action::Client<Focus>::SharedPtr focus_action_client_;
+    rclcpp_action::Client<FocusAction>::SharedPtr focus_action_client_;
     rclcpp_action::Client<MoveZAngle>::SharedPtr move_z_angle_action_client_;
     rclcpp_action::Client<Freedrive>::SharedPtr freedrive_action_client_;
     rclcpp_action::Client<Reset>::SharedPtr reset_action_client_;
@@ -238,9 +243,9 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr sub_handle_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cancel_handle_;
 
-    rclcpp::Service<Activate3Dscan>::SharedPtr activate_3d_srv_;
-    rclcpp::Service<Deactivate3Dscan>::SharedPtr deactivate_3d_srv_;
-    rclcpp::Service<DeactivateFocus>::SharedPtr deactivate_focus_srv_;
+    rclcpp::Service<Scan3d>::SharedPtr scan_3d_srv_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr deactivate_focus_srv_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
 
     rclcpp::TimerBase::SharedPtr pub_timer_;
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
@@ -263,7 +268,12 @@ class CoordinatorNode : public rclcpp::Node {
     bool success_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
-    bool changed_ = false;
+
+    rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr img_subscriber_;
+    std::mutex img_mutex_;
+    std::condition_variable img_cv_;
+    cv::Mat img_;
+    bool capture_enabled_ = false;
 
     // Publisher fields
     std::string msg_ = "idle";
@@ -348,6 +358,11 @@ class CoordinatorNode : public rclcpp::Node {
         old_sub_msg_ = *msg;
     }
 
+    void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        cancel_action_ = msg->data;
+    }
+
     void publisherCallback() {
         octa_ros::msg::Robotdata msg;
         msg.msg = msg_;
@@ -372,6 +387,21 @@ class CoordinatorNode : public rclcpp::Node {
 
         pub_handle_->publish(msg);
         old_pub_msg_ = msg;
+    }
+
+    void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
+        if (!capture_enabled_)
+            return;
+        const int width_ = 500;
+        const int height_ = 512;
+        RCLCPP_INFO(get_logger(), "Captured New Background Image");
+        cv::Mat new_img(height_, width_, CV_8UC1);
+        std::copy(msg->img.begin(), msg->img.end(), new_img.data);
+        {
+            std::lock_guard<std::mutex> lock(img_mutex_);
+            img_ = new_img;
+        }
+        img_cv_.notify_all();
     }
 
     void mainLoop() {
@@ -507,12 +537,12 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void sendFocusGoal() {
-        Focus::Goal goal_msg;
+        FocusAction::Goal goal_msg;
         goal_msg.angle_tolerance = angle_tolerance_;
         goal_msg.z_tolerance = z_tolerance_;
         goal_msg.z_height = z_height_;
 
-        auto options = rclcpp_action::Client<Focus>::SendGoalOptions();
+        auto options = rclcpp_action::Client<FocusAction>::SendGoalOptions();
         options.result_callback =
             [this](const FocusGoalHandle::WrappedResult &result) {
                 switch (result.code) {
@@ -534,7 +564,7 @@ class CoordinatorNode : public rclcpp::Node {
 
         options.feedback_callback =
             [this](FocusGoalHandle::SharedPtr,
-                   const std::shared_ptr<const Focus::Feedback> fb) {
+                   const std::shared_ptr<const FocusAction::Feedback> fb) {
                 msg_ = std::format("Focus progress => {}\n", fb->progress);
                 msg_ += fb->debug_msg.c_str();
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
@@ -652,60 +682,76 @@ class CoordinatorNode : public rclcpp::Node {
         reset_action_client_->async_send_goal(goal_msg, options);
     }
 
-    void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
-        std::lock_guard<std::mutex> lock(data_mutex_);
-        cancel_action_ = msg->data;
+    cv::Mat get_img() {
+        std::unique_lock<std::mutex> lock(img_mutex_);
+        img_.release();
+        capture_enabled_ = true;
+        if (!img_cv_.wait_for(lock, std::chrono::seconds(5),
+                              [this] { return !img_.empty(); })) {
+            RCLCPP_WARN(get_logger(), "Timed out waiting for new image");
+        }
+        capture_enabled_ = false;
+        return img_.clone();
     }
 
-    void Activate3DscanCallback(
-        [[maybe_unused]] const std::shared_ptr<Activate3Dscan::Request> request,
-        std::shared_ptr<Activate3Dscan::Response> response) {
+    void scan3dCallback(const std::shared_ptr<Scan3d::Request> request,
+                        std::shared_ptr<Scan3d::Response> response) {
         if (!triggered_service_) {
-            scan_3d_ = true;
+            scan_3d_ = request->activate;
             trigger_apply_config();
             triggered_service_ = true;
         }
-        if (scan_3d_read_) {
-            // wait for scan to actually trigger
-            rclcpp::sleep_for(std::chrono::milliseconds(1000));
-            response->done = true;
-            triggered_service_ = false;
+        if (request->activate) {
+            if (scan_3d_read_) {
+                // wait for scan to actually trigger
+                rclcpp::sleep_for(std::chrono::milliseconds(1000));
+                response->success = true;
+                triggered_service_ = false;
+            } else {
+                response->success = false;
+            }
         } else {
-            response->done = false;
+            if (!scan_3d_read_) {
+                response->success = true;
+                triggered_service_ = false;
+            } else {
+                response->success = false;
+            }
         }
     }
 
-    void Deactivate3DscanCallback(
-        [[maybe_unused]] const std::shared_ptr<Deactivate3Dscan::Request>
+    void deactivateFocusCallback(
+        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
             request,
-        std::shared_ptr<Deactivate3Dscan::Response> response) {
-        if (!triggered_service_) {
-            scan_3d_ = false;
-            trigger_apply_config();
-            triggered_service_ = true;
-        }
-        if (!scan_3d_read_) {
-            response->done = true;
-            triggered_service_ = false;
-        } else {
-            response->done = false;
-        }
-    }
-
-    void DeactivateFocusCallback(
-        [[maybe_unused]] const std::shared_ptr<DeactivateFocus::Request>
-            request,
-        std::shared_ptr<DeactivateFocus::Response> response) {
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         if (!triggered_service_) {
             end_state_ = true;
             trigger_apply_config();
             triggered_service_ = true;
         }
         if (!autofocus_) {
-            response->done = true;
+            response->success = true;
             triggered_service_ = false;
         } else {
-            response->done = false;
+            response->success = false;
+        }
+    }
+
+    void captureBackgroundCallback(
+        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
+            request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+        cv::Mat frame = get_img();
+        if (!frame.empty()) {
+            std::string pkg_share =
+                ament_index_cpp::get_package_share_directory("octa_ros");
+            std::string bg_path = pkg_share + "/config/bg.jpg";
+            cv::imwrite(bg_path.c_str(), frame);
+            response->success = true;
+        } else {
+            RCLCPP_INFO(get_logger(),
+                        "No image captured – background not saved");
+            response->success = false;
         }
     }
 };

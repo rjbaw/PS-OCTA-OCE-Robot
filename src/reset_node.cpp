@@ -51,7 +51,7 @@ class ResetActionServer : public rclcpp::Node {
         publisher_ = this->create_publisher<std_msgs::msg::String>(
             "/urscript_interface/script_command", qos);
         service_capture_background_ =
-            create_client<std_srvs::srv::Trigger>("deactivate_focus");
+            create_client<std_srvs::srv::Trigger>("capture_background");
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
         tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
@@ -206,10 +206,6 @@ class ResetActionServer : public rclcpp::Node {
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
                 shared_from_this(),
                 {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
-        // auto stop_on_first =
-        //     [](const PlanningComponent::PlanSolutions &sols,
-        //        const auto &) { return sols.hasSuccessfulSolution();
-        //        };
         auto choose_shortest =
             [](const std::vector<planning_interface::MotionPlanResponse>
                    &sols) {
@@ -241,9 +237,6 @@ class ResetActionServer : public rclcpp::Node {
             //     tem_->waitForExecution();
             // }
 
-            bool execute_success =
-                moveit_cpp_->execute(plan_solution.trajectory);
-
             // moveit_msgs::msg::RobotTrajectory trajectory_msg;
             // plan_solution.trajectory->getRobotTrajectoryMsg(trajectory_msg);
             // tem_->push(trajectory_msg);
@@ -258,6 +251,9 @@ class ResetActionServer : public rclcpp::Node {
             // bool execute_success =
             //     status ==
             //     moveit_controller_manager::ExecutionStatus::SUCCEEDED;
+
+            bool execute_success =
+                moveit_cpp_->execute(plan_solution.trajectory);
 
             if (execute_success) {
                 RCLCPP_INFO(get_logger(), "Execute Success!");
@@ -310,7 +306,7 @@ class ResetActionServer : public rclcpp::Node {
             }
         }
 
-        call_capturebackground();
+        call_capture_background();
         result->success = true;
         result->status = "Reset action completed successfully";
         if (goal_handle->is_active()) {
@@ -324,7 +320,7 @@ class ResetActionServer : public rclcpp::Node {
         active_goal_handle_.reset();
     }
 
-    bool call_capturebackground() {
+    bool call_capture_background() {
         if (!service_capture_background_->wait_for_service(0s))
             return false;
 
