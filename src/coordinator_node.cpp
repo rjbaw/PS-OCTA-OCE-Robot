@@ -31,12 +31,8 @@
 #include <octa_ros/action/move_z_angle.hpp>
 #include <octa_ros/action/reset.hpp>
 
-#include <octa_ros/msg/img.hpp>
 #include <octa_ros/srv/scan3d.hpp>
-#include <opencv2/opencv.hpp>
 #include <std_srvs/srv/trigger.hpp>
-
-#include <ament_index_cpp/get_package_share_directory.hpp>
 
 enum class UserAction {
     None,
@@ -101,10 +97,6 @@ class CoordinatorNode : public rclcpp::Node {
             deactivate_focus_srv_ = create_service<std_srvs::srv::Trigger>(
                 "deactivate_focus",
                 std::bind(&CoordinatorNode::deactivateFocusCallback, this,
-                          std::placeholders::_1, std::placeholders::_2));
-            capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
-                "capture_background",
-                std::bind(&CoordinatorNode::captureBackgroundCallback, this,
                           std::placeholders::_1, std::placeholders::_2));
         }
 
@@ -199,11 +191,6 @@ class CoordinatorNode : public rclcpp::Node {
         reset_action_client_ =
             rclcpp_action::create_client<Reset>(this, "reset_action");
 
-        img_subscriber_ = create_subscription<octa_ros::msg::Img>(
-            "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
-            std::bind(&CoordinatorNode::imageCallback, this,
-                      std::placeholders::_1));
-
         main_loop_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5),
             std::bind(&CoordinatorNode::mainLoop, this));
@@ -245,7 +232,6 @@ class CoordinatorNode : public rclcpp::Node {
 
     rclcpp::Service<Scan3d>::SharedPtr scan_3d_srv_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr deactivate_focus_srv_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
 
     rclcpp::TimerBase::SharedPtr pub_timer_;
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
@@ -268,12 +254,6 @@ class CoordinatorNode : public rclcpp::Node {
     bool success_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
-
-    rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr img_subscriber_;
-    std::mutex img_mutex_;
-    std::condition_variable img_cv_;
-    cv::Mat img_;
-    bool capture_enabled_ = false;
 
     // Publisher fields
     std::string msg_ = "idle";
@@ -387,21 +367,6 @@ class CoordinatorNode : public rclcpp::Node {
 
         pub_handle_->publish(msg);
         old_pub_msg_ = msg;
-    }
-
-    void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        if (!capture_enabled_)
-            return;
-        const int width_ = 500;
-        const int height_ = 512;
-        RCLCPP_INFO(get_logger(), "Captured New Background Image");
-        cv::Mat new_img(height_, width_, CV_8UC1);
-        std::copy(msg->img.begin(), msg->img.end(), new_img.data);
-        {
-            std::lock_guard<std::mutex> lock(img_mutex_);
-            img_ = new_img;
-        }
-        img_cv_.notify_all();
     }
 
     void mainLoop() {
@@ -682,18 +647,6 @@ class CoordinatorNode : public rclcpp::Node {
         reset_action_client_->async_send_goal(goal_msg, options);
     }
 
-    cv::Mat get_img() {
-        std::unique_lock<std::mutex> lock(img_mutex_);
-        img_.release();
-        capture_enabled_ = true;
-        if (!img_cv_.wait_for(lock, std::chrono::seconds(5),
-                              [this] { return !img_.empty(); })) {
-            RCLCPP_WARN(get_logger(), "Timed out waiting for new image");
-        }
-        capture_enabled_ = false;
-        return img_.clone();
-    }
-
     void scan3dCallback(const std::shared_ptr<Scan3d::Request> request,
                         std::shared_ptr<Scan3d::Response> response) {
         if (!triggered_service_) {
@@ -733,24 +686,6 @@ class CoordinatorNode : public rclcpp::Node {
             response->success = true;
             triggered_service_ = false;
         } else {
-            response->success = false;
-        }
-    }
-
-    void captureBackgroundCallback(
-        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
-            request,
-        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        cv::Mat frame = get_img();
-        if (!frame.empty()) {
-            std::string pkg_share =
-                ament_index_cpp::get_package_share_directory("octa_ros");
-            std::string bg_path = pkg_share + "/config/bg.jpg";
-            cv::imwrite(bg_path.c_str(), frame);
-            response->success = true;
-        } else {
-            RCLCPP_INFO(get_logger(),
-                        "No image captured – background not saved");
             response->success = false;
         }
     }

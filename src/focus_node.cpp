@@ -27,6 +27,8 @@
 #include <octa_ros/srv/scan3d.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
 #include "process_img.hpp"
 
 using namespace std::chrono_literals;
@@ -87,13 +89,6 @@ class FocusActionServer : public rclcpp::Node {
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
-        // auto psm_const = moveit_cpp_->getPlanningSceneMonitor();
-        // auto psm = std::const_pointer_cast<
-        //     planning_scene_monitor::PlanningSceneMonitor>(psm_const);
-        // psm->requestPlanningSceneState();
-        // psm->updateFrameTransforms();
-        // psm->startSceneMonitor();
-
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
@@ -108,6 +103,11 @@ class FocusActionServer : public rclcpp::Node {
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
         service_deactivate_focus_ =
             create_client<std_srvs::srv::Trigger>("deactivate_focus");
+
+        capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
+            "capture_background",
+            std::bind(&FocusActionServer::captureBackgroundCallback, this,
+                      std::placeholders::_1, std::placeholders::_2));
     }
 
   private:
@@ -148,6 +148,7 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp::Client<Scan3d>::SharedPtr service_scan_3d_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr service_deactivate_focus_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
 
     double roll_ = 0.0;
     double pitch_ = 0.0;
@@ -597,6 +598,24 @@ class FocusActionServer : public rclcpp::Node {
         goal_handle->succeed(result);
         img_timer_->cancel();
         RCLCPP_INFO(get_logger(), "Focus action completed successfully.");
+    }
+
+    void captureBackgroundCallback(
+        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
+            request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+        cv::Mat frame = get_img();
+        if (!frame.empty()) {
+            std::string pkg_share =
+                ament_index_cpp::get_package_share_directory("octa_ros");
+            std::string bg_path = pkg_share + "/config/bg.jpg";
+            cv::imwrite(bg_path.c_str(), frame);
+            response->success = true;
+        } else {
+            RCLCPP_INFO(get_logger(),
+                        "No image captured – background not saved");
+            response->success = false;
+        }
     }
 };
 
