@@ -297,6 +297,19 @@ class CoordinatorNode : public rclcpp::Node {
         //     apply_timer_ = this->create_wall_timer(duration, callback);
         // }
 
+        // apply_config_ = true;
+        // if (apply_timer_) {
+        //     apply_timer_->cancel();
+        //     apply_timer_.reset();
+        // }
+        // std::weak_ptr<rclcpp::TimerBase> weak_timer;
+        // apply_timer_ = create_wall_timer(300ms, [this, weak_timer]() {
+        //     if (auto t = weak_timer.lock())
+        //         t->cancel();
+        //     apply_config_ = false;
+        // });
+        // weak_timer = apply_timer_;
+
         // if (!apply_timer_) {
         //     auto callback = [this]() {
         //         if (apply_config_) {

@@ -250,8 +250,12 @@ class ResetActionServer : public rclcpp::Node {
             //     status ==
             //     moveit_controller_manager::ExecutionStatus::SUCCEEDED;
 
-            bool execute_success =
+            auto execute_status =
                 moveit_cpp_->execute(plan_solution.trajectory);
+
+            auto execute_success =
+                (execute_status ==
+                 moveit_controller_manager::ExecutionStatus::SUCCEEDED);
 
             if (execute_success) {
                 RCLCPP_INFO(get_logger(), "Execute Success!");
