@@ -462,7 +462,7 @@ class FocusActionServer : public rclcpp::Node {
             rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
             // dz_ = 0;
-            dz_ = (z_height_ - center[1]) / (px_per_mm * 1000.0);
+            dz_ = -(z_height_ - center[1]) / (px_per_mm * 1000.0);
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;

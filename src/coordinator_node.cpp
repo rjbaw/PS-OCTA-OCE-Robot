@@ -287,47 +287,27 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr apply_timer_;
 
     void trigger_apply_config() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(300);
-        // if (!apply_config_) {
-        //     apply_config_ = true;
-        //     auto callback = [this]() {
-        //         apply_config_ = false;
-        //         apply_timer_->cancel();
-        //     };
-        //     apply_timer_ = this->create_wall_timer(duration, callback);
-        // }
-
-        // apply_config_ = true;
-        // if (apply_timer_) {
-        //     apply_timer_->cancel();
-        //     apply_timer_.reset();
-        // }
-        // std::weak_ptr<rclcpp::TimerBase> weak_timer;
-        // apply_timer_ = create_wall_timer(300ms, [this, weak_timer]() {
-        //     if (auto t = weak_timer.lock())
-        //         t->cancel();
-        //     apply_config_ = false;
-        // });
-        // weak_timer = apply_timer_;
-
-        // if (!apply_timer_) {
-        //     auto callback = [this]() {
-        //         if (apply_config_) {
-        //             apply_config_ = false;
-        //         }
-        //     };
-        //     apply_timer_ = this->create_wall_timer(duration, callback);
-        // }
-        // apply_config_ = true;
-
+        std::chrono::milliseconds duration = std::chrono::milliseconds(10);
         apply_config_ = true;
         if (apply_timer_) {
             apply_timer_->cancel();
             apply_timer_.reset();
         }
-        auto callback = [this]() { apply_config_ = false; };
-        apply_timer_ = this->create_wall_timer(std::chrono::milliseconds(300),
-                                               callback, nullptr, true);
+        std::weak_ptr<rclcpp::TimerBase> weak_timer;
+        apply_timer_ = create_wall_timer(duration, [this, weak_timer]() {
+            if (auto t = weak_timer.lock())
+                t->cancel();
+            apply_config_ = false;
+        });
+        weak_timer = apply_timer_;
+
+        //apply_config_ = true;
+        //if (apply_timer_) {
+        //    apply_timer_->cancel();
+        //    apply_timer_.reset();
+        //}
+        //auto callback = [this]() { apply_config_ = false; };
+        //apply_timer_ = this->create_wall_timer(duration, callback, nullptr, true);
     }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
@@ -450,6 +430,7 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Freedrive Mode ON";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Freedrive;
+		    trigger_apply_config();
                 }
             } else {
                 sendFreedriveGoal(false);
@@ -457,11 +438,13 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
+		trigger_apply_config();
             }
             break;
         case UserAction::Reset:
             if (reset_) {
                 if (previous_action_ != current_action_) {
+                    apply_config_ = true;
                     angle_ = 0.0;
                     circle_state_ = 1;
                     msg_ = "[Action] Reset to default position. It may take "
@@ -474,7 +457,9 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
+                apply_config_ = false;
             }
+	    trigger_apply_config();
             break;
         case UserAction::Focus:
             if (autofocus_) {
@@ -529,6 +514,7 @@ class CoordinatorNode : public rclcpp::Node {
             }
             break;
         case UserAction::None:
+            trigger_apply_config();
             break;
         }
     }
@@ -689,6 +675,7 @@ class CoordinatorNode : public rclcpp::Node {
         if (request->activate) {
             if (scan_3d_read_) {
                 // wait for scan to actually trigger
+                trigger_apply_config();
                 rclcpp::sleep_for(std::chrono::milliseconds(1000));
                 response->success = true;
                 triggered_service_ = false;
@@ -697,6 +684,7 @@ class CoordinatorNode : public rclcpp::Node {
             }
         } else {
             if (!scan_3d_read_) {
+                trigger_apply_config();
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -717,6 +705,7 @@ class CoordinatorNode : public rclcpp::Node {
         if (!autofocus_) {
             response->success = true;
             triggered_service_ = false;
+	    end_state_ = false;
         } else {
             response->success = false;
         }
