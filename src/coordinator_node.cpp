@@ -288,14 +288,33 @@ class CoordinatorNode : public rclcpp::Node {
 
     void trigger_apply_config() {
         std::chrono::milliseconds duration = std::chrono::milliseconds(300);
-        if (!apply_config_) {
-            apply_config_ = true;
-            auto callback = [this]() {
-                apply_config_ = false;
-                apply_timer_->cancel();
-            };
-            apply_timer_ = this->create_wall_timer(duration, callback);
+        // if (!apply_config_) {
+        //     apply_config_ = true;
+        //     auto callback = [this]() {
+        //         apply_config_ = false;
+        //         apply_timer_->cancel();
+        //     };
+        //     apply_timer_ = this->create_wall_timer(duration, callback);
+        // }
+
+        // if (!apply_timer_) {
+        //     auto callback = [this]() {
+        //         if (apply_config_) {
+        //             apply_config_ = false;
+        //         }
+        //     };
+        //     apply_timer_ = this->create_wall_timer(duration, callback);
+        // }
+        // apply_config_ = true;
+
+        apply_config_ = true;
+        if (apply_timer_) {
+            apply_timer_->cancel();
+            apply_timer_.reset();
         }
+        auto callback = [this]() { apply_config_ = false; };
+        apply_timer_ = this->create_wall_timer(std::chrono::milliseconds(300),
+                                               callback, nullptr, true);
     }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
