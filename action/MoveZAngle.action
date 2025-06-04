@@ -6,7 +6,8 @@ float64 angle
 float64 radius
 ---
 # Result
-string result
+bool success
 ---
 # Feedback
+string status
 float64 current_z_angle

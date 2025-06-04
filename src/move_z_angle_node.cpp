@@ -172,7 +172,10 @@ class MoveZAngleActionServer : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle);
 
         if (goal_handle->is_canceling()) {
-            result->result = "MoveZAngle was canceled before starting.";
+            feedback->status = "MoveZAngle was canceled before starting.";
+            feedback->current_z_angle = 0.0;
+            result->success = false;
+            goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
         }
@@ -186,7 +189,6 @@ class MoveZAngleActionServer : public rclcpp::Node {
         target_pose.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
                                           ->getPlanningScene()
                                           ->getPlanningFrame();
-        ;
         target_pose.pose = tf2::toMsg(current_pose);
 
         tf2::Quaternion target_q;
@@ -209,15 +211,22 @@ class MoveZAngleActionServer : public rclcpp::Node {
         planning_component_->setGoal(target_pose, "tcp");
 
         if (goal_handle->is_canceling()) {
-            result->result = "Move Z Angle was canceled before planning.";
+            feedback->status = "Move Z Angle was canceled before planning.";
+            feedback->current_z_angle = 0.0;
+            result->success = false;
+            goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
         }
 
+        // auto req =
+        //     moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
+        //         shared_from_this(),
+        //         {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
+
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(),
-                {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
+                shared_from_this(), {"pilz_ptp", "pilz_lin"});
 
         // auto stop_on_first =
         //     [](const PlanningComponent::PlanSolutions &sols,
@@ -239,13 +248,23 @@ class MoveZAngleActionServer : public rclcpp::Node {
         if (plan_solution.error_code.val !=
             moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
             RCLCPP_WARN(get_logger(), "Planning failed!");
-            result->result = "Planning failed!";
+            feedback->status = "Planning failed!";
+            feedback->current_z_angle = 0.0;
+            result->success = false;
+            goal_handle->publish_feedback(feedback);
             goal_handle->abort(result);
             return;
         }
 
+        feedback->status = "Planning succeeded; starting execution.";
+        feedback->current_z_angle = 0.0;
+        goal_handle->publish_feedback(feedback);
+
         if (goal_handle->is_canceling()) {
-            result->result = "Canceled before execution.";
+            feedback->status = "Canceled before execution.";
+            feedback->current_z_angle = 0.0;
+            result->success = false;
+            goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
         }
@@ -253,14 +272,18 @@ class MoveZAngleActionServer : public rclcpp::Node {
         bool execute_success = moveit_cpp_->execute(plan_solution.trajectory);
         if (!execute_success) {
             RCLCPP_ERROR(get_logger(), "Execution failed!");
-            result->result = "Execution failed!";
+            feedback->status = "Execution failed!";
+            feedback->current_z_angle = 0.0;
+            result->success = false;
+            goal_handle->publish_feedback(feedback);
             goal_handle->abort(result);
             return;
         }
 
-        feedback->current_z_angle = target_angle;
+        feedback->status = "Move Z Angle completed successfully!";
+        feedback->current_z_angle = angle_;
+        result->success = true;
         goal_handle->publish_feedback(feedback);
-        result->result = "Move Z Angle completed successfully!";
         goal_handle->succeed(result);
         RCLCPP_INFO(get_logger(), "Move Z Angle done.");
     }

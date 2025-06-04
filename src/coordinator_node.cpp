@@ -254,6 +254,8 @@ class CoordinatorNode : public rclcpp::Node {
     bool success_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
+    bool move_z_success_ = true;
+    bool move_z_in_progress_ = false;
 
     // Publisher fields
     std::string msg_ = "idle";
@@ -301,13 +303,14 @@ class CoordinatorNode : public rclcpp::Node {
         });
         weak_timer = apply_timer_;
 
-        //apply_config_ = true;
-        //if (apply_timer_) {
-        //    apply_timer_->cancel();
-        //    apply_timer_.reset();
-        //}
-        //auto callback = [this]() { apply_config_ = false; };
-        //apply_timer_ = this->create_wall_timer(duration, callback, nullptr, true);
+        // apply_config_ = true;
+        // if (apply_timer_) {
+        //     apply_timer_->cancel();
+        //     apply_timer_.reset();
+        // }
+        // auto callback = [this]() { apply_config_ = false; };
+        // apply_timer_ = this->create_wall_timer(duration, callback, nullptr,
+        // true);
     }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
@@ -430,7 +433,7 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Freedrive Mode ON";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Freedrive;
-		    trigger_apply_config();
+                    trigger_apply_config();
                 }
             } else {
                 sendFreedriveGoal(false);
@@ -438,7 +441,7 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
-		trigger_apply_config();
+                trigger_apply_config();
             }
             break;
         case UserAction::Reset:
@@ -459,7 +462,7 @@ class CoordinatorNode : public rclcpp::Node {
                 previous_action_ = UserAction::None;
                 apply_config_ = false;
             }
-	    trigger_apply_config();
+            trigger_apply_config();
             break;
         case UserAction::Focus:
             if (autofocus_) {
@@ -500,17 +503,21 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendMoveZAngleGoal(yaw_);
-                if (yaw_ > 0.0) {
-                    circle_state_++;
-                } else {
-                    circle_state_--;
+                if (move_z_success_) {
+                    if (yaw_ > 0.0) {
+                        circle_state_++;
+                    } else {
+                        circle_state_--;
+                    }
+                    angle_ += yaw_;
+                    if (angle_ == 0) {
+                        circle_state_ = 1;
+                    }
+                    move_z_in_progress_ = false;
+                    move_z_success_ = false;
+                    current_action_ = UserAction::None;
+                    previous_action_ = UserAction::None;
                 }
-                angle_ += yaw_;
-                if (angle_ == 0) {
-                    circle_state_ = 1;
-                }
-                current_action_ = UserAction::None;
-                previous_action_ = UserAction::None;
             }
             break;
         case UserAction::None:
@@ -557,6 +564,17 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void sendMoveZAngleGoal(double yaw) {
+        {
+            std::lock_guard<std::mutex> _(data_mutex_);
+
+            if (move_z_in_progress_) {
+                RCLCPP_DEBUG(this->get_logger(), "Goal is already in progress");
+                return;
+            }
+            move_z_in_progress_ = true;
+            move_z_success_ = false;
+        }
+
         MoveZAngle::Goal goal_msg;
         goal_msg.target_angle = yaw;
         goal_msg.radius = radius_;
@@ -565,21 +583,24 @@ class CoordinatorNode : public rclcpp::Node {
         auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
         options.result_callback =
             [this](const MoveZGoalHandle::WrappedResult &result) {
+                std::lock_guard<std::mutex> lock(data_mutex_);
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                    // msg = "Planning Success!";
-                    // RCLCPP_INFO(logger, msg.c_str());
-
+                    move_z_success_ = true;
+                    move_z_in_progress_ = false;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
+                    move_z_in_progress_ = false;
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
+                    move_z_in_progress_ = false;
                     break;
                 default:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
+                    move_z_in_progress_ = false;
                     break;
                 }
             };
@@ -588,7 +609,7 @@ class CoordinatorNode : public rclcpp::Node {
             [this](MoveZGoalHandle::SharedPtr,
                    const std::shared_ptr<const MoveZAngle::Feedback> fb) {
                 RCLCPP_INFO(this->get_logger(),
-                            "MoveZAngle feedback => current_z=%.2f",
+                            "MoveZAngle feedback => target_angle_z=%.2f",
                             fb->current_z_angle);
             };
 
@@ -632,7 +653,7 @@ class CoordinatorNode : public rclcpp::Node {
 
     void sendResetGoal() {
         Reset::Goal goal_msg;
-        goal_msg.reset = true; // or if your action doesn't need fields, omit
+        goal_msg.reset = true;
 
         auto options = rclcpp_action::Client<Reset>::SendGoalOptions();
         options.result_callback =
@@ -705,7 +726,7 @@ class CoordinatorNode : public rclcpp::Node {
         if (!autofocus_) {
             response->success = true;
             triggered_service_ = false;
-	    end_state_ = false;
+            end_state_ = false;
         } else {
             response->success = false;
         }

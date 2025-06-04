@@ -6,7 +6,7 @@ float64 z_tolerance
 float64 z_height
 ---
 # Result
-string result
+string status
 ---
 # Feedback
 string progress
