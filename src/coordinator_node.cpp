@@ -254,8 +254,6 @@ class CoordinatorNode : public rclcpp::Node {
     bool success_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
-    bool move_z_success_ = true;
-    bool move_z_in_progress_ = false;
 
     // Publisher fields
     std::string msg_ = "idle";
@@ -433,7 +431,7 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Freedrive Mode ON";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Freedrive;
-                    trigger_apply_config();
+                    //trigger_apply_config();
                 }
             } else {
                 sendFreedriveGoal(false);
@@ -441,7 +439,7 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
-                trigger_apply_config();
+                //trigger_apply_config();
             }
             break;
         case UserAction::Reset:
@@ -503,25 +501,20 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendMoveZAngleGoal(yaw_);
-                if (move_z_success_) {
-                    if (yaw_ > 0.0) {
-                        circle_state_++;
-                    } else {
-                        circle_state_--;
-                    }
-                    angle_ += yaw_;
-                    if (angle_ == 0) {
-                        circle_state_ = 1;
-                    }
-                    move_z_in_progress_ = false;
-                    move_z_success_ = false;
-                    current_action_ = UserAction::None;
-                    previous_action_ = UserAction::None;
+                if (yaw_ > 0.0) {
+                    circle_state_++;
+                } else {
+                    circle_state_--;
                 }
+                angle_ += yaw_;
+                if (angle_ == 0) {
+                    circle_state_ = 1;
+                }
+                current_action_ = UserAction::None;
+                previous_action_ = UserAction::None;
             }
             break;
         case UserAction::None:
-            trigger_apply_config();
             break;
         }
     }
@@ -564,17 +557,6 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void sendMoveZAngleGoal(double yaw) {
-        {
-            std::lock_guard<std::mutex> _(data_mutex_);
-
-            if (move_z_in_progress_) {
-                RCLCPP_DEBUG(this->get_logger(), "Goal is already in progress");
-                return;
-            }
-            move_z_in_progress_ = true;
-            move_z_success_ = false;
-        }
-
         MoveZAngle::Goal goal_msg;
         goal_msg.target_angle = yaw;
         goal_msg.radius = radius_;
@@ -587,20 +569,15 @@ class CoordinatorNode : public rclcpp::Node {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                    move_z_success_ = true;
-                    move_z_in_progress_ = false;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
-                    move_z_in_progress_ = false;
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
-                    move_z_in_progress_ = false;
                     break;
                 default:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
-                    move_z_in_progress_ = false;
                     break;
                 }
             };
@@ -690,7 +667,6 @@ class CoordinatorNode : public rclcpp::Node {
                         std::shared_ptr<Scan3d::Response> response) {
         if (!triggered_service_) {
             scan_3d_ = request->activate;
-            trigger_apply_config();
             triggered_service_ = true;
         }
         if (request->activate) {
@@ -698,6 +674,7 @@ class CoordinatorNode : public rclcpp::Node {
                 // wait for scan to actually trigger
                 trigger_apply_config();
                 rclcpp::sleep_for(std::chrono::milliseconds(1000));
+                trigger_apply_config();
                 response->success = true;
                 triggered_service_ = false;
             } else {

@@ -55,7 +55,7 @@ stop_ros() {
 	pkill -f controller
 	pkill -f moveit
 	pkill -f ros
-	rm -f core-*
+	rm -f core*
 	tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 
