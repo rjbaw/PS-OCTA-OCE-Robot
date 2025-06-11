@@ -67,7 +67,7 @@ class CoordinatorNode : public rclcpp::Node {
                    .automatically_declare_parameters_from_overrides(true)) {}
 
     void init() {
-        apply_config_ = true;
+        //apply_config_ = true;
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
@@ -458,7 +458,7 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
-                apply_config_ = false;
+                //apply_config_ = false;
             }
             trigger_apply_config();
             break;
@@ -673,8 +673,8 @@ class CoordinatorNode : public rclcpp::Node {
             if (scan_3d_read_) {
                 // wait for scan to actually trigger
                 trigger_apply_config();
-                rclcpp::sleep_for(std::chrono::milliseconds(1000));
-                trigger_apply_config();
+                //rclcpp::sleep_for(std::chrono::milliseconds(1000));
+                //trigger_apply_config();
                 response->success = true;
                 triggered_service_ = false;
             } else {

@@ -219,14 +219,14 @@ class MoveZAngleActionServer : public rclcpp::Node {
             return;
         }
 
-        // auto req =
-        //     moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-        //         shared_from_this(),
-        //         {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
-
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(), {"pilz_ptp", "pilz_lin"});
+                shared_from_this(),
+                {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
+
+        // auto req =
+        //     moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
+        //         shared_from_this(), {"pilz_ptp", "pilz_lin"});
 
         // auto stop_on_first =
         //     [](const PlanningComponent::PlanSolutions &sols,

@@ -457,7 +457,7 @@ class FocusActionServer : public rclcpp::Node {
                                                  << rotmat_eigen_);
             rotmat_tf_.getRPY(tmp_roll_, tmp_pitch_, tmp_yaw_);
             roll_ = -tmp_pitch_;
-            pitch_ = -tmp_roll_;
+            pitch_ = tmp_roll_;
             yaw_ = tmp_yaw_;
             rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
