@@ -67,7 +67,7 @@ class CoordinatorNode : public rclcpp::Node {
                    .automatically_declare_parameters_from_overrides(true)) {}
 
     void init() {
-        //apply_config_ = true;
+        // apply_config_ = true;
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
@@ -300,15 +300,6 @@ class CoordinatorNode : public rclcpp::Node {
             apply_config_ = false;
         });
         weak_timer = apply_timer_;
-
-        // apply_config_ = true;
-        // if (apply_timer_) {
-        //     apply_timer_->cancel();
-        //     apply_timer_.reset();
-        // }
-        // auto callback = [this]() { apply_config_ = false; };
-        // apply_timer_ = this->create_wall_timer(duration, callback, nullptr,
-        // true);
     }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
@@ -431,7 +422,6 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Freedrive Mode ON";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Freedrive;
-                    //trigger_apply_config();
                 }
             } else {
                 sendFreedriveGoal(false);
@@ -439,7 +429,6 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
-                //trigger_apply_config();
             }
             break;
         case UserAction::Reset:
@@ -458,7 +447,6 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
-                //apply_config_ = false;
             }
             trigger_apply_config();
             break;
@@ -671,10 +659,9 @@ class CoordinatorNode : public rclcpp::Node {
         }
         if (request->activate) {
             if (scan_3d_read_) {
-                // wait for scan to actually trigger
                 trigger_apply_config();
-                //rclcpp::sleep_for(std::chrono::milliseconds(1000));
-                //trigger_apply_config();
+                // wait for scan to actually trigger
+                rclcpp::sleep_for(std::chrono::milliseconds(50));
                 response->success = true;
                 triggered_service_ = false;
             } else {

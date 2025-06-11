@@ -47,7 +47,9 @@ class ResetActionServer : public rclcpp::Node {
             std::bind(&ResetActionServer::handle_accepted, this,
                       std::placeholders::_1));
 
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        // auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        auto qos = rclcpp::SystemDefaultsQoS{};
+
         publisher_ = this->create_publisher<std_msgs::msg::String>(
             "/urscript_interface/script_command", qos);
         service_capture_background_ =
@@ -130,8 +132,8 @@ class ResetActionServer : public rclcpp::Node {
     rclcpp_action::CancelResponse
     handle_cancel(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
         RCLCPP_INFO(get_logger(), "Reset action canceled");
-        publish_stop();
         tem_->stopExecution(true);
+        publish_stop();
         goal_handle->canceled(std::make_shared<ResetAction::Result>());
         active_goal_handle_.reset();
         return rclcpp_action::CancelResponse::ACCEPT;
@@ -163,110 +165,96 @@ class ResetActionServer : public rclcpp::Node {
     void execute(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
         auto feedback = std::make_shared<ResetAction::Feedback>();
         auto result = std::make_shared<ResetAction::Result>();
-        failed_ = false;
+
+        failed_ = false; // force urscript
 
         RCLCPP_INFO(get_logger(), "Starting Reset execution...");
         feedback->status = "Resetting... Please wait";
         goal_handle->publish_feedback(feedback);
 
-        planning_component_->setStartStateToCurrentState();
-
-        std::vector<double> joint_values = {
-            to_radian(0.0),    // shoulder_pan_joint
-            -to_radian(60.0),  // shoulder_lift_joint
-            to_radian(90.0),   // elbow_joint
-            to_radian(-120.0), // wrist_1_joint
-            to_radian(-90.0),  // wrist_2_joint
-            to_radian(-135.0), // wrist_3_joint
-        };
-        moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
-        goal_state.setToDefaultValues();
-        goal_state.setJointGroupPositions("ur_manipulator", joint_values);
-
-        moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
-        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
-        auto envelope = makeEnvelope(start_tcp,   // centre pose
-                                     0.05,        // 5 cm translation radius
-                                     M_PI / 3.0); // 60 deg rotation radius
-        // planning_component_->setPathConstraints(envelope);
-
-        // moveit_msgs::msg::Constraints env;
-        // moveit_msgs::msg::JointConstraint jc;
-        // jc.joint_name = "elbow_joint";
-        // double q0 = cur_state->getVariablePosition("elbow_joint");
-        // jc.position = q0;
-        // jc.tolerance_above = jc.tolerance_below = to_radian(10.0);
-        // jc.weight = 1.0;
-        // env.joint_constraints.push_back(jc);
-        // planning_component_->setPathConstraints(env);
-
-        planning_component_->setGoal(goal_state);
-        auto req =
-            moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(), {"stomp_joint", "ompl_rrtc"});
-        auto choose_shortest =
-            [](const std::vector<planning_interface::MotionPlanResponse>
-                   &sols) {
-                return *std::min_element(
-                    sols.begin(), sols.end(), [](const auto &a, const auto &b) {
-                        if (a && b)
-                            return robot_trajectory::pathLength(*a.trajectory) <
-                                   robot_trajectory::pathLength(*b.trajectory);
-                        return static_cast<bool>(a);
-                    });
+        if (!failed_) {
+            planning_component_->setStartStateToCurrentState();
+            std::vector<double> joint_values = {
+                to_radian(0.0),    // shoulder_pan_joint
+                -to_radian(60.0),  // shoulder_lift_joint
+                to_radian(90.0),   // elbow_joint
+                to_radian(-120.0), // wrist_1_joint
+                to_radian(-90.0),  // wrist_2_joint
+                to_radian(-135.0), // wrist_3_joint
             };
-        planning_interface::MotionPlanResponse plan_solution =
-            planning_component_->plan(req, choose_shortest);
-        planning_component_->setPathConstraints(
-            moveit_msgs::msg::Constraints());
-        if (plan_solution) {
-            if (goal_handle->is_canceling()) {
-                result->success = false;
-                result->status = "Cancel requested!";
-                goal_handle->canceled(result);
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
+            moveit::core::RobotState goal_state(moveit_cpp_->getRobotModel());
+            goal_state.setToDefaultValues();
+            goal_state.setJointGroupPositions("ur_manipulator", joint_values);
 
-            // if (tem_->getLastExecutionStatus() ==
-            //     moveit_controller_manager::ExecutionStatus::RUNNING) {
-            //     tem_->stopExecution(true);
-            //     tem_->waitForExecution();
-            // }
+            moveit::core::RobotStatePtr cur_state =
+                moveit_cpp_->getCurrentState();
+            Eigen::Isometry3d start_tcp =
+                cur_state->getGlobalLinkTransform("tcp");
+            auto envelope = makeEnvelope(start_tcp,   // centre pose
+                                         0.05,        // 5 cm translation radius
+                                         M_PI / 3.0); // 60 deg rotation radius
+            // planning_component_->setPathConstraints(envelope);
+            // moveit_msgs::msg::Constraints env;
+            // moveit_msgs::msg::JointConstraint jc;
+            // jc.joint_name = "elbow_joint";
+            // double q0 = cur_state->getVariablePosition("elbow_joint");
+            // jc.position = q0;
+            // jc.tolerance_above = jc.tolerance_below = to_radian(10.0);
+            // jc.weight = 1.0;
+            // env.joint_constraints.push_back(jc);
+            // planning_component_->setPathConstraints(env);
 
-            // moveit_msgs::msg::RobotTrajectory trajectory_msg;
-            // plan_solution.trajectory->getRobotTrajectoryMsg(trajectory_msg);
-            // tem_->push(trajectory_msg);
-            // tem_->execute(execute_callback);
-            // // tem_->waitForExecution();
-            // rclcpp::Rate rate(10);
-            // while (tem_->getLastExecutionStatus() ==
-            //        moveit_controller_manager::ExecutionStatus::RUNNING) {
-            //     rate.sleep();
-            // }
-            // auto status = tem_->getLastExecutionStatus();
-            // bool execute_success =
-            //     status ==
-            //     moveit_controller_manager::ExecutionStatus::SUCCEEDED;
+            planning_component_->setGoal(goal_state);
+            auto req = moveit_cpp::PlanningComponent::
+                MultiPipelinePlanRequestParameters(
+                    shared_from_this(), {"stomp_joint", "ompl_rrtc"});
+            auto choose_shortest =
+                [](const std::vector<planning_interface::MotionPlanResponse>
+                       &sols) {
+                    return *std::min_element(
+                        sols.begin(), sols.end(),
+                        [](const auto &a, const auto &b) {
+                            if (a && b)
+                                return robot_trajectory::pathLength(
+                                           *a.trajectory) <
+                                       robot_trajectory::pathLength(
+                                           *b.trajectory);
+                            return static_cast<bool>(a);
+                        });
+                };
+            planning_interface::MotionPlanResponse plan_solution =
+                planning_component_->plan(req, choose_shortest);
+            planning_component_->setPathConstraints(
+                moveit_msgs::msg::Constraints());
+            if (plan_solution) {
+                if (goal_handle->is_canceling()) {
+                    result->success = false;
+                    result->status = "Cancel requested!";
+                    goal_handle->canceled(result);
+                    RCLCPP_INFO(get_logger(), "Cancel requested!");
+                    planning_component_->setStartStateToCurrentState();
+                    return;
+                }
 
-            auto execute_status =
-                moveit_cpp_->execute(plan_solution.trajectory);
+                auto execute_status =
+                    moveit_cpp_->execute(plan_solution.trajectory);
 
-            auto execute_success =
-                (execute_status ==
-                 moveit_controller_manager::ExecutionStatus::SUCCEEDED);
+                auto execute_success =
+                    (execute_status ==
+                     moveit_controller_manager::ExecutionStatus::SUCCEEDED);
 
-            if (execute_success) {
-                RCLCPP_INFO(get_logger(), "Execute Success!");
+                if (execute_success) {
+                    RCLCPP_INFO(get_logger(), "Execute Success!");
+                } else {
+                    RCLCPP_INFO(get_logger(), "Execute Failed!");
+                    tem_->stopExecution(true);
+                    failed_ = true;
+                }
             } else {
-                RCLCPP_INFO(get_logger(), "Execute Failed!");
+                RCLCPP_INFO(get_logger(),
+                            "Planning failed_! Falling back to URScript.");
                 failed_ = true;
             }
-        } else {
-            RCLCPP_INFO(get_logger(),
-                        "Planning failed_! Falling back to URScript.");
-            failed_ = true;
         }
 
         if (failed_) {
@@ -281,7 +269,6 @@ class ResetActionServer : public rclcpp::Node {
             double j5 = to_radian(-135.0);
             std::ostringstream prog;
             prog << "def reset_position():\n";
-            prog << "  end_freedrive_mode()\n";
             prog << "  movej([" << j0 << ", " << j1 << ", " << j2 << ", " << j3
                  << ", " << j4 << ", " << j5 << "], " << "a=" << robot_acc
                  << ", v=" << robot_vel << ")\n";
@@ -308,6 +295,7 @@ class ResetActionServer : public rclcpp::Node {
             }
         }
 
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         call_capture_background();
         result->success = true;
         result->status = "Reset action completed successfully";

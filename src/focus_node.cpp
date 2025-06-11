@@ -111,6 +111,8 @@ class FocusActionServer : public rclcpp::Node {
     }
 
   private:
+    bool early_terminate = true;
+
     std::atomic_bool stop_requested_ = false;
     std::optional<std::thread> worker_;
 
@@ -557,6 +559,11 @@ class FocusActionServer : public rclcpp::Node {
                         moveit_cpp_->execute(plan_solution.trajectory);
                     if (execute_success) {
                         RCLCPP_INFO(get_logger(), "Execute Success!");
+                        if (early_terminate) {
+                            angle_focused_ = true;
+                            z_focused_ = true;
+                            break;
+                        }
                     } else {
                         RCLCPP_INFO(get_logger(), "Execute Failed!");
                     }
@@ -567,7 +574,7 @@ class FocusActionServer : public rclcpp::Node {
             }
         }
 
-        msg_ = "Within tolerance\n";
+        msg_ = "Within tolerance or Early termination\n";
         feedback->progress = msg_;
         goal_handle->publish_feedback(feedback);
         start = now();
