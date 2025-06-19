@@ -4,8 +4,7 @@
 bool enable
 ---
 # Result
-bool success
 string status
 ---
 # Feedback
-string status
+string debug_msgs

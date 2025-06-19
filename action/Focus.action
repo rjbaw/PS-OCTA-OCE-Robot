@@ -9,5 +9,4 @@ float64 z_height
 string status
 ---
 # Feedback
-string progress
-string debug_msg
+string debug_msgs

@@ -16,6 +16,7 @@
 
 #include <std_msgs/msg/bool.hpp>
 
+#include <action_msgs/msg/goal_status.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
@@ -190,6 +191,8 @@ class CoordinatorNode : public rclcpp::Node {
             rclcpp_action::create_client<Freedrive>(this, "freedrive_action");
         reset_action_client_ =
             rclcpp_action::create_client<Reset>(this, "reset_action");
+        service_capture_background_ =
+            create_client<std_srvs::srv::Trigger>("capture_background");
 
         main_loop_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5),
@@ -222,6 +225,8 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp_action::Client<MoveZAngle>::SharedPtr move_z_angle_action_client_;
     rclcpp_action::Client<Freedrive>::SharedPtr freedrive_action_client_;
     rclcpp_action::Client<Reset>::SharedPtr reset_action_client_;
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
+        service_capture_background_;
 
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     moveit::planning_interface::PlanningSceneInterface psi;
@@ -286,6 +291,15 @@ class CoordinatorNode : public rclcpp::Node {
 
     rclcpp::TimerBase::SharedPtr apply_timer_;
 
+    template <typename GH> bool goal_still_active(const GH &handle) {
+        if (!handle) {
+            return false;
+        }
+        auto status = handle->get_status();
+        return status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
+               status == action_msgs::msg::GoalStatus::STATUS_EXECUTING;
+    }
+
     void trigger_apply_config() {
         std::chrono::milliseconds duration = std::chrono::milliseconds(10);
         apply_config_ = true;
@@ -348,6 +362,7 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void publisherCallback() {
+        std::lock_guard<std::mutex> lock(data_mutex_);
         octa_ros::msg::Robotdata msg;
         msg.msg = msg_;
         msg.angle = angle_;
@@ -377,27 +392,35 @@ class CoordinatorNode : public rclcpp::Node {
         std::lock_guard<std::mutex> lock(data_mutex_);
 
         if (cancel_action_) {
-            if (current_action_ == UserAction::Focus) {
+            // active_focus_goal_handle_ &&
+            // !active_freedrive_goal_handle_->is_result_aware()
+            if (goal_still_active(active_focus_goal_handle_)) {
                 msg_ = "Canceling Focus action";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                focus_action_client_->async_cancel_all_goals();
+                focus_action_client_->async_cancel_goal(
+                    active_focus_goal_handle_);
+                end_state_ = true;
             }
-            if (current_action_ == UserAction::MoveZangle) {
+            if (goal_still_active(active_move_z_goal_handle_)) {
                 msg_ = "Canceling Move Z-angle action";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                move_z_angle_action_client_->async_cancel_all_goals();
+                move_z_angle_action_client_->async_cancel_goal(
+                    active_move_z_goal_handle_);
             }
-            if (current_action_ == UserAction::Freedrive) {
+            if (goal_still_active(active_freedrive_goal_handle_)) {
                 msg_ = "Canceling Free-drive";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                freedrive_action_client_->async_cancel_all_goals();
+                freedrive_action_client_->async_cancel_goal(
+                    active_freedrive_goal_handle_);
             }
-            if (current_action_ == UserAction::Reset) {
+            if (goal_still_active(active_reset_goal_handle_)) {
                 msg_ = "Canceling Reset action";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                reset_action_client_->async_cancel_all_goals();
+                reset_action_client_->async_cancel_goal(
+                    active_reset_goal_handle_);
             }
             current_action_ = UserAction::None;
+            previous_action_ = UserAction::None;
             cancel_action_ = false;
             return;
         }
@@ -419,36 +442,29 @@ class CoordinatorNode : public rclcpp::Node {
                     sendFreedriveGoal(true);
                     circle_state_ = 1;
                     angle_ = 0.0;
-                    msg_ = "[Action] Freedrive Mode ON";
+                    msg_ = "[Action] Freedrive Mode ON\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Freedrive;
                 }
             } else {
                 sendFreedriveGoal(false);
-                msg_ = "[Action] Freedrive Mode OFF";
+                msg_ = "[Action] Freedrive Mode OFF\n";
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
             }
             break;
         case UserAction::Reset:
-            if (reset_) {
-                if (previous_action_ != current_action_) {
-                    apply_config_ = true;
-                    angle_ = 0.0;
-                    circle_state_ = 1;
-                    msg_ = "[Action] Reset to default position. It may take "
-                           "some time "
-                           "please wait.";
-                    RCLCPP_INFO(get_logger(), msg_.c_str());
-                    sendResetGoal();
-                    previous_action_ = UserAction::Reset;
-                }
-            } else {
-                current_action_ = UserAction::None;
-                previous_action_ = UserAction::None;
+            if (previous_action_ != current_action_) {
+                angle_ = 0.0;
+                circle_state_ = 1;
+                msg_ = "[Action] Reset to default position. It may take "
+                       "some time "
+                       "please wait.";
+                RCLCPP_INFO(get_logger(), msg_.c_str());
+                sendResetGoal();
+                previous_action_ = UserAction::Reset;
             }
-            trigger_apply_config();
             break;
         case UserAction::Focus:
             if (autofocus_) {
@@ -466,13 +482,13 @@ class CoordinatorNode : public rclcpp::Node {
                 if (!success_) {
                     msg_ = "Canceling Focus action";
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                    focus_action_client_->async_cancel_all_goals();
+                    if (goal_still_active(active_focus_goal_handle_)) {
+                        focus_action_client_->async_cancel_goal(
+                            active_focus_goal_handle_);
+                    }
                 }
-                current_action_ = UserAction::None;
-                previous_action_ = UserAction::None;
             }
             break;
-
         case UserAction::MoveZangle:
             angle_increment_ =
                 (num_pt_ == 0) ? 0.0
@@ -489,17 +505,11 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendMoveZAngleGoal(yaw_);
-                if (yaw_ > 0.0) {
-                    circle_state_++;
-                } else {
-                    circle_state_--;
-                }
-                angle_ += yaw_;
-                if (angle_ == 0) {
+                if (std::abs(angle_) < 1e-6) {
                     circle_state_ = 1;
                 }
                 current_action_ = UserAction::None;
-                previous_action_ = UserAction::None;
+                previous_action_ = UserAction::MoveZangle;
             }
             break;
         case UserAction::None:
@@ -514,8 +524,19 @@ class CoordinatorNode : public rclcpp::Node {
         goal_msg.z_height = z_height_;
 
         auto options = rclcpp_action::Client<FocusAction>::SendGoalOptions();
+
+        options.feedback_callback =
+            [this](FocusGoalHandle::SharedPtr,
+                   const std::shared_ptr<const FocusAction::Feedback> fb) {
+                msg_ += fb->debug_msgs.c_str();
+                RCLCPP_INFO(this->get_logger(), msg_.c_str());
+            };
+
         options.result_callback =
             [this](const FocusGoalHandle::WrappedResult &result) {
+                current_action_ = UserAction::None;
+                previous_action_ = UserAction::None;
+                msg_ += result.result->status.c_str();
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
@@ -531,14 +552,19 @@ class CoordinatorNode : public rclcpp::Node {
                                 "Focus action UNKNOWN result code");
                     break;
                 }
+                active_focus_goal_handle_.reset();
             };
 
-        options.feedback_callback =
-            [this](FocusGoalHandle::SharedPtr,
-                   const std::shared_ptr<const FocusAction::Feedback> fb) {
-                msg_ = std::format("Focus progress => {}\n", fb->progress);
-                msg_ += fb->debug_msg.c_str();
-                RCLCPP_INFO(this->get_logger(), msg_.c_str());
+        options.goal_response_callback =
+            [this](FocusGoalHandle::SharedPtr goal_handle) {
+                active_focus_goal_handle_ = goal_handle;
+                if (!active_focus_goal_handle_) {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "Focus goal was rejected by server");
+                } else {
+                    RCLCPP_INFO(this->get_logger(),
+                                "Focus goal accepted; waiting for result");
+                }
             };
 
         focus_action_client_->async_send_goal(goal_msg, options);
@@ -551,11 +577,30 @@ class CoordinatorNode : public rclcpp::Node {
         goal_msg.angle = angle_;
 
         auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
+
+        options.feedback_callback =
+            [this](MoveZGoalHandle::SharedPtr,
+                   const std::shared_ptr<const MoveZAngle::Feedback> fb) {
+                RCLCPP_INFO(this->get_logger(),
+                            "MoveZAngle feedback => target_angle_z=%.2f",
+                            fb->current_z_angle);
+                msg_ += fb->debug_msgs.c_str();
+            };
+
         options.result_callback =
-            [this](const MoveZGoalHandle::WrappedResult &result) {
+            [this, yaw](const MoveZGoalHandle::WrappedResult &result) {
                 std::lock_guard<std::mutex> lock(data_mutex_);
+                current_action_ = UserAction::None;
+                previous_action_ = UserAction::None;
+                msg_ += result.result->status.c_str();
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
+                    if (yaw > 0.0) {
+                        circle_state_++;
+                    } else {
+                        circle_state_--;
+                    }
+                    angle_ += yaw;
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
@@ -568,14 +613,20 @@ class CoordinatorNode : public rclcpp::Node {
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
                     break;
                 }
+                active_move_z_goal_handle_.reset();
             };
 
-        options.feedback_callback =
-            [this](MoveZGoalHandle::SharedPtr,
-                   const std::shared_ptr<const MoveZAngle::Feedback> fb) {
-                RCLCPP_INFO(this->get_logger(),
-                            "MoveZAngle feedback => target_angle_z=%.2f",
-                            fb->current_z_angle);
+        options.goal_response_callback =
+            [this](MoveZGoalHandle::SharedPtr goal_handle) {
+                active_move_z_goal_handle_ = goal_handle;
+                if (!active_move_z_goal_handle_) {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "Move Z Angle goal was rejected by server");
+                } else {
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        "Move Z Angle goal accepted; waiting for result");
+                }
             };
 
         move_z_angle_action_client_->async_send_goal(goal_msg, options);
@@ -586,13 +637,21 @@ class CoordinatorNode : public rclcpp::Node {
         goal_msg.enable = enable;
 
         auto options = rclcpp_action::Client<Freedrive>::SendGoalOptions();
+
+        options.feedback_callback =
+            [this](FreedriveGoalHandle::SharedPtr,
+                   const std::shared_ptr<const Freedrive::Feedback> fb) {
+                msg_ += fb->debug_msgs.c_str();
+                RCLCPP_INFO(this->get_logger(), "Freedrive feedback => %s",
+                            fb->debug_msgs.c_str());
+            };
+
         options.result_callback =
             [this](const FreedriveGoalHandle::WrappedResult &result) {
+                msg_ += result.result->status.c_str();
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
-                    RCLCPP_INFO(this->get_logger(),
-                                "Freedrive result => success=%d",
-                                result.result->success);
+                    RCLCPP_INFO(this->get_logger(), "Freedrive SUCCESS");
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "Freedrive ABORTED");
@@ -604,13 +663,19 @@ class CoordinatorNode : public rclcpp::Node {
                     RCLCPP_WARN(this->get_logger(), "Freedrive UNKNOWN code");
                     break;
                 }
+                active_freedrive_goal_handle_.reset();
             };
 
-        options.feedback_callback =
-            [this](FreedriveGoalHandle::SharedPtr,
-                   const std::shared_ptr<const Freedrive::Feedback> fb) {
-                RCLCPP_INFO(this->get_logger(), "Freedrive feedback => %s",
-                            fb->status.c_str());
+        options.goal_response_callback =
+            [this](FreedriveGoalHandle::SharedPtr goal_handle) {
+                active_freedrive_goal_handle_ = goal_handle;
+                if (!active_freedrive_goal_handle_) {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 " Freedrive goal was rejected by server");
+                } else {
+                    RCLCPP_INFO(this->get_logger(),
+                                " Freedrive goal accepted; waiting for result");
+                }
             };
 
         freedrive_action_client_->async_send_goal(goal_msg, options);
@@ -621,31 +686,54 @@ class CoordinatorNode : public rclcpp::Node {
         goal_msg.reset = true;
 
         auto options = rclcpp_action::Client<Reset>::SendGoalOptions();
-        options.result_callback =
-            [this](const ResetGoalHandle::WrappedResult &result) {
-                switch (result.code) {
-                case rclcpp_action::ResultCode::SUCCEEDED:
-                    RCLCPP_INFO(this->get_logger(),
-                                "Reset result => success=%d",
-                                result.result->success);
-                    break;
-                case rclcpp_action::ResultCode::ABORTED:
-                    RCLCPP_WARN(this->get_logger(), "Reset ABORTED");
-                    break;
-                case rclcpp_action::ResultCode::CANCELED:
-                    RCLCPP_WARN(this->get_logger(), "Reset CANCELED");
-                    break;
-                default:
-                    RCLCPP_WARN(this->get_logger(), "Reset UNKNOWN code");
-                    break;
-                }
-            };
 
         options.feedback_callback =
             [this](ResetGoalHandle::SharedPtr,
                    const std::shared_ptr<const Reset::Feedback> fb) {
                 RCLCPP_INFO(this->get_logger(), "Reset feedback => %s",
-                            fb->status.c_str());
+                            fb->debug_msgs.c_str());
+                msg_ += fb->debug_msgs.c_str();
+            };
+
+        options.result_callback =
+            [this](const ResetGoalHandle::WrappedResult &result) {
+                current_action_ = UserAction::None;
+                previous_action_ = UserAction::None;
+                msg_ += result.result->status.c_str();
+                trigger_apply_config();
+                switch (result.code) {
+                case rclcpp_action::ResultCode::SUCCEEDED:
+                    if (call_capture_background()) {
+                        msg_ += "\nBackground Captured\n";
+                    }
+                    RCLCPP_INFO(this->get_logger(), "Reset SUCCESS");
+                    break;
+                case rclcpp_action::ResultCode::ABORTED:
+                    msg_ += "\nReset position abort\n";
+                    RCLCPP_WARN(this->get_logger(), "Reset ABORTED");
+                    break;
+                case rclcpp_action::ResultCode::CANCELED:
+                    msg_ += "\nReset position canceled\n";
+                    RCLCPP_WARN(this->get_logger(), "Reset CANCELED");
+                    break;
+                default:
+                    msg_ += "\nReset position unknown code\n";
+                    RCLCPP_WARN(this->get_logger(), "Reset UNKNOWN code");
+                    break;
+                }
+                active_reset_goal_handle_.reset();
+            };
+
+        options.goal_response_callback =
+            [this](ResetGoalHandle::SharedPtr goal_handle) {
+                active_reset_goal_handle_ = goal_handle;
+                if (!active_reset_goal_handle_) {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 " Reset goal was rejected by server");
+                } else {
+                    RCLCPP_INFO(this->get_logger(),
+                                " Reset goal accepted; waiting for result");
+                }
             };
 
         reset_action_client_->async_send_goal(goal_msg, options);
@@ -694,6 +782,18 @@ class CoordinatorNode : public rclcpp::Node {
         } else {
             response->success = false;
         }
+    }
+
+    bool call_capture_background() {
+        if (!service_capture_background_->wait_for_service(
+                std::chrono::milliseconds(1)))
+            return false;
+
+        auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
+        auto fut = service_capture_background_->async_send_request(req);
+        return fut.wait_for(std::chrono::milliseconds(1000)) ==
+                   std::future_status::ready &&
+               fut.get()->success;
     }
 };
 

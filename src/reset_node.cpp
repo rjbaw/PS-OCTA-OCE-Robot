@@ -7,7 +7,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <memory>
 #include <sstream>
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -47,13 +49,10 @@ class ResetActionServer : public rclcpp::Node {
             std::bind(&ResetActionServer::handle_accepted, this,
                       std::placeholders::_1));
 
-        // auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         auto qos = rclcpp::SystemDefaultsQoS{};
 
         publisher_ = this->create_publisher<std_msgs::msg::String>(
             "/urscript_interface/script_command", qos);
-        service_capture_background_ =
-            create_client<std_srvs::srv::Trigger>("capture_background");
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
         tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
@@ -64,8 +63,6 @@ class ResetActionServer : public rclcpp::Node {
   private:
     rclcpp_action::Server<ResetAction>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleResetAction> active_goal_handle_;
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
-        service_capture_background_;
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
     std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
@@ -131,17 +128,26 @@ class ResetActionServer : public rclcpp::Node {
 
     rclcpp_action::CancelResponse
     handle_cancel(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
+        if (!goal_handle->is_active()) {
+            RCLCPP_INFO(get_logger(), "Reset goal no longer active");
+            return rclcpp_action::CancelResponse::REJECT;
+        }
         RCLCPP_INFO(get_logger(), "Reset action canceled");
-        tem_->stopExecution(true);
+        if (tem_) {
+            tem_->stopExecution(true);
+        }
         publish_stop();
-        goal_handle->canceled(std::make_shared<ResetAction::Result>());
+        // goal_handle->canceled(std::make_shared<ResetAction::Result>());
         active_goal_handle_.reset();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void
     handle_accepted(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
-
+        if (active_goal_handle_ && active_goal_handle_->is_active()) {
+            active_goal_handle_->canceled(
+                std::make_shared<ResetAction::Result>());
+        }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
@@ -166,11 +172,19 @@ class ResetActionServer : public rclcpp::Node {
         auto feedback = std::make_shared<ResetAction::Feedback>();
         auto result = std::make_shared<ResetAction::Result>();
 
-        failed_ = false; // force urscript
+        failed_ = false; // true -> force urscript
 
         RCLCPP_INFO(get_logger(), "Starting Reset execution...");
-        feedback->status = "Resetting... Please wait";
+        feedback->debug_msgs = "Resetting... Please wait\n";
         goal_handle->publish_feedback(feedback);
+
+        if (goal_handle->is_canceling()) {
+            result->status = "Cancel requested!";
+            goal_handle->canceled(result);
+            RCLCPP_INFO(get_logger(), "Cancel requested!");
+            planning_component_->setStartStateToCurrentState();
+            return;
+        }
 
         if (!failed_) {
             planning_component_->setStartStateToCurrentState();
@@ -206,8 +220,8 @@ class ResetActionServer : public rclcpp::Node {
 
             planning_component_->setGoal(goal_state);
             auto req = moveit_cpp::PlanningComponent::
-                MultiPipelinePlanRequestParameters(
-                    shared_from_this(), {"stomp_joint", "ompl_rrtc"});
+                MultiPipelinePlanRequestParameters(shared_from_this(),
+                                                   {"ompl_rrtc"});
             auto choose_shortest =
                 [](const std::vector<planning_interface::MotionPlanResponse>
                        &sols) {
@@ -228,7 +242,6 @@ class ResetActionServer : public rclcpp::Node {
                 moveit_msgs::msg::Constraints());
             if (plan_solution) {
                 if (goal_handle->is_canceling()) {
-                    result->success = false;
                     result->status = "Cancel requested!";
                     goal_handle->canceled(result);
                     RCLCPP_INFO(get_logger(), "Cancel requested!");
@@ -247,7 +260,9 @@ class ResetActionServer : public rclcpp::Node {
                     RCLCPP_INFO(get_logger(), "Execute Success!");
                 } else {
                     RCLCPP_INFO(get_logger(), "Execute Failed!");
-                    tem_->stopExecution(true);
+                    if (tem_) {
+                        tem_->stopExecution(true);
+                    }
                     failed_ = true;
                 }
             } else {
@@ -282,22 +297,27 @@ class ResetActionServer : public rclcpp::Node {
                 if ((now() - start_time) > timeout) {
                     RCLCPP_ERROR(get_logger(),
                                  "No subscriber found. Aborting Reset.");
-                    result->success = false;
-                    result->status = "No URScript subscriber available";
-                    // goal_handle->abort(result);
-                    goal_handle->canceled(result);
+                    feedback->debug_msgs = "No URScript subscriber available\n";
+                    result->status = "Reset to default position failed";
+                    goal_handle->abort(result);
+                    // goal_handle->canceled(result);
                     return;
                 }
             }
             publisher_->publish(message);
-            for (int i = 0; i < 40; ++i) {
+            for (int i = 0; i < 40 && !goal_handle->is_canceling(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        call_capture_background();
-        result->success = true;
+        if (goal_handle->is_canceling()) {
+            result->status = "Cancel requested!";
+            goal_handle->canceled(result);
+            RCLCPP_INFO(get_logger(), "Cancel requested!");
+            planning_component_->setStartStateToCurrentState();
+            return;
+        }
         result->status = "Reset action completed successfully";
         if (goal_handle->is_active()) {
             if (failed_) {
@@ -308,16 +328,6 @@ class ResetActionServer : public rclcpp::Node {
         }
         RCLCPP_INFO(get_logger(), "Reset completed.");
         active_goal_handle_.reset();
-    }
-
-    bool call_capture_background() {
-        if (!service_capture_background_->wait_for_service(0s))
-            return false;
-
-        auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
-        auto fut = service_capture_background_->async_send_request(req);
-        return fut.wait_for(2s) == std::future_status::ready &&
-               fut.get()->success;
     }
 };
 

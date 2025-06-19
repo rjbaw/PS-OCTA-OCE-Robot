@@ -67,11 +67,11 @@ class FocusActionServer : public rclcpp::Node {
                // options
                rclcpp::NodeOptions(options)
                    .automatically_declare_parameters_from_overrides(true)) {}
-    ~FocusActionServer() override {
-        stop_requested_.store(true);
-        if (worker_ && worker_->joinable())
-            worker_->join();
-    }
+    // ~FocusActionServer() override {
+    //     stop_requested_.store(true);
+    //     if (worker_ && worker_->joinable())
+    //         worker_->join();
+    // }
 
     void init() {
         action_server_ = rclcpp_action::create_server<Focus>(
@@ -113,8 +113,8 @@ class FocusActionServer : public rclcpp::Node {
   private:
     bool early_terminate = true;
 
-    std::atomic_bool stop_requested_ = false;
-    std::optional<std::thread> worker_;
+    // std::atomic_bool stop_requested_ = false;
+    // std::optional<std::thread> worker_;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFocus> active_goal_handle_;
@@ -187,6 +187,10 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp_action::CancelResponse
     handle_cancel(const std::shared_ptr<GoalHandleFocus> goal_handle) {
+        if (!goal_handle->is_active()) {
+            RCLCPP_INFO(get_logger(), "Focus goal no longer active");
+            return rclcpp_action::CancelResponse::REJECT;
+        }
         auto result = std::make_shared<Focus::Result>();
         result->status = "Focus action canceled by user request";
         while (!call_scan3d(false)) {
@@ -195,11 +199,11 @@ class FocusActionServer : public rclcpp::Node {
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();
-        stop_requested_.store(true);
-        goal_handle->canceled(result);
+        // stop_requested_.store(true);
+        // goal_handle->canceled(result);
         RCLCPP_INFO(get_logger(), "Focus action canceled");
-        if (worker_ && worker_->joinable())
-            worker_->join();
+        // if (worker_ && worker_->joinable())
+        //     worker_->join();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -207,19 +211,21 @@ class FocusActionServer : public rclcpp::Node {
         auto result = std::make_shared<Focus::Result>();
         result->status = "Pre-empted by new goal";
         RCLCPP_INFO(get_logger(), "Preempting old goal...");
+
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
             active_goal_handle_->canceled(result);
         }
 
-        if (worker_ && worker_->joinable()) {
-            stop_requested_.store(true);
-            worker_->join();
-        }
+        // if (worker_ && worker_->joinable()) {
+        //     stop_requested_.store(true);
+        //     worker_->join();
+        // }
 
-        stop_requested_.store(false);
+        // stop_requested_.store(false);
         img_timer_->reset();
         active_goal_handle_ = goal_handle;
-        worker_.emplace([this, goal_handle] { execute(goal_handle); });
+        // worker_.emplace([this, goal_handle] { execute(goal_handle); });
+        std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
 
     cv::Mat get_img() {
@@ -317,54 +323,54 @@ class FocusActionServer : public rclcpp::Node {
                 (std::abs(pitch) < to_radian_(angle_tolerance)));
     }
 
-    bool publish_cancel_if_requested(
-        const std::shared_ptr<GoalHandleFocus> &goal_handle,
-        const std::shared_ptr<Focus::Result> &result) {
-        if (goal_handle->is_active() && goal_handle->is_canceling()) {
-            active_goal_handle_->canceled(result);
-            return true;
-        }
-        return false;
-    }
+    // bool publish_cancel_if_requested(
+    //     const std::shared_ptr<GoalHandleFocus> &goal_handle,
+    //     const std::shared_ptr<Focus::Result> &result) {
+    //     if (goal_handle->is_active() && goal_handle->is_canceling()) {
+    //         active_goal_handle_->canceled(result);
+    //         return true;
+    //     }
+    //     return false;
+    // }
 
     void execute(const std::shared_ptr<GoalHandleFocus> goal_handle) {
         auto feedback = std::make_shared<Focus::Feedback>();
         auto result = std::make_shared<Focus::Result>();
 
-        feedback->progress = "Unfocused";
         goal_handle->publish_feedback(feedback);
         angle_focused_ = false;
         z_focused_ = false;
 
         while (!angle_focused_ || !z_focused_) {
-            if (stop_requested_.load() || goal_handle->is_canceling()) {
-                result->status = "Cancel requested!";
-                if (!publish_cancel_if_requested(goal_handle, result)) {
-                    goal_handle->canceled(result);
-                }
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
+            // if (stop_requested_.load() || goal_handle->is_canceling()) {
+            //     result->status = "Cancel requested!";
+            //     if (!publish_cancel_if_requested(goal_handle, result)) {
+            //         goal_handle->canceled(result);
+            //     }
+            //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+            //     planning_component_->setStartStateToCurrentState();
+            //     return;
+            // }
             start = now();
             while (!call_scan3d(true)) {
-                if (stop_requested_.load() || goal_handle->is_canceling()) {
-                    result->status = "Cancel requested!";
-                    if (!publish_cancel_if_requested(goal_handle, result)) {
-                        goal_handle->canceled(result);
-                    }
-                    RCLCPP_INFO(get_logger(), "Cancel requested!");
-                    planning_component_->setStartStateToCurrentState();
-                    return;
-                }
+                // if (stop_requested_.load() || goal_handle->is_canceling()) {
+                //     result->status = "Cancel requested!";
+                //     if (!publish_cancel_if_requested(goal_handle, result)) {
+                //         goal_handle->canceled(result);
+                //     }
+                //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+                //     planning_component_->setStartStateToCurrentState();
+                //     return;
+                // }
                 if ((this->now() - start).seconds() > 5.0) {
                     RCLCPP_WARN(get_logger(),
                                 "activate_3d_scan not responding...");
                     result->status = "activate_3d_scan timed out";
-                    if (!publish_cancel_if_requested(goal_handle, result)) {
-                        // goal_handle->abort(result);
-                        goal_handle->canceled(result);
-                    }
+                    goal_handle->abort(result);
+                    // if (!publish_cancel_if_requested(goal_handle, result)) {
+                    //     goal_handle->abort(result);
+                    //     // goal_handle->canceled(result);
+                    // }
                     return;
                 }
                 rclcpp::sleep_for(10ms);
@@ -378,24 +384,28 @@ class FocusActionServer : public rclcpp::Node {
                         img_array_.push_back(frame);
                         break;
                     }
-                    if (stop_requested_.load() || goal_handle->is_canceling()) {
-                        result->status = "Cancel requested!";
-                        if (!publish_cancel_if_requested(goal_handle, result)) {
-                            // goal_handle->abort(result);
-                            goal_handle->canceled(result);
-                        }
-                        RCLCPP_INFO(get_logger(), "Cancel requested!");
-                        planning_component_->setStartStateToCurrentState();
-                        return;
-                    }
+                    // if (stop_requested_.load() ||
+                    // goal_handle->is_canceling()) {
+                    //     result->status = "Cancel requested!";
+                    //     if (!publish_cancel_if_requested(goal_handle,
+                    //     result)) {
+                    //         // goal_handle->abort(result);
+                    //         goal_handle->canceled(result);
+                    //     }
+                    //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+                    //     planning_component_->setStartStateToCurrentState();
+                    //     return;
+                    // }
                     if ((now() - start).seconds() > 5.0) {
                         RCLCPP_WARN(get_logger(),
                                     "timed out. cannot acquire image");
                         result->status = "timed out. cannot acquire image.";
-                        if (!publish_cancel_if_requested(goal_handle, result)) {
-                            // goal_handle->abort(result);
-                            goal_handle->canceled(result);
-                        }
+                        goal_handle->abort(result);
+                        // if (!publish_cancel_if_requested(goal_handle,
+                        // result)) {
+                        //     goal_handle->abort(result);
+                        //     // goal_handle->canceled(result);
+                        // }
                         return;
                     }
                     // rclcpp::sleep_for(std::chrono::milliseconds(10000));
@@ -406,24 +416,25 @@ class FocusActionServer : public rclcpp::Node {
 
             start = now();
             while (!call_scan3d(false)) {
-                if (stop_requested_.load() || goal_handle->is_canceling()) {
-                    result->status = "Cancel requested!";
-                    if (!publish_cancel_if_requested(goal_handle, result)) {
-                        // goal_handle->abort(result);
-                        goal_handle->canceled(result);
-                    }
-                    RCLCPP_INFO(get_logger(), "Cancel requested!");
-                    planning_component_->setStartStateToCurrentState();
-                    return;
-                }
+                // if (stop_requested_.load() || goal_handle->is_canceling()) {
+                //     result->status = "Cancel requested!";
+                //     if (!publish_cancel_if_requested(goal_handle, result)) {
+                //         // goal_handle->abort(result);
+                //         goal_handle->canceled(result);
+                //     }
+                //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+                //     planning_component_->setStartStateToCurrentState();
+                //     return;
+                // }
                 if ((now() - start).seconds() > 5.0) {
                     RCLCPP_WARN(get_logger(),
                                 "deactivate_3d_scan not responding…");
                     result->status = "deactivate_3d_scan not responding";
-                    if (!publish_cancel_if_requested(goal_handle, result)) {
-                        // goal_handle->abort(result);
-                        goal_handle->canceled(result);
-                    }
+                    goal_handle->abort(result);
+                    // if (!publish_cancel_if_requested(goal_handle, result)) {
+                    //     goal_handle->abort(result);
+                    //     // goal_handle->canceled(result);
+                    // }
                     return;
                 }
                 rclcpp::sleep_for(50ms);
@@ -469,7 +480,7 @@ class FocusActionServer : public rclcpp::Node {
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;
                 msg_ = "Angle focused\n";
-                feedback->progress = msg_;
+                feedback->debug_msgs = msg_;
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
             } else {
@@ -478,7 +489,7 @@ class FocusActionServer : public rclcpp::Node {
             if (std::abs(dz_) < (z_tolerance_ / 1000.0)) {
                 z_focused_ = true;
                 msg_ = "Height focused\n";
-                feedback->progress = msg_;
+                feedback->debug_msgs = msg_;
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
             } else {
@@ -505,12 +516,12 @@ class FocusActionServer : public rclcpp::Node {
             msg_ = std::format("\nCalculated:\n"
                                "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
                                "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
-                               "    [Height]   dz:{:.2f}",
+                               "    [Height]   dz:{:.2f}\n",
                                to_degree_(roll_), to_degree_(pitch_),
                                to_degree_(yaw_), center[0], center[1],
                                center[2], dz_);
 
-            feedback->debug_msg = msg_;
+            feedback->debug_msgs = msg_;
             goal_handle->publish_feedback(feedback);
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
@@ -545,16 +556,18 @@ class FocusActionServer : public rclcpp::Node {
                 planning_interface::MotionPlanResponse plan_solution =
                     planning_component_->plan(req, choose_shortest);
                 if (plan_solution) {
-                    if (stop_requested_.load() || goal_handle->is_canceling()) {
-                        result->status = "Cancel requested!";
-                        if (!publish_cancel_if_requested(goal_handle, result)) {
-                            // goal_handle->abort(result);
-                            goal_handle->canceled(result);
-                        }
-                        RCLCPP_INFO(get_logger(), "Cancel requested!");
-                        planning_component_->setStartStateToCurrentState();
-                        return;
-                    }
+                    // if (stop_requested_.load() ||
+                    // goal_handle->is_canceling()) {
+                    //     result->status = "Cancel requested!";
+                    //     if (!publish_cancel_if_requested(goal_handle,
+                    //     result)) {
+                    //         // goal_handle->abort(result);
+                    //         goal_handle->canceled(result);
+                    //     }
+                    //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+                    //     planning_component_->setStartStateToCurrentState();
+                    //     return;
+                    // }
                     bool execute_success =
                         moveit_cpp_->execute(plan_solution.trajectory);
                     if (execute_success) {
@@ -575,30 +588,39 @@ class FocusActionServer : public rclcpp::Node {
         }
 
         msg_ = "Within tolerance or Early termination\n";
-        feedback->progress = msg_;
+        feedback->debug_msgs = msg_;
         goal_handle->publish_feedback(feedback);
         start = now();
         while (!call_deactivateFocus()) {
-            if (stop_requested_.load() || goal_handle->is_canceling()) {
-                result->status = "Cancel requested!";
-                if (!publish_cancel_if_requested(goal_handle, result)) {
-                    // goal_handle->abort(result);
-                    goal_handle->canceled(result);
-                }
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
+            // if (stop_requested_.load() || goal_handle->is_canceling()) {
+            //     result->status = "Cancel requested!";
+            //     if (!publish_cancel_if_requested(goal_handle, result)) {
+            //         // goal_handle->abort(result);
+            //         goal_handle->canceled(result);
+            //     }
+            //     RCLCPP_INFO(get_logger(), "Cancel requested!");
+            //     planning_component_->setStartStateToCurrentState();
+            //     return;
+            // }
             if ((now() - start).seconds() > 5.0) {
                 RCLCPP_WARN(get_logger(), "deactivate_focus not responding…");
                 result->status = "deactivate_focus not responding";
-                if (!publish_cancel_if_requested(goal_handle, result)) {
-                    // goal_handle->abort(result);
-                    goal_handle->canceled(result);
-                }
+                goal_handle->abort(result);
+                // if (!publish_cancel_if_requested(goal_handle, result)) {
+                //     goal_handle->abort(result);
+                //     // goal_handle->canceled(result);
+                // }
                 return;
             }
             rclcpp::sleep_for(50ms);
+        }
+
+        if (goal_handle->is_canceling()) {
+            feedback->debug_msgs = "Focus action canceled\n";
+            result->status = "Focus action canceled\n";
+            goal_handle->publish_feedback(feedback);
+            goal_handle->canceled(result);
+            return;
         }
 
         result->status = "Focus completed successfully";

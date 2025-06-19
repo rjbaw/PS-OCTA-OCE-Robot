@@ -104,17 +104,22 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
     rclcpp_action::CancelResponse
     handle_cancel(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+        if (!goal_handle->is_active()) {
+            RCLCPP_INFO(get_logger(), "Move Z angle goal no longer active");
+            return rclcpp_action::CancelResponse::REJECT;
+        }
         RCLCPP_INFO(this->get_logger(),
                     "Cancel request received for Move Z Angle.");
         tem_->stopExecution(true);
-        goal_handle->canceled(std::make_shared<MoveZAngle::Result>());
+        // goal_handle->canceled(std::make_shared<MoveZAngle::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void
     handle_accepted(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            active_goal_handle_->abort(std::make_shared<MoveZAngle::Result>());
+            active_goal_handle_->canceled(
+                std::make_shared<MoveZAngle::Result>());
         }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
@@ -172,9 +177,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle);
 
         if (goal_handle->is_canceling()) {
-            feedback->status = "MoveZAngle was canceled before starting.";
+            feedback->debug_msgs = "MoveZAngle was canceled before starting.";
             feedback->current_z_angle = 0.0;
-            result->success = false;
+            result->status = "Move Z Angle Canceled";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -211,9 +216,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
         planning_component_->setGoal(target_pose, "tcp");
 
         if (goal_handle->is_canceling()) {
-            feedback->status = "Move Z Angle was canceled before planning.";
+            feedback->debug_msgs = "Move Z Angle was canceled before planning.";
             feedback->current_z_angle = 0.0;
-            result->success = false;
+            result->status = "Move Z Angle Canceled";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -248,22 +253,22 @@ class MoveZAngleActionServer : public rclcpp::Node {
         if (plan_solution.error_code.val !=
             moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
             RCLCPP_WARN(get_logger(), "Planning failed!");
-            feedback->status = "Planning failed!";
+            feedback->debug_msgs = "Planning failed!\n";
             feedback->current_z_angle = 0.0;
-            result->success = false;
+            result->status = "Move Z angle failed!\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->abort(result);
             return;
         }
 
-        feedback->status = "Planning succeeded; starting execution.";
+        feedback->debug_msgs = "Planning succeeded; starting execution.\n";
         feedback->current_z_angle = 0.0;
         goal_handle->publish_feedback(feedback);
 
         if (goal_handle->is_canceling()) {
-            feedback->status = "Canceled before execution.";
+            feedback->debug_msgs = "Canceled before execution.";
             feedback->current_z_angle = 0.0;
-            result->success = false;
+            result->status = "Move Z Angle Canceled";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -272,19 +277,29 @@ class MoveZAngleActionServer : public rclcpp::Node {
         bool execute_success = moveit_cpp_->execute(plan_solution.trajectory);
         if (!execute_success) {
             RCLCPP_ERROR(get_logger(), "Execution failed!");
-            feedback->status = "Execution failed!";
+            feedback->debug_msgs = "Execution failed!\n";
             feedback->current_z_angle = 0.0;
-            result->success = false;
+            result->status = "Move Z angle failed\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->abort(result);
             return;
         }
 
-        feedback->status = "Move Z Angle completed successfully!";
+        if (goal_handle->is_canceling()) {
+            feedback->debug_msgs = "Canceled after execution.";
+            feedback->current_z_angle = 0.0;
+            result->status = "Move Z Angle Canceled";
+            goal_handle->publish_feedback(feedback);
+            goal_handle->canceled(result);
+            return;
+        }
+
+        feedback->debug_msgs = "Move Z Angle completed successfully!\n";
         feedback->current_z_angle = angle_;
-        result->success = true;
+        result->status = "Move Z Angle completed\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->succeed(result);
+        active_goal_handle_.reset();
         RCLCPP_INFO(get_logger(), "Move Z Angle done.");
     }
 };

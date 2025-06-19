@@ -81,15 +81,23 @@ class FreedriveActionServer : public rclcpp::Node {
 
     rclcpp_action::CancelResponse
     handle_cancel(const std::shared_ptr<GoalHandleFreedrive> goal_handle) {
+        if (!goal_handle->is_active()) {
+            RCLCPP_INFO(get_logger(), "Freedrive goal no longer active");
+            return rclcpp_action::CancelResponse::REJECT;
+        }
         stop_keepalive();
         switch_to_freedrive_controller(false);
         RCLCPP_INFO(get_logger(), "Freedrive action cancelled by client");
-        goal_handle->canceled(std::make_shared<Freedrive::Result>());
+        // goal_handle->canceled(std::make_shared<Freedrive::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void
     handle_accepted(const std::shared_ptr<GoalHandleFreedrive> goal_handle) {
+        if (active_goal_handle_ && active_goal_handle_->is_active()) {
+            active_goal_handle_->canceled(
+                std::make_shared<Freedrive::Result>());
+        }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
@@ -99,14 +107,13 @@ class FreedriveActionServer : public rclcpp::Node {
         auto result = std::make_shared<Freedrive::Result>();
         RCLCPP_INFO(get_logger(), "Starting Freedrive execution...");
         bool enable = goal_handle->get_goal()->enable;
-        feedback->status =
-            enable ? "Enabling Freedrive" : "Disabling Freedrive";
+        feedback->debug_msgs =
+            enable ? "Enabling Freedrive\n" : "Disabling Freedrive\n";
         goal_handle->publish_feedback(feedback);
 
         if (enable) {
             if (!switch_to_freedrive_controller(true)) {
-                result->success = false;
-                result->status = "Controller switch failed";
+                result->status = "Controller switch failed\n";
                 goal_handle->abort(result);
                 return;
             };
@@ -114,29 +121,26 @@ class FreedriveActionServer : public rclcpp::Node {
         } else {
             stop_keepalive();
             if (!switch_to_freedrive_controller(false)) {
-                result->success = false;
-                result->status = "Controller switch failed";
+                result->status = "Controller switch failed\n";
                 goal_handle->abort(result);
                 return;
             };
         }
-        if (goal_handle->is_canceling()) {
-            stop_keepalive();
-            switch_to_freedrive_controller(false);
-            result->success = false;
-            result->status = "Freedrive Canceled";
-            goal_handle->canceled(result);
-            return;
-        }
+        // if (goal_handle->is_canceling()) {
+        //     stop_keepalive();
+        //     switch_to_freedrive_controller(false);
+        //     result->status = "Freedrive Canceled";
+        //     goal_handle->canceled(result);
+        //     return;
+        // }
         // std::this_thread::sleep_for(std::chrono::seconds(2));
 
-        feedback->status =
-            enable ? "Freedrive enabled and controller active"
-                   : "Freedrive disabled – motion controller active";
+        feedback->debug_msgs =
+            enable ? "Freedrive enabled and controller active\n"
+                   : "Freedrive disabled – motion controller active\n";
         goal_handle->publish_feedback(feedback);
 
-        result->success = true;
-        result->status = "Freedrive action completed successfully";
+        result->status = "Freedrive toggle success\n";
         goal_handle->succeed(result);
 
         RCLCPP_INFO(get_logger(), "Freedrive action completed.");
