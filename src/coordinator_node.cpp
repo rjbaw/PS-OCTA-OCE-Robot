@@ -392,8 +392,6 @@ class CoordinatorNode : public rclcpp::Node {
         std::lock_guard<std::mutex> lock(data_mutex_);
 
         if (cancel_action_) {
-            // active_focus_goal_handle_ &&
-            // !active_freedrive_goal_handle_->is_result_aware()
             if (goal_still_active(active_focus_goal_handle_)) {
                 msg_ = "Canceling Focus action";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());

@@ -138,15 +138,13 @@ class ResetActionServer : public rclcpp::Node {
         }
         publish_stop();
         // goal_handle->canceled(std::make_shared<ResetAction::Result>());
-        active_goal_handle_.reset();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void
     handle_accepted(const std::shared_ptr<GoalHandleResetAction> goal_handle) {
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            active_goal_handle_->canceled(
-                std::make_shared<ResetAction::Result>());
+            active_goal_handle_->abort(std::make_shared<ResetAction::Result>());
         }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
@@ -319,15 +317,8 @@ class ResetActionServer : public rclcpp::Node {
             return;
         }
         result->status = "Reset action completed successfully";
-        if (goal_handle->is_active()) {
-            if (failed_) {
-                goal_handle->abort(result);
-            } else {
-                goal_handle->succeed(result);
-            }
-        }
+        goal_handle->succeed(result);
         RCLCPP_INFO(get_logger(), "Reset completed.");
-        active_goal_handle_.reset();
     }
 };
 

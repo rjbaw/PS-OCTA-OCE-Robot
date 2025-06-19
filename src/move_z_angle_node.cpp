@@ -118,8 +118,7 @@ class MoveZAngleActionServer : public rclcpp::Node {
     void
     handle_accepted(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            active_goal_handle_->canceled(
-                std::make_shared<MoveZAngle::Result>());
+            active_goal_handle_->abort(std::make_shared<MoveZAngle::Result>());
         }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
@@ -299,7 +298,6 @@ class MoveZAngleActionServer : public rclcpp::Node {
         result->status = "Move Z Angle completed\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->succeed(result);
-        active_goal_handle_.reset();
         RCLCPP_INFO(get_logger(), "Move Z Angle done.");
     }
 };

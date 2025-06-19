@@ -95,8 +95,7 @@ class FreedriveActionServer : public rclcpp::Node {
     void
     handle_accepted(const std::shared_ptr<GoalHandleFreedrive> goal_handle) {
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            active_goal_handle_->canceled(
-                std::make_shared<Freedrive::Result>());
+            active_goal_handle_->abort(std::make_shared<Freedrive::Result>());
         }
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
@@ -126,13 +125,13 @@ class FreedriveActionServer : public rclcpp::Node {
                 return;
             };
         }
-        // if (goal_handle->is_canceling()) {
-        //     stop_keepalive();
-        //     switch_to_freedrive_controller(false);
-        //     result->status = "Freedrive Canceled";
-        //     goal_handle->canceled(result);
-        //     return;
-        // }
+        if (goal_handle->is_canceling()) {
+            stop_keepalive();
+            switch_to_freedrive_controller(false);
+            result->status = "Freedrive Canceled";
+            goal_handle->canceled(result);
+            return;
+        }
         // std::this_thread::sleep_for(std::chrono::seconds(2));
 
         feedback->debug_msgs =
