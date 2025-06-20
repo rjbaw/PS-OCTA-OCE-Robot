@@ -48,8 +48,9 @@ set(msg_files "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
 
 set(srv_files srv/Scan3d.srv)
 
-set(action_files action/Focus.action action/Freedrive.action
-                 action/MoveZAngle.action action/Reset.action)
+set(action_files
+    action/Focus.action action/Freedrive.action action/MoveZAngle.action
+    action/Reset.action action/FullScan.action)
 
 set(ROSIDL_DEPS builtin_interfaces action_msgs unique_identifier_msgs)
 
@@ -80,33 +81,13 @@ target_link_libraries(
   reset "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
-add_executable(
-  octa_ctrl
-  src/octa_ctrl.cpp
-  src/dds_publisher.cpp
-  src/dds_subscriber.cpp
-  src/urscript_publisher.cpp
-  src/img_subscriber.cpp
-  src/process_img.cpp
-  src/utils.cpp)
-ament_target_dependencies(
-  octa_ctrl
-  rclcpp
-  moveit_ros_planning_interface
-  geometry_msgs
-  tf2_ros
-  std_msgs
-  OpenCV
-  Open3D
-  Eigen3)
-target_link_libraries(
-  octa_ctrl
-  "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}"
-  "${geometry_msgs_LIBRARIES}"
-  "${OpenCV_LIBS}"
-  Open3D::Open3D
-  Eigen3::Eigen)
+# add_executable( octa_ctrl src/octa_ctrl.cpp src/dds_publisher.cpp
+# src/dds_subscriber.cpp src/urscript_publisher.cpp src/img_subscriber.cpp
+# src/process_img.cpp src/utils.cpp) ament_target_dependencies( octa_ctrl rclcpp
+# moveit_ros_planning_interface geometry_msgs tf2_ros std_msgs OpenCV Open3D
+# Eigen3) target_link_libraries( octa_ctrl "${cpp_typesupport_target}"
+# "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}"
+# "${OpenCV_LIBS}" Open3D::Open3D Eigen3::Eigen)
 
 add_executable(coordinator_node src/coordinator_node.cpp)
 ament_target_dependencies(
@@ -198,19 +179,19 @@ add_executable(reconnect_client src/reconnect_client.cpp src/reconnect_node.cpp)
 ament_target_dependencies(reconnect_client rclcpp rclcpp_action
                           ur_dashboard_msgs std_srvs)
 
-add_executable(pub_labview_data src/pub_labview_data.cpp)
-ament_target_dependencies(pub_labview_data rclcpp std_msgs)
-target_link_libraries(pub_labview_data "${cpp_typesupport_target}")
-add_executable(sub_labview_data src/sub_labview_data.cpp)
-ament_target_dependencies(sub_labview_data rclcpp std_msgs)
-target_link_libraries(sub_labview_data "${cpp_typesupport_target}")
+# add_executable(pub_labview_data src/pub_labview_data.cpp)
+# ament_target_dependencies(pub_labview_data rclcpp std_msgs)
+# target_link_libraries(pub_labview_data "${cpp_typesupport_target}")
+# add_executable(sub_labview_data src/sub_labview_data.cpp)
+# ament_target_dependencies(sub_labview_data rclcpp std_msgs)
+# target_link_libraries(sub_labview_data "${cpp_typesupport_target}")
 
-add_executable(pub_robot_data src/pub_robot_data.cpp)
-ament_target_dependencies(pub_robot_data rclcpp std_msgs)
-target_link_libraries(pub_robot_data "${cpp_typesupport_target}")
-add_executable(sub_robot_data src/sub_robot_data.cpp)
-ament_target_dependencies(sub_robot_data rclcpp std_msgs)
-target_link_libraries(sub_robot_data "${cpp_typesupport_target}")
+# add_executable(pub_robot_data src/pub_robot_data.cpp)
+# ament_target_dependencies(pub_robot_data rclcpp std_msgs)
+# target_link_libraries(pub_robot_data "${cpp_typesupport_target}")
+# add_executable(sub_robot_data src/sub_robot_data.cpp)
+# ament_target_dependencies(sub_robot_data rclcpp std_msgs)
+# target_link_libraries(sub_robot_data "${cpp_typesupport_target}")
 
 add_executable(sub_img src/sub_img.cpp)
 ament_target_dependencies(sub_img rclcpp std_msgs OpenCV)
@@ -227,15 +208,12 @@ target_link_libraries(test_detect ${OpenCV_LIBS})
 
 install(
   TARGETS sub_img
-          sub_robot_data
-          pub_robot_data
-          sub_labview_data
-          pub_labview_data
+          # sub_robot_data pub_robot_data sub_labview_data pub_labview_data
           joint_state_publisher
           test_moveit
           test_img_rot
           test_detect
-          octa_ctrl
+          # octa_ctrl
           reset
           get_robot_state
           reconnect_client

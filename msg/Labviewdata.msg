@@ -13,6 +13,7 @@ bool next
 bool previous
 bool home
 bool reset
-bool fast_axis
+bool scan_trigger
 bool scan_3d
 float64 z_height
+bool full_scan

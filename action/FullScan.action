@@ -1,0 +1,12 @@
+# FullScan.action
+
+# Goal
+bool start
+---
+# Result
+bool success
+string status
+---
+# Feedback
+uint8 step
+string debug_msgs
