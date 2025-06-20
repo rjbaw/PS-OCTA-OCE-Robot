@@ -364,7 +364,6 @@ class CoordinatorNode : public rclcpp::Node {
     octa_ros::msg::Robotdata old_pub_msg_;
     bool cancel_action_ = false;
     std::atomic_bool triggered_service_ = false;
-    std::atomic_bool full_scan_active_ = false;
 
     double roll_ = 0.0;
     double pitch_ = 0.0;
@@ -378,7 +377,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::string msg_ = "idle";
     double angle_ = 0.0;
     int circle_state_ = 1;
-    bool scan_trigger_ = true;
+    bool scan_trigger_ = false;
     bool apply_config_ = false;
     bool end_state_ = false;
     bool scan_3d_ = false;
@@ -403,9 +402,9 @@ class CoordinatorNode : public rclcpp::Node {
     bool next_ = false;
     bool home_ = false;
     bool reset_ = false;
-    bool scan_trigger_read_ = true;
+    bool scan_trigger_read_ = false;
     bool scan_3d_read_ = false;
-    bool full_scan_ = false;
+    std::atomic_bool full_scan_ = false;
     bool full_scan_read_ = false;
     int num_pt_ = 1;
 
@@ -498,18 +497,56 @@ class CoordinatorNode : public rclcpp::Node {
                 return false;
             rclcpp::sleep_for(50ms);
         }
+        scan_trigger_ = scan_trigger_read_;
         return true;
     }
+
+    //void trigger_scan() {
+    //    std::chrono::milliseconds duration = std::chrono::milliseconds(10);
+    //    scan_trigger_ = true;
+    //    if (apply_timer_) {
+    //        apply_timer_->cancel();
+    //        apply_timer_.reset();
+    //    }
+    //    apply_timer_ = create_wall_timer(duration, [this]() {
+    //        if (auto t = apply_timer_weak_.lock())
+    //            t->cancel();
+    //        scan_trigger_ = false;
+    //    });
+    //    apply_timer_weak_ = apply_timer_;
+    //}
+
+    //bool trigger_scan_and_wait(std::shared_ptr<FullScanHandle> gh) {
+    //    trigger_scan();
+    //    rclcpp::Time start = rclcpp::Clock().now();
+    //    while (!scan_trigger_read_) {
+    //        if (gh->is_canceling())
+    //            return false;
+    //        if ((rclcpp::Clock().now() - start).seconds() > 5.0)
+    //            return false;
+    //        rclcpp::sleep_for(50ms);
+    //    }
+    //    while (scan_trigger_read_) {
+    //        if (gh->is_canceling())
+    //            return false;
+    //        if ((rclcpp::Clock().now() - start).seconds() > 5.0)
+    //            return false;
+    //        rclcpp::sleep_for(50ms);
+    //    }
+    //    scan_trigger_ = scan_trigger_read_;
+    //    return true;
+    //}
 
     rclcpp_action::GoalResponse
     fs_handle_goal(const rclcpp_action::GoalUUID &,
                    FullScan::Goal::ConstSharedPtr goal) {
-        if (full_scan_active_ || !goal->start)
+        if (full_scan_ || !goal->start)
             return rclcpp_action::GoalResponse::REJECT;
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
     rclcpp_action::CancelResponse
     fs_handle_cancel(const std::shared_ptr<FullScanHandle>) {
+	full_scan_ = false;
         return rclcpp_action::CancelResponse::ACCEPT;
     }
     void fs_handle_accepted(const std::shared_ptr<FullScanHandle> goal_handle) {
@@ -518,20 +555,18 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void execute_full_scan(std::shared_ptr<FullScanHandle> goal_handle) {
-        full_scan_active_ = true;
+        full_scan_ = true;
         auto feedback = std::make_shared<FullScan::Feedback>();
         auto result = std::make_shared<FullScan::Result>();
 
         for (unsigned int pc = 0; pc < full_scan_recipe.size(); ++pc) {
-            if (goal_handle->is_canceling()) {
+            if (goal_handle->is_canceling() || !full_scan_read_) {
                 result->success = false;
                 goal_handle->canceled(result);
                 return;
             }
-            msg_ = std::format("Step [{}/{}]\n", pc, full_scan_recipe.size());
             feedback->step = pc;
-            feedback->debug_msgs = msg_;
-            goal_handle->publish_feedback(feedback);
+            feedback->debug_msgs = std::format("Step [{}/{}]\n", pc, full_scan_recipe.size());
 
             const Step &step = full_scan_recipe[pc];
 
@@ -543,27 +578,28 @@ class CoordinatorNode : public rclcpp::Node {
             bool ok = false;
             switch (step.action) {
             case UserAction::Focus:
-                msg_ += "[Action] Focusing\n";
+                feedback->debug_msgs += "  [Action] Focusing\n";
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 ok = focus_and_wait(goal_handle);
                 break;
             case UserAction::MoveZangle:
-                msg_ += std::format("[Action] Next: {}\n", step.arg);
+                feedback->debug_msgs += std::format("  [Action] Next: {}\n", step.arg);
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 ok = movez_and_wait(step.arg, goal_handle);
                 break;
             case UserAction::Scan:
-                msg_ += std::format("[Action] Scanning\n");
+                feedback->debug_msgs += std::format("  [Action] Scanning\n");
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 ok = trigger_scan_and_wait(goal_handle);
                 break;
             default:
                 break;
             }
+            goal_handle->publish_feedback(feedback);
             if (!ok) {
                 result->success = false;
                 result->status = "Step failed";
-                full_scan_active_ = false;
+                full_scan_ = false;
                 goal_handle->abort(result);
                 return;
             }
@@ -576,7 +612,6 @@ class CoordinatorNode : public rclcpp::Node {
         result->success = true;
         result->status = "Full Scan finished";
         goal_handle->succeed(result);
-        full_scan_active_ = false;
     }
 
     template <typename GH> bool goal_still_active(const GH &handle) {
@@ -687,32 +722,32 @@ class CoordinatorNode : public rclcpp::Node {
 
         if (cancel_action_) {
             if (goal_still_active(active_focus_goal_handle_)) {
-                msg_ = "Canceling Focus action";
+                msg_ = "Canceling Focus action\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 focus_action_client_->async_cancel_goal(
                     active_focus_goal_handle_);
                 end_state_ = true;
             }
             if (goal_still_active(active_move_z_goal_handle_)) {
-                msg_ = "Canceling Move Z-angle action";
+                msg_ = "Canceling Move Z-angle action\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 move_z_angle_action_client_->async_cancel_goal(
                     active_move_z_goal_handle_);
             }
             if (goal_still_active(active_freedrive_goal_handle_)) {
-                msg_ = "Canceling Free-drive";
+                msg_ = "Canceling Free-drive\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 freedrive_action_client_->async_cancel_goal(
                     active_freedrive_goal_handle_);
             }
             if (goal_still_active(active_reset_goal_handle_)) {
-                msg_ = "Canceling Reset action";
+                msg_ = "Canceling Reset action\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 reset_action_client_->async_cancel_goal(
                     active_reset_goal_handle_);
             }
             if (goal_still_active(active_full_scan_goal_handle_)) {
-                msg_ = "Canceling Full Scan action";
+                msg_ = "Canceling Full Scan action\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 full_scan_action_client_->async_cancel_goal(
                     active_full_scan_goal_handle_);
@@ -723,7 +758,7 @@ class CoordinatorNode : public rclcpp::Node {
             return;
         }
 
-        if (full_scan_active_) {
+        if (full_scan_) {
             return;
         }
 
@@ -764,7 +799,7 @@ class CoordinatorNode : public rclcpp::Node {
                 circle_state_ = 1;
                 msg_ = "[Action] Reset to default position. It may take "
                        "some time "
-                       "please wait.";
+                       "please wait.\n";
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendResetGoal();
                 previous_action_ = UserAction::Reset;
@@ -774,7 +809,7 @@ class CoordinatorNode : public rclcpp::Node {
             if (autofocus_) {
                 if (previous_action_ != current_action_) {
                     sendFocusGoal();
-                    msg_ = "[Action] Focusing";
+                    msg_ = "[Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Focus;
                     success_ = false;
@@ -801,13 +836,13 @@ class CoordinatorNode : public rclcpp::Node {
                         : (angle_limit_ / static_cast<double>(num_pt_));
                 if (next_) {
                     yaw_ = angle_increment_;
-                    msg_ = std::format("[Action] Next: {}", yaw_);
+                    msg_ = std::format("[Action] Next: {}\n", yaw_);
                 } else if (previous_) {
                     yaw_ = -angle_increment_;
-                    msg_ = std::format("[Action] Previous: {}", yaw_);
+                    msg_ = std::format("[Action] Previous: {}\n", yaw_);
                 } else if (home_) {
                     yaw_ = -angle_;
-                    msg_ = std::format("[Action] Home: {}", yaw_);
+                    msg_ = std::format("[Action] Home: {}\n", yaw_);
                 }
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 sendMoveZAngleGoal(yaw_);
@@ -1058,7 +1093,7 @@ class CoordinatorNode : public rclcpp::Node {
                    const std::shared_ptr<const FullScan::Feedback> fb) {
                 RCLCPP_INFO(this->get_logger(), "Full scan feedback => %s",
                             fb->debug_msgs.c_str());
-                msg_ += fb->debug_msgs.c_str();
+                msg_ = fb->debug_msgs;
             };
 
         options.result_callback =

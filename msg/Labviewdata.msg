@@ -17,3 +17,7 @@ bool scan_trigger
 bool scan_3d
 float64 z_height
 bool full_scan
+bool robot_mode
+bool oct_mode
+bool octa_mode
+bool oce_mode

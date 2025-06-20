@@ -423,7 +423,7 @@ class FocusActionServer : public rclcpp::Node {
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;
-                msg_ = "Angle focused\n";
+                msg_ = "=> Angle focused\n";
                 feedback->debug_msgs = msg_;
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
@@ -432,7 +432,7 @@ class FocusActionServer : public rclcpp::Node {
             }
             if (std::abs(dz_) < (z_tolerance_ / 1000.0)) {
                 z_focused_ = true;
-                msg_ = "Height focused\n";
+                msg_ = "=> Height focused\n";
                 feedback->debug_msgs = msg_;
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
@@ -457,7 +457,7 @@ class FocusActionServer : public rclcpp::Node {
                 print_target_(get_logger(), target_pose_.pose);
             }
 
-            msg_ = std::format("\nCalculated:\n"
+            msg_ = std::format("Calculated:\n"
                                "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
                                "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
                                "    [Height]   dz:{:.2f}\n",

@@ -136,7 +136,7 @@ class FreedriveActionServer : public rclcpp::Node {
 
         feedback->debug_msgs =
             enable ? "Freedrive enabled and controller active\n"
-                   : "Freedrive disabled – motion controller active\n";
+                   : "Freedrive disabled - motion controller active\n";
         goal_handle->publish_feedback(feedback);
 
         result->status = "Freedrive toggle success\n";
