@@ -5,17 +5,11 @@ set(CMAKE_GENERATOR "Ninja")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# # Default to C99 if(NOT CMAKE_C_STANDARD) set(CMAKE_C_STANDARD 99) endif()
-
-# # Default to C++23 if(NOT CMAKE_CXX_STANDARD) set(CMAKE_CXX_STANDARD 23)
-# endif()
-
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# option(GLIBCXX_USE_CXX11_ABI ON) option(BUILD_SHARED_LIBS ON)
-# option(BUILD_CUDA_MODULE ON)
+# option(GLIBCXX_USE_CXX11_ABI ON) option(BUILD_CUDA_MODULE ON)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -74,22 +68,7 @@ target_link_libraries(
   test_moveit "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
-add_executable(reset src/reset.cpp src/urscript_publisher.cpp src/utils.cpp)
-ament_target_dependencies(reset rclcpp moveit_ros_planning_interface
-                          geometry_msgs tf2_ros std_msgs)
-target_link_libraries(
-  reset "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
-
-# add_executable( octa_ctrl src/octa_ctrl.cpp src/dds_publisher.cpp
-# src/dds_subscriber.cpp src/urscript_publisher.cpp src/img_subscriber.cpp
-# src/process_img.cpp src/utils.cpp) ament_target_dependencies( octa_ctrl rclcpp
-# moveit_ros_planning_interface geometry_msgs tf2_ros std_msgs OpenCV Open3D
-# Eigen3) target_link_libraries( octa_ctrl "${cpp_typesupport_target}"
-# "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}"
-# "${OpenCV_LIBS}" Open3D::Open3D Eigen3::Eigen)
-
-add_executable(coordinator_node src/coordinator_node.cpp)
+add_executable(coordinator_node src/coordinator_node.cpp src/utils.cpp)
 ament_target_dependencies(
   coordinator_node
   rclcpp
@@ -110,7 +89,7 @@ target_link_libraries(
   Open3D::Open3D
   Eigen3::Eigen)
 
-add_executable(focus_node src/focus_node.cpp src/process_img.cpp)
+add_executable(focus_node src/focus_node.cpp src/process_img.cpp src/utils.cpp)
 ament_target_dependencies(
   focus_node
   rclcpp
@@ -132,7 +111,7 @@ target_link_libraries(
   Open3D::Open3D
   Eigen3::Eigen)
 
-add_executable(move_z_angle_node src/move_z_angle_node.cpp)
+add_executable(move_z_angle_node src/move_z_angle_node.cpp src/utils.cpp)
 ament_target_dependencies(
   move_z_angle_node
   rclcpp
@@ -145,8 +124,7 @@ target_link_libraries(
   move_z_angle_node "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
-add_executable(reset_node src/reset_node.cpp src/urscript_publisher.cpp
-                          src/utils.cpp)
+add_executable(reset_node src/reset_node.cpp src/utils.cpp)
 ament_target_dependencies(
   reset_node
   rclcpp
@@ -170,37 +148,15 @@ ament_target_dependencies(
   std_msgs)
 target_link_libraries(freedrive_node "${cpp_typesupport_target}")
 
-add_executable(get_robot_state src/get_robot_state.cpp)
-ament_target_dependencies(get_robot_state rclcpp ur_dashboard_msgs)
-
 # target_include_directories(octa_ctrl PRIVATE
 # "/opt/ros/jazzy/include/ur_dashboard_msgs" )
 add_executable(reconnect_client src/reconnect_client.cpp src/reconnect_node.cpp)
 ament_target_dependencies(reconnect_client rclcpp rclcpp_action
                           ur_dashboard_msgs std_srvs)
 
-# add_executable(pub_labview_data src/pub_labview_data.cpp)
-# ament_target_dependencies(pub_labview_data rclcpp std_msgs)
-# target_link_libraries(pub_labview_data "${cpp_typesupport_target}")
-# add_executable(sub_labview_data src/sub_labview_data.cpp)
-# ament_target_dependencies(sub_labview_data rclcpp std_msgs)
-# target_link_libraries(sub_labview_data "${cpp_typesupport_target}")
-
-# add_executable(pub_robot_data src/pub_robot_data.cpp)
-# ament_target_dependencies(pub_robot_data rclcpp std_msgs)
-# target_link_libraries(pub_robot_data "${cpp_typesupport_target}")
-# add_executable(sub_robot_data src/sub_robot_data.cpp)
-# ament_target_dependencies(sub_robot_data rclcpp std_msgs)
-# target_link_libraries(sub_robot_data "${cpp_typesupport_target}")
-
 add_executable(sub_img src/sub_img.cpp)
 ament_target_dependencies(sub_img rclcpp std_msgs OpenCV)
 target_link_libraries(sub_img "${cpp_typesupport_target}" "${OpenCV_LIBS}")
-
-add_executable(test_img_rot src/test_img_rot.cpp)
-ament_target_dependencies(test_img_rot rclcpp std_msgs OpenCV Open3D Eigen3)
-target_link_libraries(test_img_rot "${cpp_typesupport_target}" "${OpenCV_LIBS}"
-                      Open3D::Open3D Eigen3::Eigen)
 
 add_executable(test_detect src/test_detect.cpp src/process_img.cpp)
 ament_target_dependencies(test_detect ament_index_cpp OpenCV)
@@ -208,14 +164,9 @@ target_link_libraries(test_detect ${OpenCV_LIBS})
 
 install(
   TARGETS sub_img
-          # sub_robot_data pub_robot_data sub_labview_data pub_labview_data
           joint_state_publisher
           test_moveit
-          test_img_rot
           test_detect
-          # octa_ctrl
-          reset
-          get_robot_state
           reconnect_client
           coordinator_node
           focus_node

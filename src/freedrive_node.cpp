@@ -88,7 +88,6 @@ class FreedriveActionServer : public rclcpp::Node {
         stop_keepalive();
         switch_to_freedrive_controller(false);
         RCLCPP_INFO(get_logger(), "Freedrive action cancelled by client");
-        // goal_handle->canceled(std::make_shared<Freedrive::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -132,7 +131,6 @@ class FreedriveActionServer : public rclcpp::Node {
             goal_handle->canceled(result);
             return;
         }
-        // std::this_thread::sleep_for(std::chrono::seconds(2));
 
         feedback->debug_msgs =
             enable ? "Freedrive enabled and controller active\n"

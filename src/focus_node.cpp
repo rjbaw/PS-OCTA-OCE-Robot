@@ -30,30 +30,9 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "process_img.hpp"
+#include "utils.hpp"
 
 using namespace std::chrono_literals;
-
-double to_radian_(const double degree) {
-    return (std::numbers::pi / 180 * degree);
-}
-
-double to_degree_(const double radian) {
-    return (180 / std::numbers::pi * radian);
-}
-
-void print_target_(rclcpp::Logger const &logger,
-                   geometry_msgs::msg::Pose target_pose) {
-    RCLCPP_INFO(logger,
-                std::format("Target Pose: "
-                            " x: {}, y: {}, z: {},"
-                            " qx: {}, qy: {}, qz: {}, qw: {}",
-                            target_pose.position.x, target_pose.position.y,
-                            target_pose.position.z, target_pose.orientation.x,
-                            target_pose.orientation.y,
-                            target_pose.orientation.z,
-                            target_pose.orientation.w)
-                    .c_str());
-}
 
 class FocusActionServer : public rclcpp::Node {
     using Focus = octa_ros::action::Focus;
@@ -298,8 +277,8 @@ class FocusActionServer : public rclcpp::Node {
 
     bool tol_measure(const double &roll, const double &pitch,
                      const double &angle_tolerance) {
-        return ((std::abs(roll) < to_radian_(angle_tolerance)) &&
-                (std::abs(pitch) < to_radian_(angle_tolerance)));
+        return ((std::abs(roll) < to_radian(angle_tolerance)) &&
+                (std::abs(pitch) < to_radian(angle_tolerance)));
     }
 
     void execute(const std::shared_ptr<GoalHandleFocus> goal_handle) {
@@ -443,7 +422,7 @@ class FocusActionServer : public rclcpp::Node {
             if (angle_focused_ && !z_focused_) {
                 planning_ = true;
                 target_pose_.pose.position.z += dz_;
-                print_target_(get_logger(), target_pose_.pose);
+                print_target(get_logger(), target_pose_.pose);
             }
 
             if (!angle_focused_) {
@@ -454,16 +433,16 @@ class FocusActionServer : public rclcpp::Node {
                 target_q_.normalize();
                 target_pose_.pose.orientation = tf2::toMsg(target_q_);
                 target_pose_.pose.position.z += dz_;
-                print_target_(get_logger(), target_pose_.pose);
+                print_target(get_logger(), target_pose_.pose);
             }
 
             msg_ = std::format("Calculated:\n"
                                "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
                                "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
                                "    [Height]   dz:{:.2f}\n",
-                               to_degree_(roll_), to_degree_(pitch_),
-                               to_degree_(yaw_), center[0], center[1],
-                               center[2], dz_);
+                               to_degree(roll_), to_degree(pitch_),
+                               to_degree(yaw_), center[0], center[1], center[2],
+                               dz_);
 
             feedback->debug_msgs = msg_;
             goal_handle->publish_feedback(feedback);

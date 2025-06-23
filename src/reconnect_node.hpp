@@ -52,6 +52,8 @@ static constexpr uint8_t UNDEFINED_SAFETY_MODE = 11;
 static constexpr uint8_t AUTOMATIC_MODE_SAFEGUARD_STOP = 12;
 static constexpr uint8_t SYSTEM_THREE_POSITION_ENABLING_STOP = 13;
 
+using namespace std::chrono_literals;
+
 class ReconnectClient : public rclcpp::Node {
   public:
     ReconnectClient();

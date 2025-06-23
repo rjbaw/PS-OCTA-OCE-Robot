@@ -24,27 +24,7 @@
 
 #include <octa_ros/action/move_z_angle.hpp>
 
-double to_radian_(const double degree) {
-    return (std::numbers::pi / 180 * degree);
-}
-
-double to_degree_(const double radian) {
-    return (180 / std::numbers::pi * radian);
-}
-
-void print_target_(rclcpp::Logger const &logger,
-                   geometry_msgs::msg::Pose target_pose) {
-    RCLCPP_INFO(logger,
-                std::format("Target Pose: "
-                            " x: {}, y: {}, z: {},"
-                            " qx: {}, qy: {}, qz: {}, qw: {}",
-                            target_pose.position.x, target_pose.position.y,
-                            target_pose.position.z, target_pose.orientation.x,
-                            target_pose.orientation.y,
-                            target_pose.orientation.z,
-                            target_pose.orientation.w)
-                    .c_str());
-}
+#include "utils.hpp"
 
 class MoveZAngleActionServer : public rclcpp::Node {
     using MoveZAngle = octa_ros::action::MoveZAngle;
@@ -198,14 +178,14 @@ class MoveZAngleActionServer : public rclcpp::Node {
         tf2::Quaternion target_q;
         tf2::Quaternion apply_q;
         tf2::fromMsg(target_pose.pose.orientation, target_q);
-        apply_q.setRPY(0, 0, to_radian_(target_angle));
+        apply_q.setRPY(0, 0, to_radian(target_angle));
         apply_q.normalize();
         target_q = target_q * apply_q;
         target_q.normalize();
         target_pose.pose.orientation = tf2::toMsg(target_q);
-        target_pose.pose.position.x += radius_ * std::cos(to_radian_(angle_));
-        target_pose.pose.position.y += radius_ * std::sin(to_radian_(angle_));
-        print_target_(get_logger(), target_pose.pose);
+        target_pose.pose.position.x += radius_ * std::cos(to_radian(angle_));
+        target_pose.pose.position.y += radius_ * std::sin(to_radian(angle_));
+        print_target(get_logger(), target_pose.pose);
 
         moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
         Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
