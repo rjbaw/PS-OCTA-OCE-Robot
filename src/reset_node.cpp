@@ -133,9 +133,10 @@ class ResetActionServer : public rclcpp::Node {
             return rclcpp_action::CancelResponse::REJECT;
         }
         RCLCPP_INFO(get_logger(), "Reset action canceled");
-        if (tem_) {
-            tem_->stopExecution(true);
-        }
+        tem_->stopExecution(true);
+        // if (tem_) {
+        //     tem_->stopExecution(true);
+        // }
         publish_stop();
         // goal_handle->canceled(std::make_shared<ResetAction::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;

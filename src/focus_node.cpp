@@ -186,6 +186,48 @@ class FocusActionServer : public rclcpp::Node {
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
 
+    moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
+                                               double lin_radius_m,
+                                               double ang_radius_rad) const {
+        moveit_msgs::msg::Constraints c;
+
+        const std::string planning_frame =
+            moveit_cpp_->getPlanningSceneMonitor()
+                ->getPlanningScene()
+                ->getPlanningFrame();
+
+        moveit_msgs::msg::PositionConstraint pc;
+        pc.header.frame_id = planning_frame;
+        pc.link_name = "tcp";
+        pc.weight = 1.0;
+        shape_msgs::msg::SolidPrimitive sphere;
+        sphere.type = sphere.SPHERE;
+        sphere.dimensions = {lin_radius_m};
+        pc.constraint_region.primitives.push_back(sphere);
+        geometry_msgs::msg::Pose centre_pose;
+        centre_pose.position.x = centre.translation().x();
+        centre_pose.position.y = centre.translation().y();
+        centre_pose.position.z = centre.translation().z();
+        centre_pose.orientation.w = 1.0;
+        pc.constraint_region.primitive_poses.push_back(centre_pose);
+
+        moveit_msgs::msg::OrientationConstraint oc;
+        oc.header.frame_id = planning_frame;
+        oc.link_name = "tcp";
+        oc.weight = 1.0;
+        Eigen::Quaterniond q(centre.rotation());
+        oc.orientation.x = q.x();
+        oc.orientation.y = q.y();
+        oc.orientation.z = q.z();
+        oc.orientation.w = q.w();
+        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
+            oc.absolute_z_axis_tolerance = ang_radius_rad;
+
+        c.position_constraints.push_back(pc);
+        c.orientation_constraints.push_back(oc);
+        return c;
+    }
+
     cv::Mat get_img() {
         std::unique_lock<std::mutex> lock(img_mutex_);
         img_cv_.wait(lock, [this]() { return (img_seq_ > last_read_seq_); });
@@ -397,8 +439,23 @@ class FocusActionServer : public rclcpp::Node {
             yaw_ = tmp_yaw_;
             rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
-            // dz_ = 0;
             dz_ = (z_height_ - center[2]) / (px_per_mm * 1000.0);
+
+            msg_ = std::format("Calculated:\n"
+                               "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
+                               "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
+                               "    [Height]   dz:{:.2f}\n",
+                               to_degree(roll_), to_degree(pitch_),
+                               to_degree(yaw_), center[0], center[1], center[2],
+                               dz_);
+            feedback->debug_msgs = msg_;
+            goal_handle->publish_feedback(feedback);
+            RCLCPP_INFO(get_logger(), msg_.c_str());
+            if (early_terminate && planning_) {
+                angle_focused_ = true;
+                z_focused_ = true;
+                break;
+            }
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;
@@ -436,21 +493,17 @@ class FocusActionServer : public rclcpp::Node {
                 print_target(get_logger(), target_pose_.pose);
             }
 
-            msg_ = std::format("Calculated:\n"
-                               "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
-                               "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
-                               "    [Height]   dz:{:.2f}\n",
-                               to_degree(roll_), to_degree(pitch_),
-                               to_degree(yaw_), center[0], center[1], center[2],
-                               dz_);
-
-            feedback->debug_msgs = msg_;
-            goal_handle->publish_feedback(feedback);
-            RCLCPP_INFO(get_logger(), msg_.c_str());
-
             if (planning_) {
                 planning_ = false;
                 planning_component_->setStartStateToCurrentState();
+
+                moveit::core::RobotStatePtr cur_state =
+                    moveit_cpp_->getCurrentState();
+                Eigen::Isometry3d start_tcp =
+                    cur_state->getGlobalLinkTransform("tcp");
+                auto envelope = makeEnvelope(start_tcp, 0.05, M_PI);
+                planning_component_->setPathConstraints(envelope);
+
                 planning_component_->setGoal(target_pose_, "tcp");
 
                 auto req = moveit_cpp::PlanningComponent::
@@ -491,15 +544,18 @@ class FocusActionServer : public rclcpp::Node {
                     if (execute_success) {
                         RCLCPP_INFO(get_logger(), "Execute Success!");
                         if (early_terminate) {
-                            angle_focused_ = true;
-                            z_focused_ = true;
-                            break;
+                            planning_ = true;
+                            // angle_focused_ = true;
+                            // z_focused_ = true;
+                            // break;
                         }
                     } else {
                         RCLCPP_INFO(get_logger(), "Execute Failed!");
+                        feedback->debug_msgs += "Execute Failed!\n";
                     }
                 } else {
                     RCLCPP_INFO(get_logger(), "Planning failed!");
+                    feedback->debug_msgs += "Planning failed!\n";
                 }
                 goal_handle->publish_feedback(feedback);
             }

@@ -706,6 +706,11 @@ class CoordinatorNode : public rclcpp::Node {
     void mainLoop() {
         std::lock_guard<std::mutex> lock(data_mutex_);
 
+        robot_mode_ = robot_mode_read_;
+        oct_mode_ = oct_mode_read_;
+        octa_mode_ = octa_mode_read_;
+        oce_mode_ = oce_mode_read_;
+
         if (cancel_action_) {
             if (goal_still_active(active_focus_goal_handle_)) {
                 msg_ = "Canceling Focus action\n";
