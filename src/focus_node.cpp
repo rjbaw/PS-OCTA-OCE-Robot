@@ -163,9 +163,13 @@ class FocusActionServer : public rclcpp::Node {
         }
         auto result = std::make_shared<Focus::Result>();
         result->status = "Focus action canceled by user request";
-        while (!call_scan3d(false)) {
-            rclcpp::sleep_for(50ms);
-        }
+        call_scan3d(false);
+        // auto fut = service_scan_3d_->async_send_request(req);
+        // if (rclcpp::spin_until_future_complete(shared_from_this(), fut, 2s)
+        // !=
+        //     rclcpp::FutureReturnCode::SUCCESS) {
+        //     RCLCPP_WARN(get_logger(), "scan_3d did not respond in time");
+        // }
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();
@@ -451,10 +455,10 @@ class FocusActionServer : public rclcpp::Node {
             feedback->debug_msgs = msg_;
             goal_handle->publish_feedback(feedback);
             RCLCPP_INFO(get_logger(), msg_.c_str());
-            //if (early_terminate && planning_) {
-                //angle_focused_ = true;
-                //z_focused_ = true;
-                //break;
+            // if (early_terminate && planning_) {
+            // angle_focused_ = true;
+            // z_focused_ = true;
+            // break;
             //}
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
@@ -510,7 +514,7 @@ class FocusActionServer : public rclcpp::Node {
                     MultiPipelinePlanRequestParameters(
                         shared_from_this(),
                         {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
-                        //{"ompl_rrtc", "stomp_joint"});
+                //{"ompl_rrtc", "stomp_joint"});
                 // auto stop_on_first =
                 //     [](const PlanningComponent::PlanSolutions &sols,
                 //        const auto &) { return sols.hasSuccessfulSolution();
@@ -545,7 +549,7 @@ class FocusActionServer : public rclcpp::Node {
                     if (execute_success) {
                         RCLCPP_INFO(get_logger(), "Execute Success!");
                         if (early_terminate) {
-                            //planning_ = true;
+                            // planning_ = true;
                             angle_focused_ = true;
                             z_focused_ = true;
                             break;
