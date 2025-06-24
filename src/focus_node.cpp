@@ -444,18 +444,18 @@ class FocusActionServer : public rclcpp::Node {
             msg_ = std::format("Calculated:\n"
                                "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
                                "    [Center]   x:{:.2f}  y:{:.2f}  z:{:.2f}\n"
-                               "    [Height]   dz:{:.2f}\n",
+                               "    [Height]   dz:{:.4f}\n",
                                to_degree(roll_), to_degree(pitch_),
                                to_degree(yaw_), center[0], center[1], center[2],
                                dz_);
             feedback->debug_msgs = msg_;
             goal_handle->publish_feedback(feedback);
             RCLCPP_INFO(get_logger(), msg_.c_str());
-            if (early_terminate && planning_) {
-                angle_focused_ = true;
-                z_focused_ = true;
-                break;
-            }
+            //if (early_terminate && planning_) {
+                //angle_focused_ = true;
+                //z_focused_ = true;
+                //break;
+            //}
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;
@@ -510,6 +510,7 @@ class FocusActionServer : public rclcpp::Node {
                     MultiPipelinePlanRequestParameters(
                         shared_from_this(),
                         {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
+                        //{"ompl_rrtc", "stomp_joint"});
                 // auto stop_on_first =
                 //     [](const PlanningComponent::PlanSolutions &sols,
                 //        const auto &) { return sols.hasSuccessfulSolution();
@@ -544,10 +545,10 @@ class FocusActionServer : public rclcpp::Node {
                     if (execute_success) {
                         RCLCPP_INFO(get_logger(), "Execute Success!");
                         if (early_terminate) {
-                            planning_ = true;
-                            // angle_focused_ = true;
-                            // z_focused_ = true;
-                            // break;
+                            //planning_ = true;
+                            angle_focused_ = true;
+                            z_focused_ = true;
+                            break;
                         }
                     } else {
                         RCLCPP_INFO(get_logger(), "Execute Failed!");

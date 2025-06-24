@@ -495,6 +495,7 @@ class CoordinatorNode : public rclcpp::Node {
             switch (step.action) {
             case UserAction::Focus:
                 if (!goal_still_active(active_focus_goal_handle_)) {
+		    robot_mode_ = true;
                     feedback->debug_msgs += "  [Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     sendFocusGoal();
@@ -706,11 +707,6 @@ class CoordinatorNode : public rclcpp::Node {
     void mainLoop() {
         std::lock_guard<std::mutex> lock(data_mutex_);
 
-        robot_mode_ = robot_mode_read_;
-        oct_mode_ = oct_mode_read_;
-        octa_mode_ = octa_mode_read_;
-        oce_mode_ = oce_mode_read_;
-
         if (cancel_action_) {
             if (goal_still_active(active_focus_goal_handle_)) {
                 msg_ = "Canceling Focus action\n";
@@ -848,6 +844,12 @@ class CoordinatorNode : public rclcpp::Node {
             sendFullScanGoal();
             break;
         default:
+            scan_trigger_ = scan_trigger_read_;
+            scan_3d_ = scan_3d_read_;
+            robot_mode_ = robot_mode_read_;
+            oct_mode_ = oct_mode_read_;
+            octa_mode_ = octa_mode_read_;
+            oce_mode_ = oce_mode_read_;
             break;
         }
     }
@@ -863,7 +865,7 @@ class CoordinatorNode : public rclcpp::Node {
         options.feedback_callback =
             [this](FocusGoalHandle::SharedPtr,
                    const std::shared_ptr<const FocusAction::Feedback> fb) {
-                msg_ += fb->debug_msgs.c_str();
+                msg_ += fb->debug_msgs;
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
             };
 

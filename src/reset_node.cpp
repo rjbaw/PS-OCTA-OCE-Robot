@@ -273,8 +273,8 @@ class ResetActionServer : public rclcpp::Node {
 
         if (failed_) {
             RCLCPP_INFO(get_logger(), "URScript fall back");
-            float robot_vel = 0.8;
-            float robot_acc = 0.8;
+            float robot_vel = 0.5;
+            float robot_acc = 0.5;
             double j0 = to_radian(0.0);
             double j1 = to_radian(-60.0);
             double j2 = to_radian(90.0);
