@@ -163,13 +163,8 @@ class FocusActionServer : public rclcpp::Node {
         }
         auto result = std::make_shared<Focus::Result>();
         result->status = "Focus action canceled by user request";
-        //call_scan3d(false);
-        // auto fut = service_scan_3d_->async_send_request(req);
-        // if (rclcpp::spin_until_future_complete(shared_from_this(), fut, 2s)
-        // !=
-        //     rclcpp::FutureReturnCode::SUCCESS) {
-        //     RCLCPP_WARN(get_logger(), "scan_3d did not respond in time");
-        // }
+        call_scan3d(false);
+        call_deactivateFocus();
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();

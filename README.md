@@ -6,19 +6,19 @@
 
 | Component | Tested Version | Notes |
 |-----------|---------------|-------|
-| ROS 2 | **Jazzy** | Native install or inside the provided Docker image |
-| LabVIEW | **2024 Q1** (64-bit) | Required for acquisition & real‑time display |
-| RTI DDS Toolkit | **3.1** | Install into LabVIEW before first run |
-| Open3D | ≥ 0.18 | libopen3d-dev (debian) or from source |
-| OpenCV | ≥ 4.10 | libopencv-dev |
-| Eigen | ≥ 3.4 | Included with ROS2 by default or libeigen3-dev (debian) or from source  |
-| Docker Desktop | ≥ 4.30 (optional) | Reproducible container build |
+| [ROS 2](https://docs.ros.org/en/jazzy/index.html) | **Jazzy** | Native install or inside the provided Docker image |
+| [LabVIEW](https://www.ni.com/en/shop/labview.html) | **2024 Q1** (64-bit) | Required for acquisition & real-time display |
+| [RTI DDS Toolkit](https://www.rti.com/products/tools/dds-toolkit-labview) | **3.2.0.114** | Install into LabVIEW before first run |
+| [Open3D](https://www.open3d.org) | **0.19** | libopen3d-dev |
+| [OpenCV](https://www.open3d.org) | **4.6.0** | libopencv-dev |
+| [Eigen](https://eigen.tuxfamily.org) | **3.4** | Included with ROS2 by default or libeigen3-dev  |
+| [Docker](https://www.docker.com) | **28.2.2** (optional) | Reproducible container build |
 
 ---
 
 ## Table of Contents
 1. [Quick start](#quick-start)  
-2. [Design](#repository)  
+2. [Design](#design)  
 3. [Usage examples](#usage-examples)  
 4. [Hardware](#hardware)
 5. [Citing](#citing) 
@@ -27,14 +27,6 @@
 ---
 
 ## Quick start
-### Prerequisites
-- [ROS2 Jazzy](https://docs.ros.org/en/jazzy/index.html)
-- [LabVIEW 2024 Q1](https://www.ni.com/en/shop/labview.html)
-- [RTI DDS Toolkit for LabVIEW](https://www.rti.com/products/tools/dds-toolkit-labview)
-- [Open3D](https://www.open3d.org)
-- [OpenCV](https://www.open3d.org)
-- [Eigen](https://eigen.tuxfamily.org)
-- [Docker (optional)](https://www.docker.com)
 
 > All dependencies—except LabVIEW—are already baked into the Docker image.
 
@@ -52,7 +44,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### Launch helper
+#### Launch helper
 ```bash
 ./launch.sh -h
 Launch octa/oce ROS program
@@ -64,25 +56,69 @@ s     Simulation
 d     Debug
 ```
 
-## Design [TODO]
+## Design
+### Overview
+TODO
 
-## Usage examples [TODO]
+```
+    ┌────────────────────┐
+    │ OCTA-OCE Equipment │
+    └────────────────────┘
+               │
+               │ Control & Data
+               ▼
+ ┌──────────────────┐   DDS/RTPS   ┌──────────────────┐
+ │  LabVIEW RT VI   │◄────────────►│   ROS 2 Jazzy    │
+ │ (Acquisition &   │              │  (Control layer) │
+ │  Live display)   │              └────────┬─────────┘
+ └──────────────────┘                       │ ros2_control
+                                            ▼
+                                    ┌──────────────────┐
+                                    │   UR3e Robot     │
+                                    │  (RTDE bridge)   │
+                                    └──────────────────┘
+```
 
-## Citing [TODO]
+
+
+### ROS2 Design
+TODO
+
+## Usage examples
+
+### Controlling from LabVIEW
+TODO
+![robot_control](./assets/robot_control.png)
+
+### Hardware Run
+
+```bash
+./launch.sh
+```
+
+### Simulation Run
+```bash
+bash utils/start_ursim.sh
+./launch.sh -s
+```
+
+## Citing
+
 ```bibtex
 @software{ps-octa-oce-robot,
   title        = {Polarization-Sensitive OCT Angiography and Optical Coherence Elastography Robot Platform},
   year         = {2025},
   publisher    = {GitHub},
-  journal      = {GitHub repository},
+  howpublished = {\url{https://github.com/rjbaw/PS-OCTA-OCE-Labview}},
 }
 ```
-  <!-- howpublished = {\url{https://github.com/<YOUR_ORG>/ps-octa-oce-robot}}, -->
-  <!-- doi          = {10.5281/zenodo.1234567} -->
 
-## Hardware [TODO]
-- UR3e Robot arm
+## Hardware
+TODO
+![setup](./assets/setup.jpeg)
+
+- UR3e Robot
 
 ## Funding
 
-This work was supported by the National Institutes of Health under grant R01AR077560-01A1 – “Dynamic OCE with acoustic micro-tapping for in‑vivo monitoring of skin-graft surgeries”, University of Washington, PI Ivan Pelivanov.
+This work was supported by the National Institutes of Health under grant [R01AR077560-01A1](https://reporter.nih.gov/project-details/10204507) – “Dynamic OCE with acoustic micro-tapping for in-vivo monitoring of skin-graft surgeries”, University of Washington, PI Ivan Pelivanov.

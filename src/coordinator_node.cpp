@@ -6,9 +6,12 @@
  * Actions are toggled using rising edge to prevent multiple triggers.
  */
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <future>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -372,7 +375,6 @@ class CoordinatorNode : public rclcpp::Node {
     double pitch_ = 0.0;
     double yaw_ = 0.0;
     bool success_ = false;
-    bool ok_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
     rclcpp::Time start;
@@ -522,7 +524,7 @@ class CoordinatorNode : public rclcpp::Node {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
                 }
 
-                ok_ = false;
+                success_ = false;
                 switch (step.action) {
                 case UserAction::Focus:
                     feedback->debug_msgs += "  [Action] Focusing\n";
@@ -543,13 +545,13 @@ class CoordinatorNode : public rclcpp::Node {
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     trigger_scan();
                     goal_handle->publish_feedback(feedback);
-                    ok_ = !goal_handle->is_canceling();
+                    success_ = !goal_handle->is_canceling();
                     break;
                 default:
                     break;
                 }
                 ++pc;
-                // if (!ok_) {
+                // if (!success_) {
                 //     // pc++;
                 //     result->success = false;
                 //     result->status = "Step failed";
@@ -671,7 +673,7 @@ class CoordinatorNode : public rclcpp::Node {
                             "dz: {}, drot: {}, autofocus: {}, "
                             "freedrive: {}, previous: {}, "
                             "next: {}, home: {}, reset: {}, scan_trigger: "
-                            "{}, scan_3d: {}, z_height: {}, full_scan: {}"
+                            "{}, scan_3d: {}, z_height: {}, full_scan: {}, "
                             "robot_mode: {}, oct_mode: {}, octa_mode: {}, "
                             "oce_mode: {}",
                             robot_vel_, robot_acc_, z_tolerance_,
@@ -689,6 +691,9 @@ class CoordinatorNode : public rclcpp::Node {
     void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         cancel_action_ = msg->data;
+        if (cancel_action_) {
+            autofocus_ = false;
+        }
     }
 
     void publisherCallback() {
@@ -712,8 +717,8 @@ class CoordinatorNode : public rclcpp::Node {
                         "[PUBLISHING] msg: %s, angle: %.2f,"
                         "circle_state: %d, "
                         "scan_trigger: %s, "
-                        "apply_config: %s, end_state: %s, scan_3d: %s"
-                        "full_scan: %s, robot_mode: %s, oct_mode: %s"
+                        "apply_config: %s, end_state: %s, scan_3d: %s, "
+                        "full_scan: %s, robot_mode: %s, oct_mode: %s, "
                         "octa_mode: %s, oce_mode: %s",
                         msg.msg.c_str(), msg.angle, msg.circle_state,
                         (msg.scan_trigger ? "true" : "false"),
@@ -821,15 +826,12 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Focus;
-                    //success_ = false;
+                    end_state_ = false;
                 }
-                //if (end_state_) {
-                //    success_ = true;
-                //}
             } else {
-                //if (!success_) {
                 if (!end_state_) {
                     msg_ = "Canceling Focus action\n";
+                    end_state_ = true;
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
                     if (goal_still_active(active_focus_goal_handle_)) {
                         focus_action_client_->async_cancel_goal(
@@ -874,9 +876,13 @@ class CoordinatorNode : public rclcpp::Node {
             oct_mode_ = oct_mode_read_;
             octa_mode_ = octa_mode_read_;
             oce_mode_ = oce_mode_read_;
-	    end_state_ = false;
             scan_3d_ = false;
             triggered_service_ = false;
+            if (end_state_ && !autofocus_) {
+                end_state_ = false;
+            } else {
+                end_state_ = true;
+            }
             break;
         }
     }
@@ -904,8 +910,7 @@ class CoordinatorNode : public rclcpp::Node {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
-                    //success_ = true;
-                    ok_ = true;
+                    success_ = true;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "Focus action ABORTED");
@@ -918,8 +923,6 @@ class CoordinatorNode : public rclcpp::Node {
                                 "Focus action UNKNOWN result code");
                     break;
                 }
-		end_state_ = true;
-		scan_3d_ = false;
                 active_focus_goal_handle_.reset();
             };
 
@@ -969,7 +972,7 @@ class CoordinatorNode : public rclcpp::Node {
                     }
                     angle_ += yaw;
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                    ok_ = true;
+                    success_ = true;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
@@ -1189,13 +1192,13 @@ class CoordinatorNode : public rclcpp::Node {
         std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         if (!triggered_service_) {
             end_state_ = true;
-            trigger_apply_config();
             triggered_service_ = true;
+            trigger_apply_config();
         }
         if (!autofocus_) {
-            response->success = true;
-            triggered_service_ = false;
             end_state_ = false;
+            triggered_service_ = false;
+            response->success = true;
         } else {
             response->success = false;
         }
