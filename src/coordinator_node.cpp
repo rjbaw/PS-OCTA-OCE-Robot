@@ -880,8 +880,6 @@ class CoordinatorNode : public rclcpp::Node {
             triggered_service_ = false;
             if (end_state_ && !autofocus_) {
                 end_state_ = false;
-            } else {
-                end_state_ = true;
             }
             break;
         }
