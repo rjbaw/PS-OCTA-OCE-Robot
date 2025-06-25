@@ -740,7 +740,6 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 focus_action_client_->async_cancel_goal(
                     active_focus_goal_handle_);
-                end_state_ = true;
             }
             if (goal_still_active(active_move_z_goal_handle_)) {
                 msg_ = "Canceling Move Z-angle action\n";
@@ -822,14 +821,15 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ = "[Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Focus;
-                    success_ = false;
+                    //success_ = false;
                 }
-                // if (end_state_) {
-                //     success_ = true;
-                // }
+                //if (end_state_) {
+                //    success_ = true;
+                //}
             } else {
-                if (!success_) {
-                    msg_ = "Canceling Focus action";
+                //if (!success_) {
+                if (!end_state_) {
+                    msg_ = "Canceling Focus action\n";
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
                     if (goal_still_active(active_focus_goal_handle_)) {
                         focus_action_client_->async_cancel_goal(
@@ -870,11 +870,13 @@ class CoordinatorNode : public rclcpp::Node {
             break;
         default:
             scan_trigger_ = scan_trigger_read_;
-            scan_3d_ = scan_3d_read_;
             robot_mode_ = robot_mode_read_;
             oct_mode_ = oct_mode_read_;
             octa_mode_ = octa_mode_read_;
             oce_mode_ = oce_mode_read_;
+	    end_state_ = false;
+            scan_3d_ = false;
+            triggered_service_ = false;
             break;
         }
     }
@@ -902,7 +904,7 @@ class CoordinatorNode : public rclcpp::Node {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
-                    success_ = true;
+                    //success_ = true;
                     ok_ = true;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
@@ -916,6 +918,8 @@ class CoordinatorNode : public rclcpp::Node {
                                 "Focus action UNKNOWN result code");
                     break;
                 }
+		end_state_ = true;
+		scan_3d_ = false;
                 active_focus_goal_handle_.reset();
             };
 
