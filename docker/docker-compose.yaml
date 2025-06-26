@@ -1,7 +1,5 @@
 services:
   ros2:
-    #image: osrf/ros:jazzy-desktop-full
-    #image: ros:jazzy
     container_name: ps-oce-robot
     build: .
     shm_size: '512m'
@@ -13,7 +11,7 @@ services:
       - $HOME/:/workspace/home/
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - $HOME/.Xauthority:/root/.Xauthority:ro
-    #restart: always
+    restart: always
     network_mode: host
     privileged: true
-    #tty: true
+    tty: true

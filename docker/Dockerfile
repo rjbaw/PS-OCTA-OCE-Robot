@@ -34,8 +34,7 @@ RUN passwd -d ubuntu && usermod -aG sudo ubuntu
 
 RUN chmod +x /ros_entrypoint.sh
 
-#COPY PS-OCTA-OCE-Labview/ /workspace/ps-oce-robot/
-RUN git clone https://github.com/rjbaw/PS-OCTA-OCE-Labview.git /workspace/ps-oce-robot/
+RUN git clone https://github.com/rjbaw/PS-OCTA-OCE-Robot.git /workspace/ps-oce-robot/
 RUN chown -R ubuntu:ubuntu /workspace/ps-oce-robot
 
 USER ubuntu

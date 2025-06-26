@@ -143,7 +143,7 @@ bash utils/ur_moveit.sh
   title        = {Polarization-Sensitive OCT Angiography and Optical Coherence Elastography Robot Platform},
   year         = {2025},
   publisher    = {GitHub},
-  howpublished = {\url{https://github.com/rjbaw/PS-OCTA-OCE-Labview}},
+  howpublished = {\url{https://github.com/rjbaw/PS-OCTA-OCE-Robot}},
 }
 ```
 
