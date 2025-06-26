@@ -112,6 +112,8 @@ d     Debug
 
 ## Usage examples
 
+![sample](./assets/sample.gif)
+
 ### Controlling from LabVIEW
 
 ![robot_control](./assets/robot_control.png)
