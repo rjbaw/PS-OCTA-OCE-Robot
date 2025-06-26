@@ -58,8 +58,6 @@ d     Debug
 
 ## Design
 ### Overview
-TODO
-
 ```
     ┌────────────────────┐
     │ OCTA-OCE Equipment │
@@ -78,28 +76,64 @@ TODO
                                     │  (RTDE bridge)   │
                                     └──────────────────┘
 ```
+- Notes: Preview images and button control is sent over the RTI DDS layer. Control of the robot is done using Moveit and ROS2 UR drivers.
 
-
+### Directory layout
+```
+|-- action/    # action definitions
+|-- src/       # source files
+|-- docker/    # docker container quick start
+|-- VI/        # LabVIEW files
+|   |-- Robot/     # Labview message definitions and robot VI files
+|   |   |-- rti/   # Generated VI subscriber/publisher
+|-- msg/       # dds message definitions
+|-- bags/      # bags captured from real system for testing
+|-- cad/       # cad files for end effector
+|-- srv/       # service files definitions
+|-- utils/
+|   |-- start_ursim.sh  # Simulate UR3e robot
+|   |-- setup.sh        # Dependencies for manual install
+|   |-- record.sh       # Recording ROS bags
+|   |-- ur_driver.sh    # ROS2 UR robot driver
+|   |-- ur_moveit.sh    # Moveit driver
+|-- config/    # configuration files
+|-- srdf/      # srdf definitions
+|-- urdf/      # end effector definitions
+```
 
 ### ROS2 Design
-TODO
+- `coordinator_node`: handles DDS messages and action server jobs
+- `focus_node`: handles image capture and auto-focusing of end effector to desired position.
+- `reset_node`: moves robot to default position and captures preview background
+- `move_z_angle_node`: rotates the robot end effector in the z-axis of the robot's TCP
+- `freedrive_node`: switch robot controller to `freedrive_mode_controller` and back to `scaled_joint_trajectory_controller`
+- `reconnect_client`: resets the robot status to ready mode 
+- `joint_state_publisher`: echoes an binary integer that flips if there is velocity in the joints - freezes preview on robot movement.
 
 ## Usage examples
 
 ### Controlling from LabVIEW
-TODO
+
 ![robot_control](./assets/robot_control.png)
 
 ### Hardware Run
 
 ```bash
-./launch.sh
+./launch.sh -d # debug mode
+bash utils/record.sh bag1 # for recording data
 ```
 
 ### Simulation Run
 ```bash
-bash utils/start_ursim.sh
-./launch.sh -s
+bash utils/start_ursim.sh # start UR robot simulator container
+./launch.sh -sd # debug mode
+```
+
+### Testing
+
+```bash
+bash utils/ur_driver.sh
+bash utils/ur_moveit.sh
 ```
 
 ## Citing
@@ -114,10 +148,7 @@ bash utils/start_ursim.sh
 ```
 
 ## Hardware
-TODO
 ![setup](./assets/setup.jpeg)
-
-- UR3e Robot
 
 ## Funding
 
