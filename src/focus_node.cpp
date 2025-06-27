@@ -334,7 +334,12 @@ class FocusActionServer : public rclcpp::Node {
         z_focused_ = false;
 
         while (!angle_focused_ || !z_focused_) {
-            if (!goal_handle->is_active() || goal_handle->is_canceling()) {
+            if (!goal_handle->is_active()) {
+                tem_->stopExecution(true);
+                planning_component_->setStartStateToCurrentState();
+                return;
+            }
+            if (goal_handle->is_canceling()) {
                 tem_->stopExecution(true);
                 result->status = "Cancel requested!";
                 goal_handle->canceled(result);
@@ -344,7 +349,12 @@ class FocusActionServer : public rclcpp::Node {
             }
             start = now();
             while (!call_scan3d(true)) {
-                if (!goal_handle->is_active() || goal_handle->is_canceling()) {
+                if (!goal_handle->is_active()) {
+                    tem_->stopExecution(true);
+                    planning_component_->setStartStateToCurrentState();
+                    return;
+                }
+                if (goal_handle->is_canceling()) {
                     tem_->stopExecution(true);
                     result->status = "Cancel requested!";
                     goal_handle->canceled(result);
@@ -370,8 +380,12 @@ class FocusActionServer : public rclcpp::Node {
                         img_array_.push_back(frame);
                         break;
                     }
-                    if (!goal_handle->is_active() ||
-                        goal_handle->is_canceling()) {
+                    if (!goal_handle->is_active()) {
+                        tem_->stopExecution(true);
+                        planning_component_->setStartStateToCurrentState();
+                        return;
+                    }
+                    if (goal_handle->is_canceling()) {
                         tem_->stopExecution(true);
                         result->status = "Cancel requested!";
                         goal_handle->canceled(result);
@@ -394,7 +408,12 @@ class FocusActionServer : public rclcpp::Node {
 
             start = now();
             while (!call_scan3d(false)) {
-                if (!goal_handle->is_active() || goal_handle->is_canceling()) {
+                if (!goal_handle->is_active()) {
+                    tem_->stopExecution(true);
+                    planning_component_->setStartStateToCurrentState();
+                    return;
+                }
+                if (goal_handle->is_canceling()) {
                     tem_->stopExecution(true);
                     result->status = "Cancel requested!";
                     goal_handle->canceled(result);
@@ -540,8 +559,12 @@ class FocusActionServer : public rclcpp::Node {
                 planning_interface::MotionPlanResponse plan_solution =
                     planning_component_->plan(req, choose_shortest);
                 if (plan_solution) {
-                    if (!goal_handle->is_active() ||
-                        goal_handle->is_canceling()) {
+                    if (!goal_handle->is_active()) {
+                        tem_->stopExecution(true);
+                        planning_component_->setStartStateToCurrentState();
+                        return;
+                    }
+                    if (goal_handle->is_canceling()) {
                         tem_->stopExecution(true);
                         result->status = "Cancel requested!";
                         goal_handle->canceled(result);
@@ -576,7 +599,12 @@ class FocusActionServer : public rclcpp::Node {
         goal_handle->publish_feedback(feedback);
         start = now();
         while (!call_deactivateFocus()) {
-            if (goal_handle->is_active() || goal_handle->is_canceling()) {
+            if (!goal_handle->is_active()) {
+                tem_->stopExecution(true);
+                planning_component_->setStartStateToCurrentState();
+                return;
+            }
+            if (goal_handle->is_canceling()) {
                 tem_->stopExecution(true);
                 result->status = "Cancel requested!";
                 goal_handle->canceled(result);
@@ -592,8 +620,12 @@ class FocusActionServer : public rclcpp::Node {
             }
             rclcpp::sleep_for(50ms);
         }
-
-        if (!goal_handle->is_active() || goal_handle->is_canceling()) {
+        if (!goal_handle->is_active()) {
+            tem_->stopExecution(true);
+            planning_component_->setStartStateToCurrentState();
+            return;
+        }
+        if (goal_handle->is_canceling()) {
             tem_->stopExecution(true);
             feedback->debug_msgs = "Focus action canceled\n";
             result->status = "Focus action canceled\n";
