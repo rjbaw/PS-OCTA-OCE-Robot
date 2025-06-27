@@ -505,8 +505,14 @@ class CoordinatorNode : public rclcpp::Node {
                 std::format("Step [{}/{}]\n", pc, full_scan_recipe.size());
 
             const Step &step = full_scan_recipe[pc];
+            const Step *prev_step;
+            if (pc == 0) {
+                prev_step = &step;
+            } else {
+                prev_step = &full_scan_recipe[pc - 1];
+            }
 
-            if (stepFinished(step)) {
+            if (stepFinished(*prev_step)) {
                 robot_mode_ = (step.mode == Mode::ROBOT);
                 oct_mode_ = (step.mode == Mode::OCT);
                 octa_mode_ = (step.mode == Mode::OCTA);
