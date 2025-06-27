@@ -60,14 +60,6 @@ ament_export_dependencies(rosidl_default_runtime)
 add_executable(joint_state_publisher src/joint_state_publisher.cpp)
 ament_target_dependencies(joint_state_publisher rclcpp std_msgs sensor_msgs)
 
-add_executable(test_moveit src/test_moveit.cpp src/joint_state_subscriber.cpp)
-ament_target_dependencies(test_moveit rclcpp moveit_ros_planning_interface
-                          geometry_msgs tf2_ros std_msgs)
-
-target_link_libraries(
-  test_moveit "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
-
 add_executable(coordinator_node src/coordinator_node.cpp src/utils.cpp)
 ament_target_dependencies(
   coordinator_node
@@ -150,7 +142,7 @@ target_link_libraries(freedrive_node "${cpp_typesupport_target}")
 
 # target_include_directories(octa_ctrl PRIVATE
 # "/opt/ros/jazzy/include/ur_dashboard_msgs" )
-add_executable(reconnect_client src/reconnect_client.cpp src/reconnect_node.cpp)
+add_executable(reconnect_client src/reconnect_node.cpp)
 ament_target_dependencies(reconnect_client rclcpp rclcpp_action
                           ur_dashboard_msgs std_srvs)
 
@@ -165,7 +157,6 @@ target_link_libraries(test_detect ${OpenCV_LIBS})
 install(
   TARGETS sub_img
           joint_state_publisher
-          test_moveit
           test_detect
           reconnect_client
           coordinator_node

@@ -209,3 +209,15 @@ void ReconnectClient::timerCallback() {
     //                     loaded_program.c_str(), resp->answer.c_str());
     //     });
 }
+
+int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+
+    auto node = std::make_shared<ReconnectClient>();
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
+
+    rclcpp::shutdown();
+    return 0;
+}
