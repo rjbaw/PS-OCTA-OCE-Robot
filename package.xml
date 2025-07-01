@@ -3,7 +3,7 @@
 <package format="3">
   <name>octa_ros</name>
   <version>1.0.0</version>
-  <description>OCTA-OCE LabView ROS2 Driver</description>
+  <description>OCTA-OCE ROS2 Driver</description>
   <maintainer email="rjbaw@uw.edu">Ren</maintainer>
   <license>nil</license>
 
@@ -13,6 +13,21 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>action_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>unique_identifier_msgs</depend>
+  <depend>ur_dashboard_msgs</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>open3d</depend>
+  <depend>eigen3</depend>
 
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>

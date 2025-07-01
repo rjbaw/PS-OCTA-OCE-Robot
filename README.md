@@ -10,7 +10,7 @@
 | [LabVIEW](https://www.ni.com/en/shop/labview.html) | **2024 Q1** (64-bit) | Required for acquisition & real-time display |
 | [RTI DDS Toolkit](https://www.rti.com/products/tools/dds-toolkit-labview) | **3.2.0.114** | Install into LabVIEW before first run |
 | [Open3D](https://www.open3d.org) | **0.19** | libopen3d-dev |
-| [OpenCV](https://www.open3d.org) | **4.6.0** | libopencv-dev |
+| [OpenCV](https://www.opencv.org) | **4.6.0** | libopencv-dev |
 | [Eigen](https://eigen.tuxfamily.org) | **3.4** | Included with ROS2 by default or libeigen3-dev  |
 | [Docker](https://www.docker.com) | **28.2.2** (optional) | Reproducible container build |
 

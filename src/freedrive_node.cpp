@@ -87,7 +87,7 @@ class FreedriveActionServer : public rclcpp::Node {
         }
         stop_keepalive();
         switch_to_freedrive_controller(false);
-        RCLCPP_INFO(get_logger(), "Freedrive action cancelled by client");
+        RCLCPP_INFO(get_logger(), "Freedrive action canceled by client");
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 

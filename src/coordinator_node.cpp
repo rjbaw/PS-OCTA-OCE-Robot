@@ -471,7 +471,7 @@ class CoordinatorNode : public rclcpp::Node {
     bool stepFinished(const Step &s) {
         switch (s.action) {
         case UserAction::Focus:
-            return !goal_still_active(active_focus_goal_handle_);
+            return (!goal_still_active(active_focus_goal_handle_));
         case UserAction::MoveZangle:
             return !goal_still_active(active_move_z_goal_handle_);
         case UserAction::Scan:
@@ -530,13 +530,18 @@ class CoordinatorNode : public rclcpp::Node {
                     rclcpp::sleep_for(std::chrono::milliseconds(10));
                 }
 
-                success_ = false;
+                // success_ = false;
                 switch (step.action) {
                 case UserAction::Focus:
                     feedback->debug_msgs += "  [Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     sendFocusGoal();
                     goal_handle->publish_feedback(feedback);
+                    while (!active_focus_goal_handle_ && rclcpp::ok()) {
+                        rclcpp::sleep_for(5ms);
+                    }
+                    wait_for_active_goal(active_focus_goal_handle_,
+                                         focus_action_client_, goal_handle);
                     break;
                 case UserAction::MoveZangle:
                     feedback->debug_msgs +=
@@ -544,6 +549,12 @@ class CoordinatorNode : public rclcpp::Node {
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     sendMoveZAngleGoal(step.arg);
                     goal_handle->publish_feedback(feedback);
+                    while (!active_move_z_goal_handle_ && rclcpp::ok()) {
+                        rclcpp::sleep_for(5ms);
+                    }
+                    wait_for_active_goal(active_move_z_goal_handle_,
+                                         move_z_angle_action_client_,
+                                         goal_handle);
                     break;
                 case UserAction::Scan:
                     feedback->debug_msgs +=
@@ -551,7 +562,7 @@ class CoordinatorNode : public rclcpp::Node {
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     trigger_scan();
                     goal_handle->publish_feedback(feedback);
-                    success_ = !goal_handle->is_canceling();
+                    // success_ = !goal_handle->is_canceling();
                     break;
                 default:
                     break;
@@ -826,24 +837,23 @@ class CoordinatorNode : public rclcpp::Node {
             }
             break;
         case UserAction::Focus:
-            if (autofocus_) {
+            if (autofocus_ && !end_state_) {
                 if (previous_action_ != current_action_) {
                     sendFocusGoal();
                     msg_ = "[Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Focus;
-                    end_state_ = false;
                 }
             } else {
-                if (!end_state_) {
-                    msg_ = "Canceling Focus action\n";
-                    end_state_ = true;
-                    RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                    if (goal_still_active(active_focus_goal_handle_)) {
-                        focus_action_client_->async_cancel_goal(
-                            active_focus_goal_handle_);
-                    }
+                // if (!end_state_) {
+                msg_ = "Canceling Focus action\n";
+                end_state_ = true;
+                RCLCPP_INFO(this->get_logger(), msg_.c_str());
+                if (goal_still_active(active_focus_goal_handle_)) {
+                    focus_action_client_->async_cancel_goal(
+                        active_focus_goal_handle_);
                 }
+                // }
             }
             break;
         case UserAction::MoveZangle:
@@ -911,10 +921,11 @@ class CoordinatorNode : public rclcpp::Node {
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
                 msg_ += result.result->status.c_str();
+                end_state_ = true;
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
-                    success_ = true;
+                    // success_ = true;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "Focus action ABORTED");
@@ -976,7 +987,7 @@ class CoordinatorNode : public rclcpp::Node {
                     }
                     angle_ += yaw;
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                    success_ = true;
+                    // success_ = true;
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
