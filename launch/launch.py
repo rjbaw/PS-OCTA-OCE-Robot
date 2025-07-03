@@ -346,7 +346,6 @@ def launch_setup():
         .planning_pipelines()
         .to_moveit_configs()
     )
-    # .moveit_cpp(file_path=get_package_share_directory("moveit_config") + "/config/moveit_cpp.yaml)
 
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",
@@ -359,44 +358,12 @@ def launch_setup():
         output="screen",
     )
 
-    OMPL_CFG = {
-        "planning_pipelines": ["ompl"],
-        "ompl": {
-            "planning_plugins": "ompl_interface/OMPLPlanner",
-            "request_adapters": [
-                "default_planning_request_adapters/ResolveConstraintFrames",
-                "default_planning_request_adapters/ValidateWorkspaceBounds",
-                "default_planning_request_adapters/CheckStartStateBounds",
-                "default_planning_request_adapters/CheckStartStateCollision",
-            ],
-            "response_adapters": [
-                "default_planning_response_adapters/AddTimeOptimalParameterization",
-                "default_planning_response_adapters/ValidateSolution",
-                "default_planning_response_adapters/DisplayMotionPath",
-            ],
-            "start_state_max_bounds_error": 0.1,
-        },
-        "moveit_cpp": {  # MoveItCpp mirror (harmless duplicate)
-            "planning_scene_monitor_options": {
-                "name": "planning_scene_monitor",
-                "robot_description": "robot_description",
-                "joint_state_topic": "/joint_states",
-                "publish_planning_scene": True,
-                "publish_geometry_updates": True,
-                "publish_state_updates": True,
-                "publish_transforms_updates": True,
-            },
-            "planning_pipelines": ["ompl"],
-        },
-    }
-
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
         output="screen",
         parameters=[
             moveit_config.to_dict(),
-            # OMPL_CFG,
             warehouse_ros_config,
             {
                 "use_sim_time": use_sim_time,
@@ -442,61 +409,11 @@ def launch_setup():
         output="screen",
     )
 
-    # moveit_cpp_yaml = PathJoinSubstitution(
-    #     [FindPackageShare("octa_ros"), "config", "moveit_cpp.yaml"]
-    # )
-
     moveit_cpp_yaml = load_yaml("octa_ros", "config/moveit_cpp.yaml")
-    # moveit_cpp_params = {
-    #     "moveit_cpp": {
-    #         "planning_scene_monitor_options": {
-    #             "name": "planning_scene_monitor",
-    #             "robot_description": "robot_description",
-    #             "joint_state_topic": "/joint_states",
-    #             "publish_planning_scene": True,
-    #             "publish_geometry_updates": True,
-    #             "publish_state_updates": True,
-    #             "publish_transforms_updates": True,
-    #         },
-    #         # Add this line:
-    #         "planning_pipelines": ["ompl"],
-    #     },
-    #     "ompl": {
-    #         "planning_plugin": "ompl_interface/OMPLPlanner",
-    #         "request_adapters": [
-    #             "default_planning_request_adapters/ResolveConstraintFrames",
-    #             "default_planning_request_adapters/ValidateWorkspaceBounds",
-    #             "default_planning_request_adapters/CheckStartStateBounds",
-    #             "default_planning_request_adapters/CheckStartStateCollision",
-    #         ],
-    #         "response_adapters": [
-    #             "default_planning_response_adapters/AddTimeOptimalParameterization",
-    #             "default_planning_response_adapters/ValidateSolution",
-    #             "default_planning_response_adapters/DisplayMotionPath",
-    #         ],
-    #         "start_state_max_bounds_error": 0.1,
-    #     },
-    # }
-
-    # parameters=[
-    #     moveit_config.robot_description,
-    #     moveit_config.robot_description_semantic,
-    #     moveit_config.robot_description_kinematics,
-    #     # moveit_config.planning_pipelines,
-    #     ParameterFile(moveit_cpp_yaml, allow_substs=True),
-    #     moveit_config.joint_limits,
-    #     warehouse_ros_config,
-    # ],
 
     common_parameters = [
-        # {"robot_description": robot_description_content},
-        # moveit_config.robot_description_semantic,
-        # moveit_config.robot_description_kinematics,
-        # moveit_config.joint_limits,
         moveit_config.to_dict(),
         moveit_cpp_yaml,
-        # OMPL_CFG,
-        # moveit_cpp_params,
         warehouse_ros_config,
     ]
 

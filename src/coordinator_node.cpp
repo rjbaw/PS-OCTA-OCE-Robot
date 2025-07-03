@@ -350,7 +350,6 @@ class CoordinatorNode : public rclcpp::Node {
     double roll_ = 0.0;
     double pitch_ = 0.0;
     double yaw_ = 0.0;
-    bool success_ = false;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
     rclcpp::Time start;
@@ -580,61 +579,58 @@ class CoordinatorNode : public rclcpp::Node {
         }
 
         if (full_scan_read_) {
-	    full_scan_ = true;
-            if (scan_trigger_read_!=scan_trigger_store_) {
+            full_scan_ = true;
+            if (scan_trigger_read_ != scan_trigger_store_) {
                 scan_state_ = ScanState::IDLE;
-		scan_trigger_store_ = scan_trigger_read_;
+                scan_trigger_store_ = scan_trigger_read_;
             }
-            if ((pc_+1) >= full_scan_recipe.size()) {
+            if ((pc_ + 1) >= full_scan_recipe.size()) {
                 pc_ = 0;
                 full_scan_ = false;
-		full_scan_read_ = false;
+                full_scan_read_ = false;
                 msg_ = "Full Scan complete!\n";
-		return;
+                return;
             }
             const Step &step = full_scan_recipe[pc_];
             robot_mode_ = (step.mode == Mode::ROBOT);
             oct_mode_ = (step.mode == Mode::OCT);
             octa_mode_ = (step.mode == Mode::OCTA);
             oce_mode_ = (step.mode == Mode::OCE);
-	    std::string action_mode;
-	    std::string scan_mode;
-	    if (robot_mode_) {
-	        scan_mode = "ROBOT Mode";
-	    }
-	    if (oct_mode_) {
-	        scan_mode = "OCT Mode";
-	    }
-	    if (octa_mode_) {
-	        scan_mode = "OCTA Mode";
-	    }
-	    if (oce_mode_) {
-	        scan_mode = "OCE Mode";
-	    }
-	    if (step.action==UserAction::Focus) {
-	        action_mode = "Focus Action";
-	    }
-	    if (step.action==UserAction::MoveZangle) {
-	        action_mode = "MoveZangle Action";
-	    }
-	    if (step.action==UserAction::Scan) {
-	        action_mode = "Scanning Action";
-	    }
-            msg_ = std::format("Step [{}/{}]: {}, {}\n", pc_+1, full_scan_recipe.size(), action_mode, scan_mode);
-            //while (robot_mode_read_ != robot_mode_ ||
-            //       oct_mode_read_ != oct_mode_ ||
-            //       octa_mode_read_ != octa_mode_ ||
-            //       oce_mode_read_ != oce_mode_) {
-            //    if (!full_scan_read_ || cancel_action_) {
-            //        full_scan_ = false;
-            //        return;
-            //    }
-            //    //if (cancel_action_) {
-            //    //    full_scan_ = false;
-            //    //    return;
-            //    //}
-            //    rclcpp::sleep_for(std::chrono::milliseconds(10));
-            //}
+            std::string action_mode;
+            std::string scan_mode;
+            if (robot_mode_) {
+                scan_mode = "ROBOT Mode";
+            }
+            if (oct_mode_) {
+                scan_mode = "OCT Mode";
+            }
+            if (octa_mode_) {
+                scan_mode = "OCTA Mode";
+            }
+            if (oce_mode_) {
+                scan_mode = "OCE Mode";
+            }
+            if (step.action == UserAction::Focus) {
+                action_mode = "Focus Action";
+            }
+            if (step.action == UserAction::MoveZangle) {
+                action_mode = "MoveZangle Action";
+            }
+            if (step.action == UserAction::Scan) {
+                action_mode = "Scanning Action";
+            }
+            msg_ = std::format("Step [{}/{}]: {}, {}\n", pc_ + 1,
+                               full_scan_recipe.size(), action_mode, scan_mode);
+            // while (robot_mode_read_ != robot_mode_ ||
+            //        oct_mode_read_ != oct_mode_ ||
+            //        octa_mode_read_ != octa_mode_ ||
+            //        oce_mode_read_ != oce_mode_) {
+            //     if (!full_scan_read_ || cancel_action_) {
+            //         full_scan_ = false;
+            //         return;
+            //     }
+            //     rclcpp::sleep_for(std::chrono::milliseconds(10));
+            // }
             rclcpp::sleep_for(std::chrono::milliseconds(100));
             yaw_ = step.arg;
             current_action_ = step.action;
@@ -703,7 +699,6 @@ class CoordinatorNode : public rclcpp::Node {
             }
             break;
         case UserAction::MoveZangle:
-            //if (!goal_still_active(active_move_z_goal_handle_)) {
             if (previous_action_ != current_action_) {
                 angle_increment_ =
                     (num_pt_ == 0)
@@ -734,20 +729,20 @@ class CoordinatorNode : public rclcpp::Node {
                     msg_ += std::format("  [Action] Scanning\n");
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     trigger_scan();
-		    //scan_trigger_read_ = true;
-		    scan_trigger_store_ = scan_trigger_read_;
+                    // scan_trigger_read_ = true;
+                    scan_trigger_store_ = scan_trigger_read_;
                     current_action_ = UserAction::None;
                     previous_action_ = UserAction::Scan;
-               }
+                }
             } else {
-	        if (scan_state_ == ScanState::IDLE) {
+                if (scan_state_ == ScanState::IDLE) {
                     previous_action_ = UserAction::None;
                     pc_++;
-		}
-	    }
+                }
+            }
             break;
         default:
-            //scan_trigger_ = scan_trigger_read_;
+            // scan_trigger_ = scan_trigger_read_;
             scan_state_ = ScanState::IDLE;
             robot_mode_ = robot_mode_read_;
             oct_mode_ = oct_mode_read_;
@@ -786,7 +781,6 @@ class CoordinatorNode : public rclcpp::Node {
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
-                    // success_ = true;
                     if (full_scan_read_) {
                         ++pc_;
                     }
@@ -851,7 +845,6 @@ class CoordinatorNode : public rclcpp::Node {
                     }
                     angle_ += yaw;
                     RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                    // success_ = true;
                     if (full_scan_read_) {
                         ++pc_;
                     }
