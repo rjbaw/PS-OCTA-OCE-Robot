@@ -171,7 +171,7 @@ class ResetActionServer : public rclcpp::Node {
         auto feedback = std::make_shared<ResetAction::Feedback>();
         auto result = std::make_shared<ResetAction::Result>();
 
-        failed_ = false; // true -> force urscript
+        failed_ = true; // true -> force urscript
 
         RCLCPP_INFO(get_logger(), "Starting Reset execution...");
         feedback->debug_msgs = "Resetting... Please wait\n";
