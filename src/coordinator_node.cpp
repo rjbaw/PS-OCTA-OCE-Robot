@@ -408,7 +408,7 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void trigger_scan() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(50);
+        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
         scan_trigger_ = true;
         if (apply_timer_) {
             apply_timer_->cancel();
@@ -425,7 +425,7 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void trigger_apply_config() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(10);
+        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
         apply_config_ = true;
         if (apply_timer_) {
             apply_timer_->cancel();
