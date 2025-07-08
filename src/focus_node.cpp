@@ -85,6 +85,7 @@ class FocusActionServer : public rclcpp::Node {
 
   private:
     bool early_terminate = true;
+    bool check_angle_tolerance = false;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFocus> active_goal_handle_;
@@ -369,7 +370,7 @@ class FocusActionServer : public rclcpp::Node {
                     goal_handle->abort(result);
                     return;
                 }
-                rclcpp::sleep_for(10ms);
+                rclcpp::sleep_for(20ms);
             }
             img_array_.clear();
             for (int i = 0; i < interval_; i++) {
@@ -400,7 +401,6 @@ class FocusActionServer : public rclcpp::Node {
                         goal_handle->abort(result);
                         return;
                     }
-                    // rclcpp::sleep_for(std::chrono::milliseconds(10000));
                 }
                 msg_ = std::format("Collected image {}", i + 1);
                 RCLCPP_INFO(get_logger(), msg_.c_str());
@@ -428,7 +428,7 @@ class FocusActionServer : public rclcpp::Node {
                     goal_handle->abort(result);
                     return;
                 }
-                rclcpp::sleep_for(50ms);
+                rclcpp::sleep_for(20ms);
             }
             msg_ = "Calculating Rotations";
             RCLCPP_INFO(get_logger(), msg_.c_str());
@@ -477,11 +477,6 @@ class FocusActionServer : public rclcpp::Node {
             feedback->debug_msgs = msg_;
             goal_handle->publish_feedback(feedback);
             RCLCPP_INFO(get_logger(), msg_.c_str());
-            // if (early_terminate && planning_) {
-            // angle_focused_ = true;
-            // z_focused_ = true;
-            // break;
-            //}
 
             if (tol_measure(roll_, pitch_, angle_tolerance_)) {
                 angle_focused_ = true;
@@ -490,7 +485,9 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
             } else {
-                angle_focused_ = false;
+                if (check_angle_tolerance) {
+                    angle_focused_ = false;
+                }
             }
             if (std::abs(dz_) < (z_tolerance_ / 1000.0)) {
                 z_focused_ = true;
@@ -618,7 +615,7 @@ class FocusActionServer : public rclcpp::Node {
                 goal_handle->abort(result);
                 return;
             }
-            rclcpp::sleep_for(50ms);
+            rclcpp::sleep_for(20ms);
         }
         if (!goal_handle->is_active()) {
             tem_->stopExecution(true);

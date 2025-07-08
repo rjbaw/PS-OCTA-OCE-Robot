@@ -402,6 +402,33 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> octa_mode_read_ = false;
     std::atomic<bool> oce_mode_read_ = false;
 
+    template <class Flag>
+    void triggerFlag(Flag &flag, rclcpp::TimerBase::SharedPtr &timer_ptr,
+                     std::weak_ptr<rclcpp::TimerBase> &weak_ptr,
+                     rclcpp::Node &node, std::chrono::milliseconds duration,
+                     bool block) {
+        if (timer_ptr) {
+            timer_ptr->cancel();
+            timer_ptr.reset();
+        }
+        flag = true;
+        auto done_ptr = std::make_shared<std::promise<void>>();
+        auto future = done_ptr->get_future();
+        auto weak_copy = weak_ptr;
+        timer_ptr =
+            node.create_wall_timer(duration, [&, done_ptr, weak_copy]() {
+                if (auto t = weak_copy.lock()) {
+                    t->cancel();
+                }
+                flag = false;
+                done_ptr->set_value();
+            });
+        weak_ptr = timer_ptr;
+        if (block) {
+            future.wait();
+        }
+    }
+
     template <typename GH> bool goal_still_active(const GH &handle) {
         if (!handle) {
             return false;
@@ -412,60 +439,17 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void trigger_scan() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
-        if (scan_timer_) {
-            scan_timer_->cancel();
-            scan_timer_.reset();
-        }
-        scan_trigger_ = true;
-        auto done_ptr = std::make_shared<std::promise<void>>();
-        auto future = done_ptr->get_future();
-
-        scan_timer_ = create_wall_timer(duration, [this, done_ptr]() {
-            if (auto t = scan_timer_weak_.lock()) {
-                t->cancel();
-            }
-            scan_trigger_ = false;
-            done_ptr->set_value();
-        });
-
-        scan_timer_weak_ = scan_timer_;
+        triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this, 20ms,
+                    true);
         scan_state_ = ScanState::BUSY;
-        future.wait();
     }
 
     void trigger_apply_config() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
-        if (config_timer_) {
-            config_timer_->cancel();
-            config_timer_.reset();
-        }
-        apply_config_ = true;
-
-        // config_timer_ = create_wall_timer(duration, [this]() {
-        //     if (auto t = config_timer_weak_.lock())
-        //         t->cancel();
-        //     apply_config_ = false;
-        // });
-        // config_timer_weak_ = config_timer_;
-
-        auto done_ptr = std::make_shared<std::promise<void>>();
-        auto future = done_ptr->get_future();
-
-        config_timer_ = create_wall_timer(duration, [this, done_ptr]() {
-            if (auto t = config_timer_weak_.lock()) {
-                t->cancel();
-            }
-            apply_config_ = false;
-            done_ptr->set_value();
-        });
-
-        config_timer_weak_ = config_timer_;
-        // future.wait();
+        triggerFlag(apply_config_, config_timer_, config_timer_weak_, *this,
+                    20ms, false);
     }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
-        // std::lock_guard<std::mutex> lock(data_mutex_);
         robot_vel_ = msg->robot_vel;
         robot_acc_ = msg->robot_acc;
         z_tolerance_ = msg->z_tolerance;
@@ -490,6 +474,7 @@ class CoordinatorNode : public rclcpp::Node {
         octa_mode_read_ = msg->octa_mode;
         oce_mode_read_ = msg->oce_mode;
         if (*msg != old_sub_msg_) {
+            std::lock_guard<std::mutex> lock(data_mutex_);
             RCLCPP_INFO(
                 get_logger(),
                 std::format("[SUBSCRIBING]\n"
@@ -524,7 +509,6 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
-        // std::lock_guard<std::mutex> lock(data_mutex_);
         cancel_action_ = msg->data;
         if (cancel_action_) {
             autofocus_ = false;
@@ -532,7 +516,6 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void publisherCallback() {
-        // std::lock_guard<std::mutex> lock(data_mutex_);
         octa_ros::msg::Robotdata msg;
         msg.msg = msg_;
         msg.angle = angle_.load();
@@ -548,6 +531,7 @@ class CoordinatorNode : public rclcpp::Node {
         msg.oce_mode = oce_mode_.load();
 
         if (msg != old_pub_msg_) {
+            std::lock_guard<std::mutex> lock(data_mutex_);
             RCLCPP_INFO(get_logger(),
                         "[PUBLISHING] \n"
                         "  angle: %.2f, \n"
@@ -578,8 +562,6 @@ class CoordinatorNode : public rclcpp::Node {
     }
 
     void mainLoop() {
-        // std::lock_guard<std::mutex> lock(data_mutex_);
-
         if (cancel_action_) {
             if (goal_still_active(active_focus_goal_handle_)) {
                 msg_ = "Canceling Focus action\n";
@@ -663,10 +645,9 @@ class CoordinatorNode : public rclcpp::Node {
                 scan_mode = "OCT Mode";
             } else if (octa_mode_) {
                 scan_mode = "OCTA Mode";
-            } else if
-                if (oce_mode_) {
-                    scan_mode = "OCE Mode";
-                }
+            } else if (oce_mode_) {
+                scan_mode = "OCE Mode";
+            }
             if (step.action == UserAction::Focus) {
                 action_mode = "Focus Action";
             } else if (step.action == UserAction::MoveZangle) {
@@ -874,8 +855,8 @@ class CoordinatorNode : public rclcpp::Node {
     void sendMoveZAngleGoal(double yaw) {
         MoveZAngle::Goal goal_msg;
         goal_msg.target_angle = yaw;
-        goal_msg.radius = radius_;
-        goal_msg.angle = angle_;
+        goal_msg.radius = radius_.load();
+        goal_msg.angle = angle_.load();
 
         auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
 
