@@ -102,6 +102,8 @@ d     Debug
 ```
 
 ### ROS2 Design
+![architecture](./assets/architecture.png)
+
 - `coordinator_node`: handles DDS messages and action server jobs
 - `focus_node`: handles image capture and auto-focusing of end effector to desired position.
 - `reset_node`: moves robot to default position and captures preview background
