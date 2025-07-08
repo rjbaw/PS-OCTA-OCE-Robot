@@ -414,15 +414,14 @@ class CoordinatorNode : public rclcpp::Node {
         flag = true;
         auto done_ptr = std::make_shared<std::promise<void>>();
         auto future = done_ptr->get_future();
-        auto weak_copy = weak_ptr;
-        timer_ptr =
-            node.create_wall_timer(duration, [&, done_ptr, weak_copy]() {
-                if (auto t = weak_copy.lock()) {
-                    t->cancel();
-                }
-                flag = false;
-                done_ptr->set_value();
-            });
+        auto fired = std::make_shared<std::atomic<bool>>(false);
+        timer_ptr = node.create_wall_timer(duration, [&, done_ptr, fired]() {
+            if (fired->exchange(true)) {
+                return;
+            }
+            flag = false;
+            done_ptr->set_value();
+        });
         weak_ptr = timer_ptr;
         if (block) {
             future.wait();
