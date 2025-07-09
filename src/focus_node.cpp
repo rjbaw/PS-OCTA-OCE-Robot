@@ -84,8 +84,8 @@ class FocusActionServer : public rclcpp::Node {
     }
 
   private:
-    bool early_terminate = false;
-    bool check_angle_tolerance = false;
+    bool early_terminate_ = false;
+    bool skip_angle_tolerance_ = true;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFocus> active_goal_handle_;
@@ -135,7 +135,7 @@ class FocusActionServer : public rclcpp::Node {
     const int height_ = 512;
     const int interval_ = 6;
     const bool single_interval_ = false;
-    const double px_per_mm = 60.0;
+    const double px_per_mm = 55.0;
 
     double angle_tolerance_ = 0.0;
     double z_tolerance_ = 0.0;
@@ -485,9 +485,13 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
             } else {
-                if (check_angle_tolerance) {
+                if (!skip_angle_tolerance_) {
                     angle_focused_ = false;
                 }
+		if (skip_angle_tolerance_ && planning_) {
+                    angle_focused_ = true;
+		    planning_ = false;
+		}
             }
             if (std::abs(dz_) < (z_tolerance_ / 1000.0)) {
                 z_focused_ = true;
@@ -517,7 +521,9 @@ class FocusActionServer : public rclcpp::Node {
             }
 
             if (planning_) {
-                planning_ = false;
+		if (!skip_angle_tolerance_) {
+                    planning_ = false;
+		}
                 planning_component_->setStartStateToCurrentState();
 
                 moveit::core::RobotStatePtr cur_state =
@@ -532,8 +538,8 @@ class FocusActionServer : public rclcpp::Node {
                 auto req = moveit_cpp::PlanningComponent::
                     MultiPipelinePlanRequestParameters(
                         shared_from_this(),
-                        {"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
-                //{"ompl_rrtc", "stomp_joint"});
+                        {"pilz_ptp", "pilz_lin"});
+                        //{"pilz_ptp", "pilz_lin", "stomp_joint", "ompl_rrtc"});
                 // auto stop_on_first =
                 //     [](const PlanningComponent::PlanSolutions &sols,
                 //        const auto &) { return sols.hasSuccessfulSolution();
@@ -573,8 +579,7 @@ class FocusActionServer : public rclcpp::Node {
                         moveit_cpp_->execute(plan_solution.trajectory);
                     if (execute_success) {
                         RCLCPP_INFO(get_logger(), "Execute Success!");
-                        if (early_terminate) {
-                            // planning_ = true;
+                        if (early_terminate_) {
                             angle_focused_ = true;
                             z_focused_ = true;
                             break;

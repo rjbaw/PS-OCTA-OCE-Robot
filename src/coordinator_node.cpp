@@ -437,16 +437,52 @@ class CoordinatorNode : public rclcpp::Node {
                status == action_msgs::msg::GoalStatus::STATUS_EXECUTING;
     }
 
+    // void trigger_scan() {
+    //     //triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this, 20ms, false);
+    //     scan_trigger_ = true;
+    //     rclcpp::sleep_for(std::chrono::milliseconds(100));
+    //     scan_trigger_ = false;
+    //     scan_state_ = ScanState::BUSY;
+    // }
+
+    // void trigger_apply_config() {
+    //     triggerFlag(apply_config_, config_timer_, config_timer_weak_, *this,
+    //                 20ms, false);
+    // }
+
     void trigger_scan() {
-        triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this, 20ms,
-                    true);
+        std::chrono::milliseconds duration = std::chrono::milliseconds(500);
+        scan_trigger_ = true;
+        if (scan_timer_) {
+            scan_timer_->cancel();
+            scan_timer_.reset();
+        }
+        scan_timer_ = create_wall_timer(duration, [this]() {
+            if (auto t = scan_timer_weak_.lock())
+                t->cancel();
+            scan_trigger_ = false;
+        });
+        scan_timer_weak_ = scan_timer_;
         scan_state_ = ScanState::BUSY;
+        //rclcpp::sleep_for(duration);
     }
 
     void trigger_apply_config() {
-        triggerFlag(apply_config_, config_timer_, config_timer_weak_, *this,
-                    20ms, false);
+        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
+        apply_config_ = true;
+        if (config_timer_) {
+            config_timer_->cancel();
+            config_timer_.reset();
+        }
+        config_timer_ = create_wall_timer(duration, [this]() {
+            if (auto t = config_timer_weak_.lock())
+                t->cancel();
+            apply_config_ = false;
+        });
+        config_timer_weak_ = config_timer_;
+        //rclcpp::sleep_for(duration);
     }
+
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
         robot_vel_ = msg->robot_vel;
@@ -592,7 +628,7 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
                 start = now();
                 while (full_scan_read_.load() != full_scan_) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(1));
+                    rclcpp::sleep_for(std::chrono::milliseconds(20));
                     if ((now() - start).seconds() > 1.0) {
                         msg_ += "Timed out changing full scan variable\n";
                         RCLCPP_INFO(this->get_logger(), msg_.c_str());
@@ -610,19 +646,13 @@ class CoordinatorNode : public rclcpp::Node {
 
         if (full_scan_read_) {
             full_scan_ = true;
-            if (scan_trigger_read_ != scan_trigger_store_) {
-                msg_ += "Scan Complete";
-                RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                scan_state_ = ScanState::IDLE;
-                scan_trigger_store_ = scan_trigger_read_.load();
-            }
             if ((pc_.load() + 1) >= full_scan_recipe.size()) {
                 pc_ = 0;
                 full_scan_ = false;
                 msg_ = "Full Scan complete!\n";
                 start = now();
                 while (full_scan_read_.load() != full_scan_) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(1));
+                    rclcpp::sleep_for(std::chrono::milliseconds(20));
                     if ((now() - start).seconds() > 1.0) {
                         msg_ += "Timed out changing full scan variable\n";
                         RCLCPP_INFO(this->get_logger(), msg_.c_str());
@@ -656,22 +686,35 @@ class CoordinatorNode : public rclcpp::Node {
             }
             msg_ = std::format("Step [{}/{}]: {}, {}\n", pc_.load() + 1,
                                full_scan_recipe.size(), action_mode, scan_mode);
-            start = now();
-            while (robot_mode_read_.load() != robot_mode_ ||
-                   oct_mode_read_.load() != oct_mode_ ||
-                   octa_mode_read_.load() != octa_mode_ ||
-                   oce_mode_read_.load() != oce_mode_) {
-                rclcpp::sleep_for(std::chrono::milliseconds(1));
-                if ((now() - start).seconds() > 1.0) {
-                    msg_ += "Timed out changing control mode\n";
-                    RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                    break;
-                }
-                if (!full_scan_read_ || cancel_action_) {
-                    full_scan_ = false;
-                    return;
-                }
+            // start = now();
+            // while (robot_mode_read_.load() != robot_mode_ ||
+            //        oct_mode_read_.load() != oct_mode_ ||
+            //        octa_mode_read_.load() != octa_mode_ ||
+            //        oce_mode_read_.load() != oce_mode_) {
+            //     //rclcpp::sleep_for(std::chrono::milliseconds(20));
+	    //     trigger_apply_config();
+            //     if ((now() - start).seconds() > 2.0) {
+            //         msg_ += "Timed out changing control mode\n";
+            //         RCLCPP_INFO(this->get_logger(), msg_.c_str());
+	    //         full_scan_ = false;
+            //         return;
+            //     }
+            //     if (!full_scan_read_ || cancel_action_) {
+            //         full_scan_ = false;
+            //         return;
+            //     }
+            // }
+
+            if (robot_mode_read_.load() != robot_mode_.load() ||
+                oct_mode_read_.load() != oct_mode_.load() ||
+                octa_mode_read_.load() != octa_mode_.load() ||
+                oce_mode_read_.load() != oce_mode_.load()) {
+		if (!apply_config_) {
+	            trigger_apply_config();
+		}
+                return;
             }
+
             yaw_ = step.arg;
             current_action_ = step.action;
             autofocus_ = (current_action_ == UserAction::Focus);
@@ -768,16 +811,33 @@ class CoordinatorNode : public rclcpp::Node {
                 if (scan_state_ == ScanState::IDLE) {
                     msg_ += std::format("  [Action] Scanning\n");
                     RCLCPP_INFO(get_logger(), msg_.c_str());
-                    trigger_scan();
+                    //trigger_scan();
+		    scan_trigger_ = true;
                     scan_trigger_store_ = scan_trigger_read_.load();
                     current_action_ = UserAction::None;
                     previous_action_ = UserAction::Scan;
+                    //rclcpp::sleep_for(std::chrono::milliseconds(10000));
                 }
             } else {
-                if (scan_state_ == ScanState::IDLE) {
+                if (scan_trigger_read_.load() != scan_trigger_store_) {
+		    scan_trigger_ = false;
+                    msg_ += "Scan Complete\n";
+                    RCLCPP_INFO(this->get_logger(), msg_.c_str());
+                    scan_state_ = ScanState::IDLE;
                     previous_action_ = UserAction::None;
                     pc_.fetch_add(1);
-                }
+                    scan_trigger_store_ = scan_trigger_read_.load();
+                } 
+		// else {
+		//     if (!scan_trigger_) {
+	        //         trigger_scan();
+		//     }
+                //     //rclcpp::sleep_for(std::chrono::milliseconds(10000));
+		// }
+                //if (scan_state_ == ScanState::IDLE) {
+                //    previous_action_ = UserAction::None;
+                //    pc_.fetch_add(1);
+                //}
             }
             break;
         default:
@@ -787,7 +847,7 @@ class CoordinatorNode : public rclcpp::Node {
             oce_mode_ = oce_mode_read_.load();
             scan_3d_ = false;
             triggered_service_ = false;
-            if (end_state_ && !autofocus_) {
+            if (!autofocus_) {
                 end_state_ = false;
             }
             break;
@@ -1030,9 +1090,9 @@ class CoordinatorNode : public rclcpp::Node {
         }
         if (request->activate) {
             if (scan_3d_read_) {
-                trigger_apply_config();
+                // trigger_apply_config();
                 // wait for scan to actually trigger
-                rclcpp::sleep_for(std::chrono::milliseconds(50));
+                rclcpp::sleep_for(std::chrono::milliseconds(70));
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -1040,7 +1100,7 @@ class CoordinatorNode : public rclcpp::Node {
             }
         } else {
             if (!scan_3d_read_) {
-                trigger_apply_config();
+                // trigger_apply_config();
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -1056,7 +1116,6 @@ class CoordinatorNode : public rclcpp::Node {
         if (!triggered_service_) {
             end_state_ = true;
             triggered_service_ = true;
-            trigger_apply_config();
         }
         if (!autofocus_) {
             end_state_ = false;
@@ -1084,9 +1143,10 @@ int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<CoordinatorNode>();
     node->init();
-    rclcpp::executors::MultiThreadedExecutor exec;
-    exec.add_node(node);
-    exec.spin();
+    //rclcpp::executors::MultiThreadedExecutor exec;
+    //exec.add_node(node);
+    //exec.spin();
+    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

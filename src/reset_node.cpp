@@ -304,11 +304,10 @@ class ResetActionServer : public rclcpp::Node {
                 }
             }
             publisher_->publish(message);
-            for (int i = 0; i < 40 && !goal_handle->is_canceling(); ++i) {
+            for (int i = 0; i < 30 && !goal_handle->is_canceling(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
         if (goal_handle->is_canceling()) {
             result->status = "Cancel requested!";
