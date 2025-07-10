@@ -114,9 +114,7 @@ d     Debug
 
 ## Usage examples
 
-![sample](./assets/sample.gif)
-
-![fullscan](https://f004.backblazeb2.com/file/rjbaw-public/fullscan.mov)
+[![sample](./assets/sample.gif)](https://f004.backblazeb2.com/file/rjbaw-public/fullscan.mov)
 
 ### Controlling from LabVIEW
 
