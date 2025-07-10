@@ -117,10 +117,10 @@ class ResetActionServer : public rclcpp::Node {
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const ResetAction::Goal> goal) {
-        RCLCPP_INFO(get_logger(), "Received Reset goal with reset=%s",
+        RCLCPP_INFO(get_logger(), "Received Reset goal with reset=%s\n",
                     goal->reset ? "true" : "false");
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
-            RCLCPP_INFO(get_logger(), "Reset goal still processing!");
+            RCLCPP_INFO(get_logger(), "Reset goal still processing!\n");
             return rclcpp_action::GoalResponse::REJECT;
         }
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -134,11 +134,7 @@ class ResetActionServer : public rclcpp::Node {
         }
         RCLCPP_INFO(get_logger(), "Reset action canceled");
         tem_->stopExecution(true);
-        // if (tem_) {
-        //     tem_->stopExecution(true);
-        // }
         publish_stop();
-        // goal_handle->canceled(std::make_shared<ResetAction::Result>());
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -299,7 +295,6 @@ class ResetActionServer : public rclcpp::Node {
                     feedback->debug_msgs = "No URScript subscriber available\n";
                     result->status = "Reset to default position failed";
                     goal_handle->abort(result);
-                    // goal_handle->canceled(result);
                     return;
                 }
             }

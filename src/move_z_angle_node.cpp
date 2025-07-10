@@ -156,9 +156,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
         RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle);
 
         if (goal_handle->is_canceling()) {
-            feedback->debug_msgs = "MoveZAngle was canceled before starting.";
+            feedback->debug_msgs = "MoveZAngle was canceled before starting.\n";
             feedback->current_z_angle = 0.0;
-            result->status = "Move Z Angle Canceled";
+            result->status = "Move Z Angle Canceled\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -195,9 +195,10 @@ class MoveZAngleActionServer : public rclcpp::Node {
         planning_component_->setGoal(target_pose, "tcp");
 
         if (goal_handle->is_canceling()) {
-            feedback->debug_msgs = "Move Z Angle was canceled before planning.";
+            feedback->debug_msgs =
+                "Move Z Angle was canceled before planning.\n";
             feedback->current_z_angle = 0.0;
-            result->status = "Move Z Angle Canceled";
+            result->status = "Move Z Angle Canceled\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -240,9 +241,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
         goal_handle->publish_feedback(feedback);
 
         if (goal_handle->is_canceling()) {
-            feedback->debug_msgs = "Canceled before execution.";
+            feedback->debug_msgs = "Canceled before execution.\n";
             feedback->current_z_angle = 0.0;
-            result->status = "Move Z Angle Canceled";
+            result->status = "Move Z Angle Canceled\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;
@@ -260,9 +261,9 @@ class MoveZAngleActionServer : public rclcpp::Node {
         }
 
         if (goal_handle->is_canceling()) {
-            feedback->debug_msgs = "Canceled after execution.";
+            feedback->debug_msgs = "Canceled after execution.\n";
             feedback->current_z_angle = 0.0;
-            result->status = "Move Z Angle Canceled";
+            result->status = "Move Z Angle Canceled\n";
             goal_handle->publish_feedback(feedback);
             goal_handle->canceled(result);
             return;

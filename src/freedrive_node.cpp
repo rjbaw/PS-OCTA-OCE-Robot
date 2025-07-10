@@ -127,7 +127,7 @@ class FreedriveActionServer : public rclcpp::Node {
         if (goal_handle->is_canceling()) {
             stop_keepalive();
             switch_to_freedrive_controller(false);
-            result->status = "Freedrive Canceled";
+            result->status = "Freedrive Canceled\n";
             goal_handle->canceled(result);
             return;
         }

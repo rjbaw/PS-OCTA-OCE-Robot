@@ -116,6 +116,8 @@ d     Debug
 
 ![sample](./assets/sample.gif)
 
+![fullscan](https://f004.backblazeb2.com/file/rjbaw-public/fullscan.mov)
+
 ### Controlling from LabVIEW
 
 ![robot_control](./assets/robot_control.png)

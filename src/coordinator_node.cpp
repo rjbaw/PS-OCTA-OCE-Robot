@@ -71,71 +71,53 @@ struct Step {
 
 const std::vector<Step> full_scan_recipe = {
     {UserAction::Focus, Mode::ROBOT, 0},
-    // octa
+    // initial OCTA
     {UserAction::Scan, Mode::OCTA, 0},
-    // first 60
+    // first 60 deg
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
-    // octa
-    {UserAction::Scan, Mode::OCTA, 0},
-    // second 60
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    // intermediate OCT scans
     {UserAction::Scan, Mode::OCT, 0},
+    // second 60 deg
+    {UserAction::MoveZangle, Mode::OCT, +10},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
-    // octa
-    {UserAction::Scan, Mode::OCTA, 0},
-    // third 60
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    // intermediate OCT scans
     {UserAction::Scan, Mode::OCT, 0},
+    // third 60 deg
+    {UserAction::MoveZangle, Mode::OCT, +10},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCT, +10},
-    {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
-    // final
-    {UserAction::Scan, Mode::OCTA, 0},
+    // final OCT scans
+    {UserAction::Scan, Mode::OCT, 0},
 };
 
 class CoordinatorNode : public rclcpp::Node {
@@ -159,7 +141,6 @@ class CoordinatorNode : public rclcpp::Node {
                    .automatically_declare_parameters_from_overrides(true)) {}
 
     void init() {
-        // apply_config_ = true;
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
@@ -402,44 +383,35 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> octa_mode_read_ = false;
     std::atomic<bool> oce_mode_read_ = false;
 
-    template <class Flag>
-    void triggerFlag(Flag &flag, rclcpp::TimerBase::SharedPtr &timer_ptr,
-                     std::weak_ptr<rclcpp::TimerBase> &weak_ptr,
-                     rclcpp::Node &node, std::chrono::milliseconds duration,
-                     bool block) {
-        if (timer_ptr) {
-            timer_ptr->cancel();
-            timer_ptr.reset();
-        }
-        flag = true;
-        auto done_ptr = std::make_shared<std::promise<void>>();
-        auto future = done_ptr->get_future();
-        auto fired = std::make_shared<std::atomic<bool>>(false);
-        timer_ptr = node.create_wall_timer(duration, [&, done_ptr, fired]() {
-            if (fired->exchange(true)) {
-                return;
-            }
-            flag = false;
-            done_ptr->set_value();
-        });
-        weak_ptr = timer_ptr;
-        if (block) {
-            future.wait();
-        }
-    }
-
-    template <typename GH> bool goal_still_active(const GH &handle) {
-        if (!handle) {
-            return false;
-        }
-        auto status = handle->get_status();
-        return status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
-               status == action_msgs::msg::GoalStatus::STATUS_EXECUTING;
-    }
+    // template <class Flag>
+    // void triggerFlag(Flag &flag, rclcpp::TimerBase::SharedPtr &timer_ptr,
+    //                  std::weak_ptr<rclcpp::TimerBase> &weak_ptr,
+    //                  rclcpp::Node &node, std::chrono::milliseconds duration,
+    //                  bool block) {
+    //     if (timer_ptr) {
+    //         timer_ptr->cancel();
+    //         timer_ptr.reset();
+    //     }
+    //     flag = true;
+    //     auto done_ptr = std::make_shared<std::promise<void>>();
+    //     auto future = done_ptr->get_future();
+    //     auto fired = std::make_shared<std::atomic<bool>>(false);
+    //     timer_ptr = node.create_wall_timer(duration, [&, done_ptr, fired]() {
+    //         if (fired->exchange(true)) {
+    //             return;
+    //         }
+    //         flag = false;
+    //         done_ptr->set_value();
+    //     });
+    //     weak_ptr = timer_ptr;
+    //     if (block) {
+    //         future.wait();
+    //     }
+    // }
 
     // void trigger_scan() {
-    //     //triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this, 20ms, false);
-    //     scan_trigger_ = true;
+    //     //triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this,
+    //     20ms, false); scan_trigger_ = true;
     //     rclcpp::sleep_for(std::chrono::milliseconds(100));
     //     scan_trigger_ = false;
     //     scan_state_ = ScanState::BUSY;
@@ -449,23 +421,6 @@ class CoordinatorNode : public rclcpp::Node {
     //     triggerFlag(apply_config_, config_timer_, config_timer_weak_, *this,
     //                 20ms, false);
     // }
-
-    void trigger_scan() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(500);
-        scan_trigger_ = true;
-        if (scan_timer_) {
-            scan_timer_->cancel();
-            scan_timer_.reset();
-        }
-        scan_timer_ = create_wall_timer(duration, [this]() {
-            if (auto t = scan_timer_weak_.lock())
-                t->cancel();
-            scan_trigger_ = false;
-        });
-        scan_timer_weak_ = scan_timer_;
-        scan_state_ = ScanState::BUSY;
-        //rclcpp::sleep_for(duration);
-    }
 
     void trigger_apply_config() {
         std::chrono::milliseconds duration = std::chrono::milliseconds(20);
@@ -480,9 +435,17 @@ class CoordinatorNode : public rclcpp::Node {
             apply_config_ = false;
         });
         config_timer_weak_ = config_timer_;
-        //rclcpp::sleep_for(duration);
+        // rclcpp::sleep_for(duration);
     }
 
+    template <typename GH> bool goal_still_active(const GH &handle) {
+        if (!handle) {
+            return false;
+        }
+        auto status = handle->get_status();
+        return status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
+               status == action_msgs::msg::GoalStatus::STATUS_EXECUTING;
+    }
 
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
         robot_vel_ = msg->robot_vel;
@@ -686,32 +649,14 @@ class CoordinatorNode : public rclcpp::Node {
             }
             msg_ = std::format("Step [{}/{}]: {}, {}\n", pc_.load() + 1,
                                full_scan_recipe.size(), action_mode, scan_mode);
-            // start = now();
-            // while (robot_mode_read_.load() != robot_mode_ ||
-            //        oct_mode_read_.load() != oct_mode_ ||
-            //        octa_mode_read_.load() != octa_mode_ ||
-            //        oce_mode_read_.load() != oce_mode_) {
-            //     //rclcpp::sleep_for(std::chrono::milliseconds(20));
-	    //     trigger_apply_config();
-            //     if ((now() - start).seconds() > 2.0) {
-            //         msg_ += "Timed out changing control mode\n";
-            //         RCLCPP_INFO(this->get_logger(), msg_.c_str());
-	    //         full_scan_ = false;
-            //         return;
-            //     }
-            //     if (!full_scan_read_ || cancel_action_) {
-            //         full_scan_ = false;
-            //         return;
-            //     }
-            // }
 
             if (robot_mode_read_.load() != robot_mode_.load() ||
                 oct_mode_read_.load() != oct_mode_.load() ||
                 octa_mode_read_.load() != octa_mode_.load() ||
                 oce_mode_read_.load() != oce_mode_.load()) {
-		if (!apply_config_) {
-	            trigger_apply_config();
-		}
+                if (!apply_config_) {
+                    trigger_apply_config();
+                }
                 return;
             }
 
@@ -811,33 +756,22 @@ class CoordinatorNode : public rclcpp::Node {
                 if (scan_state_ == ScanState::IDLE) {
                     msg_ += std::format("  [Action] Scanning\n");
                     RCLCPP_INFO(get_logger(), msg_.c_str());
-                    //trigger_scan();
-		    scan_trigger_ = true;
+                    scan_trigger_ = true;
+                    scan_state_ = ScanState::BUSY;
                     scan_trigger_store_ = scan_trigger_read_.load();
                     current_action_ = UserAction::None;
                     previous_action_ = UserAction::Scan;
-                    //rclcpp::sleep_for(std::chrono::milliseconds(10000));
                 }
             } else {
                 if (scan_trigger_read_.load() != scan_trigger_store_) {
-		    scan_trigger_ = false;
+                    scan_trigger_ = false;
                     msg_ += "Scan Complete\n";
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
                     scan_state_ = ScanState::IDLE;
                     previous_action_ = UserAction::None;
                     pc_.fetch_add(1);
                     scan_trigger_store_ = scan_trigger_read_.load();
-                } 
-		// else {
-		//     if (!scan_trigger_) {
-	        //         trigger_scan();
-		//     }
-                //     //rclcpp::sleep_for(std::chrono::milliseconds(10000));
-		// }
-                //if (scan_state_ == ScanState::IDLE) {
-                //    previous_action_ = UserAction::None;
-                //    pc_.fetch_add(1);
-                //}
+                }
             }
             break;
         default:
@@ -847,6 +781,7 @@ class CoordinatorNode : public rclcpp::Node {
             oce_mode_ = oce_mode_read_.load();
             scan_3d_ = false;
             triggered_service_ = false;
+            scan_trigger_ = false;
             if (!autofocus_) {
                 end_state_ = false;
             }
@@ -1090,9 +1025,8 @@ class CoordinatorNode : public rclcpp::Node {
         }
         if (request->activate) {
             if (scan_3d_read_) {
-                // trigger_apply_config();
                 // wait for scan to actually trigger
-                rclcpp::sleep_for(std::chrono::milliseconds(70));
+                rclcpp::sleep_for(std::chrono::milliseconds(50));
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -1100,7 +1034,6 @@ class CoordinatorNode : public rclcpp::Node {
             }
         } else {
             if (!scan_3d_read_) {
-                // trigger_apply_config();
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -1143,9 +1076,9 @@ int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<CoordinatorNode>();
     node->init();
-    //rclcpp::executors::MultiThreadedExecutor exec;
-    //exec.add_node(node);
-    //exec.spin();
+    // rclcpp::executors::MultiThreadedExecutor exec;
+    // exec.add_node(node);
+    // exec.spin();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
