@@ -73,48 +73,51 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::Focus, Mode::ROBOT, 0},
     // initial OCTA
     {UserAction::Scan, Mode::OCTA, 0},
+    {UserAction::Scan, Mode::OCE, 0},
     // first 60 deg
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
+    {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     // second 60 deg
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
+    {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     // third 60 deg
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCT, +10},
+    {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // final OCT scans
     {UserAction::Scan, Mode::OCT, 0},
@@ -589,15 +592,6 @@ class CoordinatorNode : public rclcpp::Node {
                 full_scan_ = false;
                 msg_ = "Canceling Full Scan action\n";
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                start = now();
-                while (full_scan_read_.load() != full_scan_) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(20));
-                    if ((now() - start).seconds() > 1.0) {
-                        msg_ += "Timed out changing full scan variable\n";
-                        RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                        break;
-                    }
-                };
             }
             pc_ = 0;
             scan_state_ = ScanState::IDLE;
@@ -609,19 +603,10 @@ class CoordinatorNode : public rclcpp::Node {
 
         if (full_scan_read_) {
             full_scan_ = true;
-            if ((pc_.load() + 1) >= full_scan_recipe.size()) {
+            if ((pc_.load() + 1) > full_scan_recipe.size()) {
                 pc_ = 0;
                 full_scan_ = false;
                 msg_ = "Full Scan complete!\n";
-                start = now();
-                while (full_scan_read_.load() != full_scan_) {
-                    rclcpp::sleep_for(std::chrono::milliseconds(20));
-                    if ((now() - start).seconds() > 1.0) {
-                        msg_ += "Timed out changing full scan variable\n";
-                        RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                        break;
-                    }
-                };
                 return;
             }
             const Step &step = full_scan_recipe[pc_.load()];
