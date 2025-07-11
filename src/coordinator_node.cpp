@@ -448,6 +448,14 @@ class CoordinatorNode : public rclcpp::Node {
                status == action_msgs::msg::GoalStatus::STATUS_EXECUTING;
     }
 
+    template <typename T>
+    void log_if_changed(const T &new_val, const T &old_val,
+                        const std::string &name, std::ostringstream &log) {
+        if (new_val != old_val) {
+            log << " " << name << ": " << new_val << "\n";
+        }
+    }
+
     void subscriberCallback(const octa_ros::msg::Labviewdata::SharedPtr msg) {
         robot_vel_ = msg->robot_vel;
         robot_acc_ = msg->robot_acc;
@@ -472,39 +480,60 @@ class CoordinatorNode : public rclcpp::Node {
         oct_mode_read_ = msg->oct_mode;
         octa_mode_read_ = msg->octa_mode;
         oce_mode_read_ = msg->oce_mode;
-        if (*msg != old_sub_msg_) {
+        {
             std::lock_guard<std::mutex> lock(data_mutex_);
-            RCLCPP_INFO(
-                get_logger(),
-                std::format("[SUBSCRIBING]\n"
-                            "  robot_vel: {}, robot_acc: {}, \n"
-                            "  z_tolerance: {}, angle_tolerance: {}, \n"
-                            "  z_height: {}, \n"
-                            "  radius: {}, \n"
-                            "  angle_limit: {}, \n"
-                            "  num_pt: {}, "
-                            "  dz: {}, drot: {}, \n"
-                            "  autofocus: {}, \n"
-                            "  freedrive: {}, \n"
-                            "  previous: {}, next: {}, home: {}, \n"
-                            "  reset: {}, \n"
-                            "  scan_trigger: {}, scan_3d: {}, \n"
-                            "  full_scan: {}, \n"
-                            " robot_mode: {}, oct_mode: {}, octa_mode: {}, "
-                            "oce_mode: {}",
-                            robot_vel_.load(), robot_acc_.load(),
-                            z_tolerance_.load(), angle_tolerance_.load(),
-                            z_height_.load(), radius_.load(),
-                            angle_limit_.load(), num_pt_.load(), dz_.load(),
-                            drot_.load(), autofocus_.load(), freedrive_.load(),
-                            previous_.load(), next_.load(), home_.load(),
-                            reset_.load(), scan_trigger_read_.load(),
-                            scan_3d_read_.load(), full_scan_read_.load(),
-                            robot_mode_read_.load(), oct_mode_read_.load(),
-                            octa_mode_read_.load(), oce_mode_read_.load())
-                    .c_str());
+            if (*msg != old_sub_msg_) {
+                std::ostringstream sub_log;
+                sub_log << "[SUBSCRIBING]: Changed fields \n";
+
+                log_if_changed(msg->robot_vel, old_sub_msg_.robot_vel,
+                               "robot_vel", sub_log);
+                log_if_changed(msg->robot_acc, old_sub_msg_.robot_acc,
+                               "robot_acc", sub_log);
+                log_if_changed(msg->z_tolerance, old_sub_msg_.z_tolerance,
+                               "z_tolerance", sub_log);
+                log_if_changed(msg->angle_tolerance,
+                               old_sub_msg_.angle_tolerance, "angle_tolerance",
+                               sub_log);
+                log_if_changed(msg->radius, old_sub_msg_.radius, "radius",
+                               sub_log);
+                log_if_changed(msg->angle_limit, old_sub_msg_.angle_limit,
+                               "angle_limit", sub_log);
+                log_if_changed(msg->num_pt, old_sub_msg_.num_pt, "num_pt",
+                               sub_log);
+                log_if_changed(msg->dz, old_sub_msg_.dz, "dz", sub_log);
+                log_if_changed(msg->drot, old_sub_msg_.drot, "drot", sub_log);
+                log_if_changed(msg->autofocus, old_sub_msg_.autofocus,
+                               "autofocus", sub_log);
+                log_if_changed(msg->freedrive, old_sub_msg_.freedrive,
+                               "freedrive", sub_log);
+                log_if_changed(msg->previous, old_sub_msg_.previous, "previous",
+                               sub_log);
+                log_if_changed(msg->next, old_sub_msg_.next, "next", sub_log);
+                log_if_changed(msg->home, old_sub_msg_.home, "home", sub_log);
+                log_if_changed(msg->reset, old_sub_msg_.reset, "reset",
+                               sub_log);
+                log_if_changed(msg->scan_trigger, old_sub_msg_.scan_trigger,
+                               "scan_trigger", sub_log);
+                log_if_changed(msg->scan_3d, old_sub_msg_.scan_3d, "scan_3d",
+                               sub_log);
+                log_if_changed(msg->z_height, old_sub_msg_.z_height, "z_height",
+                               sub_log);
+                log_if_changed(msg->full_scan, old_sub_msg_.full_scan,
+                               "full_scan", sub_log);
+                log_if_changed(msg->robot_mode, old_sub_msg_.robot_mode,
+                               "robot_mode", sub_log);
+                log_if_changed(msg->oct_mode, old_sub_msg_.oct_mode, "oct_mode",
+                               sub_log);
+                log_if_changed(msg->octa_mode, old_sub_msg_.octa_mode,
+                               "octa_mode", sub_log);
+                log_if_changed(msg->oce_mode, old_sub_msg_.oce_mode, "oce_mode",
+                               sub_log);
+
+                RCLCPP_INFO(get_logger(), sub_log.str().c_str());
+            }
+            old_sub_msg_ = *msg;
         }
-        old_sub_msg_ = *msg;
     }
 
     void cancelCallback(const std_msgs::msg::Bool::SharedPtr msg) {
@@ -529,35 +558,39 @@ class CoordinatorNode : public rclcpp::Node {
         msg.octa_mode = octa_mode_.load();
         msg.oce_mode = oce_mode_.load();
 
-        if (msg != old_pub_msg_) {
+        {
             std::lock_guard<std::mutex> lock(data_mutex_);
-            RCLCPP_INFO(get_logger(),
-                        "[PUBLISHING] \n"
-                        "  angle: %.2f, \n"
-                        "  circle_state: %d, \n"
-                        "  scan_trigger: %s, \n"
-                        "  apply_config: %s, \n"
-                        "  end_state: %s, \n"
-                        "  scan_3d: %s, \n"
-                        "  full_scan: %s, \n"
-                        "  robot_mode: %s, \n"
-                        "  oct_mode: %s, \n"
-                        "  octa_mode: %s, \n"
-                        "  oce_mode: %s \n",
-                        msg.angle, msg.circle_state,
-                        (msg.scan_trigger ? "true" : "false"),
-                        (msg.apply_config ? "true" : "false"),
-                        (msg.end_state ? "true" : "false"),
-                        (msg.scan_3d ? "true" : "false"),
-                        (msg.full_scan ? "true" : "false"),
-                        (msg.robot_mode ? "true" : "false"),
-                        (msg.oct_mode ? "true" : "false"),
-                        (msg.octa_mode ? "true" : "false"),
-                        (msg.oce_mode ? "true" : "false"));
-        }
+            if (msg != old_pub_msg_) {
+                std::ostringstream pub_log;
+                pub_log << "[PUBLISHING]: Changed fields \n";
 
-        pub_handle_->publish(msg);
-        old_pub_msg_ = msg;
+                log_if_changed(msg.angle, old_pub_msg_.angle, "angle", pub_log);
+                log_if_changed(msg.circle_state, old_pub_msg_.circle_state,
+                               "circle_state", pub_log);
+                log_if_changed(msg.scan_trigger, old_pub_msg_.scan_trigger,
+                               "scan_trigger", pub_log);
+                log_if_changed(msg.apply_config, old_pub_msg_.apply_config,
+                               "apply_config", pub_log);
+                log_if_changed(msg.end_state, old_pub_msg_.end_state,
+                               "end_state", pub_log);
+                log_if_changed(msg.scan_3d, old_pub_msg_.scan_3d, "scan_3d",
+                               pub_log);
+                log_if_changed(msg.full_scan, old_pub_msg_.full_scan,
+                               "full_scan", pub_log);
+                log_if_changed(msg.robot_mode, old_pub_msg_.robot_mode,
+                               "robot_mode", pub_log);
+                log_if_changed(msg.oct_mode, old_pub_msg_.oct_mode, "oct_mode",
+                               pub_log);
+                log_if_changed(msg.octa_mode, old_pub_msg_.octa_mode,
+                               "octa_mode", pub_log);
+                log_if_changed(msg.oce_mode, old_pub_msg_.oce_mode, "oce_mode",
+                               pub_log);
+
+                RCLCPP_INFO(get_logger(), pub_log.str().c_str());
+            }
+            pub_handle_->publish(msg);
+            old_pub_msg_ = msg;
+        }
     }
 
     void mainLoop() {
@@ -784,7 +817,8 @@ class CoordinatorNode : public rclcpp::Node {
             [this](FocusGoalHandle::SharedPtr,
                    const std::shared_ptr<const FocusAction::Feedback> fb) {
                 msg_ += fb->debug_msgs;
-                RCLCPP_INFO(this->get_logger(), msg_.c_str());
+                RCLCPP_INFO(this->get_logger(), "Focus feedback => %s",
+                            msg_.c_str());
             };
 
         options.result_callback =
@@ -793,6 +827,7 @@ class CoordinatorNode : public rclcpp::Node {
                 previous_action_ = UserAction::None;
                 msg_ += result.result->status;
                 end_state_ = true;
+                autofocus_ = false;
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
@@ -802,9 +837,17 @@ class CoordinatorNode : public rclcpp::Node {
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "Focus action ABORTED");
+                    if (full_scan_read_) {
+                        full_scan_ = false;
+                        msg_ = "Focus action aborted, aborting full scan\n";
+                    }
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
                     RCLCPP_WARN(this->get_logger(), "Focus action CANCELED");
+                    if (full_scan_read_) {
+                        full_scan_ = false;
+                        msg_ = "Focus action canceled, aborting full scan\n";
+                    }
                     break;
                 default:
                     RCLCPP_WARN(this->get_logger(),
