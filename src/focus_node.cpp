@@ -348,6 +348,8 @@ class FocusActionServer : public rclcpp::Node {
                 planning_component_->setStartStateToCurrentState();
                 return;
             }
+
+            img_timer_->reset();
             start = now();
             while (!call_scan3d(true)) {
                 if (!goal_handle->is_active()) {
@@ -406,6 +408,7 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
             }
 
+            img_timer_->cancel();
             start = now();
             while (!call_scan3d(false)) {
                 if (!goal_handle->is_active()) {
@@ -646,6 +649,7 @@ class FocusActionServer : public rclcpp::Node {
         [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
             request,
         std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+        img_timer_->reset();
         cv::Mat frame = get_img();
         if (!frame.empty()) {
             std::string pkg_share =
@@ -659,6 +663,7 @@ class FocusActionServer : public rclcpp::Node {
                         "No image captured – background not saved");
             response->success = false;
         }
+        img_timer_->cancel();
     }
 };
 
