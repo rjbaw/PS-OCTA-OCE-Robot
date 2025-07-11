@@ -88,7 +88,6 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
-    {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     // second 60 deg
     {UserAction::MoveZangle, Mode::OCE, +10},
@@ -104,7 +103,6 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
-    {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     // third 60 deg
     {UserAction::MoveZangle, Mode::OCE, +10},
