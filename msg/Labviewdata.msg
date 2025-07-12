@@ -5,8 +5,7 @@ float64 angle_tolerance
 float64 radius
 float64 angle_limit
 int32 num_pt
-float64 dz
-float64 drot
+float64 z_height
 bool autofocus
 bool freedrive
 bool next
@@ -15,7 +14,6 @@ bool home
 bool reset
 bool scan_trigger
 bool scan_3d
-float64 z_height
 bool full_scan
 bool robot_mode
 bool oct_mode

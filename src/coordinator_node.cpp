@@ -168,10 +168,6 @@ class CoordinatorNode : public rclcpp::Node {
                 "scan_3d",
                 std::bind(&CoordinatorNode::scan3dCallback, this,
                           std::placeholders::_1, std::placeholders::_2));
-            deactivate_focus_srv_ = create_service<std_srvs::srv::Trigger>(
-                "deactivate_focus",
-                std::bind(&CoordinatorNode::deactivateFocusCallback, this,
-                          std::placeholders::_1, std::placeholders::_2));
         }
 
         moveit_cpp_ =
@@ -311,7 +307,6 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cancel_handle_;
 
     rclcpp::Service<Scan3d>::SharedPtr scan_3d_srv_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr deactivate_focus_srv_;
 
     rclcpp::TimerBase::SharedPtr pub_timer_;
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
@@ -333,6 +328,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::mutex data_mutex_;
     rclcpp::Time start;
     bool scan_trigger_store_ = false;
+    bool success_ = false;
     std::atomic<unsigned int> pc_ = 0;
     std::atomic<ScanState> scan_state_ = ScanState::IDLE;
 
@@ -366,8 +362,6 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<double> angle_tolerance_ = 0.0;
     std::atomic<double> radius_ = 0.0;
     std::atomic<double> angle_limit_ = 0.0;
-    std::atomic<double> dz_ = 0.0;
-    std::atomic<double> drot_ = 0.0;
     std::atomic<bool> autofocus_ = false;
     std::atomic<bool> freedrive_ = false;
     std::atomic<bool> previous_ = false;
@@ -424,7 +418,7 @@ class CoordinatorNode : public rclcpp::Node {
     // }
 
     void trigger_apply_config() {
-        std::chrono::milliseconds duration = std::chrono::milliseconds(20);
+        std::chrono::milliseconds duration = std::chrono::milliseconds(50);
         apply_config_ = true;
         if (config_timer_) {
             config_timer_->cancel();
@@ -464,8 +458,6 @@ class CoordinatorNode : public rclcpp::Node {
         radius_ = msg->radius;
         angle_limit_ = msg->angle_limit;
         num_pt_ = msg->num_pt;
-        dz_ = msg->dz;
-        drot_ = msg->drot;
         autofocus_ = msg->autofocus;
         freedrive_ = msg->freedrive;
         previous_ = msg->previous;
@@ -501,8 +493,6 @@ class CoordinatorNode : public rclcpp::Node {
                                "angle_limit", sub_log);
                 log_if_changed(msg->num_pt, old_sub_msg_.num_pt, "num_pt",
                                sub_log);
-                log_if_changed(msg->dz, old_sub_msg_.dz, "dz", sub_log);
-                log_if_changed(msg->drot, old_sub_msg_.drot, "drot", sub_log);
                 log_if_changed(msg->autofocus, old_sub_msg_.autofocus,
                                "autofocus", sub_log);
                 log_if_changed(msg->freedrive, old_sub_msg_.freedrive,
@@ -532,6 +522,9 @@ class CoordinatorNode : public rclcpp::Node {
 
                 RCLCPP_INFO(get_logger(), sub_log.str().c_str());
             }
+	    if (!autofocus_.load()) {
+	        end_state_ = false;
+	    }
             old_sub_msg_ = *msg;
         }
     }
@@ -629,13 +622,13 @@ class CoordinatorNode : public rclcpp::Node {
             current_action_ = UserAction::None;
             previous_action_ = UserAction::None;
             cancel_action_ = false;
+	    success_ = false;
             return;
         }
 
         if (full_scan_read_) {
             full_scan_ = true;
             if ((pc_.load() + 1) > full_scan_recipe.size()) {
-                pc_ = 0;
                 full_scan_ = false;
                 msg_ = "Full Scan complete!\n";
                 return;
@@ -723,17 +716,17 @@ class CoordinatorNode : public rclcpp::Node {
             }
             break;
         case UserAction::Focus:
-            if (autofocus_ && !end_state_) {
+            if (autofocus_.load() && !end_state_.load()) {
                 if (previous_action_ != current_action_) {
+		    success_ = false;
                     sendFocusGoal();
                     msg_ = "[Action] Focusing\n";
                     RCLCPP_INFO(get_logger(), msg_.c_str());
                     previous_action_ = UserAction::Focus;
                 }
             } else {
-                if (!end_state_) {
+                if (!success_) {
                     msg_ = "Canceling Focus action\n";
-                    end_state_ = true;
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
                     if (goal_still_active(active_focus_goal_handle_)) {
                         focus_action_client_->async_cancel_goal(
@@ -798,9 +791,7 @@ class CoordinatorNode : public rclcpp::Node {
             scan_3d_ = false;
             triggered_service_ = false;
             scan_trigger_ = false;
-            if (!autofocus_) {
-                end_state_ = false;
-            }
+	    pc_ = 0;
             break;
         }
     }
@@ -827,7 +818,7 @@ class CoordinatorNode : public rclcpp::Node {
                 previous_action_ = UserAction::None;
                 msg_ += result.result->status;
                 end_state_ = true;
-                autofocus_ = false;
+		success_ = true;
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     RCLCPP_INFO(this->get_logger(), "Focus action SUCCEEDED");
@@ -909,9 +900,17 @@ class CoordinatorNode : public rclcpp::Node {
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
+                    if (full_scan_read_) {
+                        full_scan_ = false;
+                        msg_ = "Move Z angle action aborted, aborting full scan\n";
+                    }
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
+                    if (full_scan_read_) {
+                        full_scan_ = false;
+                        msg_ = "Move Z angle action canceled, aborting full scan\n";
+                    }
                     break;
                 default:
                     RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
@@ -1004,7 +1003,6 @@ class CoordinatorNode : public rclcpp::Node {
                 current_action_ = UserAction::None;
                 previous_action_ = UserAction::None;
                 msg_ += result.result->status;
-                // trigger_apply_config();
                 switch (result.code) {
                 case rclcpp_action::ResultCode::SUCCEEDED:
                     if (call_capture_background()) {
@@ -1065,23 +1063,6 @@ class CoordinatorNode : public rclcpp::Node {
             } else {
                 response->success = false;
             }
-        }
-    }
-
-    void deactivateFocusCallback(
-        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
-            request,
-        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        if (!triggered_service_) {
-            end_state_ = true;
-            triggered_service_ = true;
-        }
-        if (!autofocus_) {
-            end_state_ = false;
-            triggered_service_ = false;
-            response->success = true;
-        } else {
-            response->success = false;
         }
     }
 

@@ -74,8 +74,6 @@ class FocusActionServer : public rclcpp::Node {
         img_timer_->cancel();
 
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
-        service_deactivate_focus_ =
-            create_client<std_srvs::srv::Trigger>("deactivate_focus");
 
         capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
             "capture_background",
@@ -120,7 +118,6 @@ class FocusActionServer : public rclcpp::Node {
     bool planning_ = false;
 
     rclcpp::Client<Scan3d>::SharedPtr service_scan_3d_;
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr service_deactivate_focus_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
 
     double roll_ = 0.0;
@@ -165,7 +162,6 @@ class FocusActionServer : public rclcpp::Node {
         auto result = std::make_shared<Focus::Result>();
         result->status = "Focus action canceled by user request\n";
         call_scan3d(false);
-        call_deactivateFocus();
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         img_timer_->cancel();
@@ -303,16 +299,6 @@ class FocusActionServer : public rclcpp::Node {
         auto req = std::make_shared<Scan3d::Request>();
         req->activate = activate;
         auto fut = service_scan_3d_->async_send_request(req);
-        return fut.wait_for(2s) == std::future_status::ready &&
-               fut.get()->success;
-    }
-
-    bool call_deactivateFocus() {
-        if (!service_deactivate_focus_->wait_for_service(0s))
-            return false;
-
-        auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
-        auto fut = service_deactivate_focus_->async_send_request(req);
         return fut.wait_for(2s) == std::future_status::ready &&
                fut.get()->success;
     }
@@ -601,28 +587,6 @@ class FocusActionServer : public rclcpp::Node {
         feedback->debug_msgs = msg_;
         goal_handle->publish_feedback(feedback);
         start = now();
-        while (!call_deactivateFocus()) {
-            if (!goal_handle->is_active()) {
-                tem_->stopExecution(true);
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
-            if (goal_handle->is_canceling()) {
-                tem_->stopExecution(true);
-                result->status = "Cancel requested!\n";
-                goal_handle->canceled(result);
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
-            if ((now() - start).seconds() > 5.0) {
-                RCLCPP_WARN(get_logger(), "deactivate_focus not responding…");
-                result->status = "deactivate_focus not responding\n";
-                goal_handle->abort(result);
-                return;
-            }
-            rclcpp::sleep_for(50ms);
-        }
         if (!goal_handle->is_active()) {
             tem_->stopExecution(true);
             planning_component_->setStartStateToCurrentState();
