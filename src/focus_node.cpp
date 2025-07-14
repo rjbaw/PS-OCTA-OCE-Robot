@@ -224,6 +224,19 @@ class FocusActionServer : public rclcpp::Node {
         return c;
     }
 
+    bool isBlack(const cv::Mat &img, uint8_t pixel_thres = 5,
+                 double ratio = 0.98) {
+        if (img.empty()) {
+            return true;
+        }
+        CV_Assert(img.type() == CV_8UC1);
+        int black_pixels =
+            static_cast<int>(img.total()) - cv::countNonZero(img > pixel_thres);
+        bool black =
+            ((static_cast<double>(black_pixels) / img.total()) >= ratio);
+        return black;
+    }
+
     cv::Mat get_img() {
         std::unique_lock<std::mutex> lock(img_mutex_);
         img_cv_.wait(lock, [this]() { return (img_seq_ > last_read_seq_); });
@@ -232,10 +245,17 @@ class FocusActionServer : public rclcpp::Node {
     }
 
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
+        cv::Mat new_img(height_, width_, CV_8UC1);
+        std::copy(msg->img.begin(), msg->img.end(), new_img.data);
+
+        if (isBlack(new_img)) {
+            RCLCPP_DEBUG(get_logger(), "Discarding black frame");
+            return;
+        };
+
         auto now = this->now();
         double elapsed = (now - last_store_time_).seconds();
         if (elapsed < gating_interval_) {
-
             RCLCPP_DEBUG(get_logger(),
                          "Skipping frame (%.2f sec since last store)", elapsed);
             return;
@@ -243,8 +263,6 @@ class FocusActionServer : public rclcpp::Node {
         RCLCPP_DEBUG(get_logger(),
                      "Storing new frame after %.2f sec (size=%zu)", elapsed,
                      msg->img.size());
-        cv::Mat new_img(height_, width_, CV_8UC1);
-        std::copy(msg->img.begin(), msg->img.end(), new_img.data);
         {
             std::lock_guard<std::mutex> lock(img_mutex_);
             img_ = new_img;
