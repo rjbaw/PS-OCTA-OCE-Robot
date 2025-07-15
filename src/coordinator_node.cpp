@@ -58,11 +58,6 @@ enum class Mode {
     OCE,
 };
 
-enum class ScanState {
-    IDLE,
-    BUSY,
-};
-
 struct Step {
     UserAction action;
     Mode mode;
@@ -328,11 +323,10 @@ class CoordinatorNode : public rclcpp::Node {
     double yaw_ = 0.0;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
-    rclcpp::Time start;
     bool scan_trigger_store_ = false;
     bool success_ = false;
     std::atomic<unsigned int> pc_ = 0;
-    std::atomic<ScanState> scan_state_ = ScanState::IDLE;
+    rclcpp::Time scan_start;
 
     rclcpp::TimerBase::SharedPtr config_timer_;
     std::weak_ptr<rclcpp::TimerBase> config_timer_weak_;
@@ -411,7 +405,6 @@ class CoordinatorNode : public rclcpp::Node {
     //     20ms, false); scan_trigger_ = true;
     //     rclcpp::sleep_for(std::chrono::milliseconds(100));
     //     scan_trigger_ = false;
-    //     scan_state_ = ScanState::BUSY;
     // }
 
     // void trigger_apply_config() {
@@ -586,6 +579,11 @@ class CoordinatorNode : public rclcpp::Node {
 
                 RCLCPP_INFO(get_logger(), pub_log.str().c_str());
             }
+            if (scan_trigger_) {
+                if ((now() - scan_start).seconds() > 3.0) {
+                    scan_trigger_ = false;
+                }
+            }
             pub_handle_->publish(msg);
             old_pub_msg_ = msg;
         }
@@ -623,11 +621,11 @@ class CoordinatorNode : public rclcpp::Node {
                 RCLCPP_INFO(this->get_logger(), msg_.c_str());
             }
             pc_ = 0;
-            scan_state_ = ScanState::IDLE;
             current_action_ = UserAction::None;
             previous_action_ = UserAction::None;
             cancel_action_ = false;
             success_ = false;
+            triggered_service_ = false;
             scan_trigger_store_ = scan_trigger_read_.load();
             return;
         }
@@ -768,24 +766,21 @@ class CoordinatorNode : public rclcpp::Node {
             break;
         case UserAction::Scan:
             if (previous_action_ != current_action_) {
-                if (scan_state_ == ScanState::IDLE) {
-                    msg_ += std::format("  [Action] Scanning\n");
-                    RCLCPP_INFO(get_logger(), msg_.c_str());
-                    scan_trigger_ = true;
-                    scan_state_ = ScanState::BUSY;
-                    scan_trigger_store_ = scan_trigger_read_.load();
-                    current_action_ = UserAction::None;
-                    previous_action_ = UserAction::Scan;
-                }
+                msg_ += std::format("  [Action] Scanning\n");
+                RCLCPP_INFO(get_logger(), msg_.c_str());
+                scan_trigger_ = true;
+                scan_trigger_store_ = scan_trigger_read_.load();
+                previous_action_ = UserAction::Scan;
+                scan_start = now();
             } else {
                 if (scan_trigger_read_.load() != scan_trigger_store_) {
                     scan_trigger_ = false;
                     msg_ += "Scan Complete\n";
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
-                    scan_state_ = ScanState::IDLE;
-                    previous_action_ = UserAction::None;
                     pc_.fetch_add(1);
                     scan_trigger_store_ = scan_trigger_read_.load();
+                    previous_action_ = UserAction::None;
+                    current_action_ = UserAction::None;
                 }
             }
             break;
@@ -834,17 +829,9 @@ class CoordinatorNode : public rclcpp::Node {
                     break;
                 case rclcpp_action::ResultCode::ABORTED:
                     RCLCPP_WARN(this->get_logger(), "Focus action ABORTED");
-                    if (full_scan_read_) {
-                        full_scan_ = false;
-                        msg_ = "Focus action aborted, aborting full scan\n";
-                    }
                     break;
                 case rclcpp_action::ResultCode::CANCELED:
                     RCLCPP_WARN(this->get_logger(), "Focus action CANCELED");
-                    if (full_scan_read_) {
-                        full_scan_ = false;
-                        msg_ = "Focus action canceled, aborting full scan\n";
-                    }
                     break;
                 default:
                     RCLCPP_WARN(this->get_logger(),
@@ -886,45 +873,36 @@ class CoordinatorNode : public rclcpp::Node {
                             fb->current_z_angle);
             };
 
-        options.result_callback = [this,
-                                   yaw](const MoveZGoalHandle::WrappedResult
-                                            &result) {
-            current_action_ = UserAction::None;
-            previous_action_ = UserAction::None;
-            msg_ += result.result->status;
-            switch (result.code) {
-            case rclcpp_action::ResultCode::SUCCEEDED:
-                if (yaw > 0.0) {
-                    circle_state_++;
-                } else {
-                    circle_state_--;
+        options.result_callback =
+            [this, yaw](const MoveZGoalHandle::WrappedResult &result) {
+                current_action_ = UserAction::None;
+                previous_action_ = UserAction::None;
+                msg_ += result.result->status;
+                switch (result.code) {
+                case rclcpp_action::ResultCode::SUCCEEDED:
+                    if (yaw > 0.0) {
+                        circle_state_++;
+                    } else {
+                        circle_state_--;
+                    }
+                    angle_.fetch_add(yaw);
+                    RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
+                    if (full_scan_read_) {
+                        pc_.fetch_add(1);
+                    }
+                    break;
+                case rclcpp_action::ResultCode::ABORTED:
+                    RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
+                    break;
+                case rclcpp_action::ResultCode::CANCELED:
+                    RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
+                    break;
+                default:
+                    RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
+                    break;
                 }
-                angle_.fetch_add(yaw);
-                RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
-                if (full_scan_read_) {
-                    pc_.fetch_add(1);
-                }
-                break;
-            case rclcpp_action::ResultCode::ABORTED:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
-                if (full_scan_read_) {
-                    full_scan_ = false;
-                    msg_ = "Move Z angle action aborted, aborting full scan\n";
-                }
-                break;
-            case rclcpp_action::ResultCode::CANCELED:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
-                if (full_scan_read_) {
-                    full_scan_ = false;
-                    msg_ = "Move Z angle action canceled, aborting full scan\n";
-                }
-                break;
-            default:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
-                break;
-            }
-            active_move_z_goal_handle_.reset();
-        };
+                active_move_z_goal_handle_.reset();
+            };
 
         options.goal_response_callback =
             [this](MoveZGoalHandle::SharedPtr goal_handle) {

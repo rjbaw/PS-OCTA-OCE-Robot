@@ -369,7 +369,7 @@ class FocusActionServer : public rclcpp::Node {
                     planning_component_->setStartStateToCurrentState();
                     return;
                 }
-                if ((this->now() - start).seconds() > 5.0) {
+                if ((now() - start).seconds() > 5.0) {
                     RCLCPP_WARN(get_logger(),
                                 "activate_3d_scan not responding...");
                     result->status = "activate_3d_scan timed out\n";
@@ -412,7 +412,7 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
             }
 
-            img_timer_->cancel();
+            // img_timer_->cancel();
             start = now();
             while (!call_scan3d(false)) {
                 if (!goal_handle->is_active()) {
@@ -604,7 +604,7 @@ class FocusActionServer : public rclcpp::Node {
         msg_ = "Within tolerance or Early termination\n";
         feedback->debug_msgs = msg_;
         goal_handle->publish_feedback(feedback);
-        start = now();
+        start = this->now();
         if (!goal_handle->is_active()) {
             tem_->stopExecution(true);
             planning_component_->setStartStateToCurrentState();
