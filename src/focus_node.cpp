@@ -65,13 +65,9 @@ class FocusActionServer : public rclcpp::Node {
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
-            "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
+            "oct_image", rclcpp::QoS(rclcpp::KeepLast(3)).best_effort(),
             std::bind(&FocusActionServer::imageCallback, this,
                       std::placeholders::_1));
-        img_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(10),
-            std::bind(&FocusActionServer::imageTimerCallback, this));
-        img_timer_->cancel();
 
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
 
@@ -84,6 +80,7 @@ class FocusActionServer : public rclcpp::Node {
   private:
     bool early_terminate_ = false;
     bool skip_angle_tolerance_ = true;
+    const int interval_ = 6;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFocus> active_goal_handle_;
@@ -93,15 +90,14 @@ class FocusActionServer : public rclcpp::Node {
     std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
         tem_;
 
-    cv::Mat img_;
-    cv::Mat img_hash_;
     rclcpp::Time last_store_time_;
-    std::mutex img_mutex_;
-    std::condition_variable img_cv_;
+    // std::mutex img_mutex_;
+
+    static constexpr size_t kBuffersize = 8;
+    std::array<cv::Mat, kBuffersize> buffer_;
+    std::atomic<size_t> head_ = 0;
+    std::atomic<size_t> tail_ = 0;
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr img_subscriber_;
-    rclcpp::TimerBase::SharedPtr img_timer_;
-    uint64_t img_seq_ = 0;
-    uint64_t last_read_seq_ = 0;
 
     std::vector<cv::Mat> img_array_;
     std::vector<Eigen::Vector3d> pc_lines_;
@@ -130,9 +126,8 @@ class FocusActionServer : public rclcpp::Node {
     const double gating_interval_ = 0.05;
     const int width_ = 500;
     const int height_ = 512;
-    const int interval_ = 6;
     const bool single_interval_ = false;
-    const double px_per_mm = 55.0;
+    const double px_per_mm = 60.0;
 
     double angle_tolerance_ = 0.0;
     double z_tolerance_ = 0.0;
@@ -164,7 +159,6 @@ class FocusActionServer : public rclcpp::Node {
         call_scan3d(false);
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
-        img_timer_->cancel();
         RCLCPP_INFO(get_logger(), "Focus action canceled");
         return rclcpp_action::CancelResponse::ACCEPT;
     }
@@ -177,7 +171,6 @@ class FocusActionServer : public rclcpp::Node {
         if (active_goal_handle_ && active_goal_handle_->is_active()) {
             active_goal_handle_->abort(result);
         }
-        img_timer_->reset();
         active_goal_handle_ = goal_handle;
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
@@ -230,23 +223,51 @@ class FocusActionServer : public rclcpp::Node {
             return true;
         }
         CV_Assert(img.type() == CV_8UC1);
+        cv::Mat thresh;
+        cv::threshold(img, thresh, pixel_thres, 255, cv::THRESH_BINARY);
         int black_pixels =
-            static_cast<int>(img.total()) - cv::countNonZero(img > pixel_thres);
+            static_cast<int>(img.total()) - cv::countNonZero(thresh);
         bool black =
             ((static_cast<double>(black_pixels) / img.total()) >= ratio);
         return black;
     }
 
+    void pushFrame(const cv::Mat &frame) {
+        size_t head = head_.load();
+        buffer_[head] = frame.clone();
+        size_t next = (head + 1) & (kBuffersize - 1); // wrap
+        head_ = next;
+        if (next == tail_.load()) {
+            tail_ = (tail_ + 1) & (kBuffersize - 1);
+        }
+        head_.notify_all();
+    }
+
+    bool popNew(cv::Mat &frame) {
+        size_t head = head_.load();
+        size_t tail = tail_.load();
+        if (head == tail) {
+            return false;
+        }
+        size_t newest = (head + kBuffersize - 1) & (kBuffersize - 1);
+        frame = buffer_[newest];
+        tail_ = (newest + 1) & (kBuffersize - 1);
+        return true;
+    }
+
     cv::Mat get_img() {
-        std::unique_lock<std::mutex> lock(img_mutex_);
-        img_cv_.wait(lock, [this]() { return (img_seq_ > last_read_seq_); });
-        last_read_seq_ = img_seq_;
-        return img_.clone();
+        cv::Mat frame;
+        while (!popNew(frame)) {
+            size_t expected = head_.load();
+            head_.wait(expected);
+        }
+        return frame;
     }
 
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        cv::Mat new_img(height_, width_, CV_8UC1);
-        std::copy(msg->img.begin(), msg->img.end(), new_img.data);
+        cv::Mat new_img(height_, width_, CV_8UC1, msg->img.data());
+        // cv::Mat new_img(height_, width_, CV_8UC1);
+        // std::copy(msg->img.begin(), msg->img.end(), new_img.data);
 
         if (isBlack(new_img)) {
             RCLCPP_DEBUG(get_logger(), "Discarding black frame");
@@ -254,7 +275,7 @@ class FocusActionServer : public rclcpp::Node {
         };
 
         auto now = this->now();
-        double elapsed = (now - last_store_time_).seconds();
+        auto elapsed = (now - last_store_time_).seconds();
         if (elapsed < gating_interval_) {
             RCLCPP_DEBUG(get_logger(),
                          "Skipping frame (%.2f sec since last store)", elapsed);
@@ -263,52 +284,9 @@ class FocusActionServer : public rclcpp::Node {
         RCLCPP_DEBUG(get_logger(),
                      "Storing new frame after %.2f sec (size=%zu)", elapsed,
                      msg->img.size());
-        {
-            std::lock_guard<std::mutex> lock(img_mutex_);
-            img_ = new_img;
-            ++img_seq_;
-            last_store_time_ = now;
-            img_cv_.notify_all();
-        }
-    }
 
-    void imageTimerCallback() {
-        cv::Mat image_copy;
-        {
-            std::lock_guard<std::mutex> lock(img_mutex_);
-            if (img_.empty()) {
-                RCLCPP_DEBUG(this->get_logger(),
-                             "timerCallback: No image to process");
-                return;
-            }
-            image_copy = img_.clone();
-        }
-        cv::Mat current_hash;
-        cv::img_hash::AverageHash::create()->compute(image_copy, current_hash);
-        if (img_hash_.empty()) {
-            img_hash_ = current_hash.clone();
-            RCLCPP_DEBUG(this->get_logger(),
-                         "First hash stored. current_hash size=[%dx%d]",
-                         current_hash.rows, current_hash.cols);
-            return;
-        }
-        double diff = 0.0;
-        if (img_hash_.size == current_hash.size &&
-            img_hash_.type() == current_hash.type()) {
-            diff = cv::norm(img_hash_, current_hash);
-            RCLCPP_DEBUG(this->get_logger(),
-                         "Timer triggered - processing. Hash diff=%.2f", diff);
-        } else {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "Hash mismatch in size or type! old=(%d x %d, type=%d), "
-                "new=(%d x %d, type=%d)",
-                img_hash_.rows, img_hash_.cols, img_hash_.type(),
-                current_hash.rows, current_hash.cols, current_hash.type());
-        }
-        RCLCPP_DEBUG(this->get_logger(),
-                     "Timer triggered - final update. Hash diff=%.2f", diff);
-        img_hash_ = current_hash.clone();
+        last_store_time_ = now;
+        pushFrame(new_img);
     }
 
     bool call_scan3d(bool activate) {
@@ -353,7 +331,6 @@ class FocusActionServer : public rclcpp::Node {
                 return;
             }
 
-            img_timer_->reset();
             start = now();
             while (!call_scan3d(true)) {
                 if (!goal_handle->is_active()) {
@@ -383,7 +360,7 @@ class FocusActionServer : public rclcpp::Node {
                 start = now();
                 while (true) {
                     cv::Mat frame = get_img();
-                    if (!img_.empty()) {
+                    if (!frame.empty()) {
                         img_array_.push_back(frame);
                         break;
                     }
@@ -412,7 +389,6 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
             }
 
-            // img_timer_->cancel();
             start = now();
             while (!call_scan3d(false)) {
                 if (!goal_handle->is_active()) {
@@ -604,7 +580,6 @@ class FocusActionServer : public rclcpp::Node {
         msg_ = "Within tolerance or Early termination\n";
         feedback->debug_msgs = msg_;
         goal_handle->publish_feedback(feedback);
-        start = this->now();
         if (!goal_handle->is_active()) {
             tem_->stopExecution(true);
             planning_component_->setStartStateToCurrentState();
@@ -622,7 +597,6 @@ class FocusActionServer : public rclcpp::Node {
         if (goal_handle->is_active()) {
             result->status = "Focus completed successfully\n";
             goal_handle->succeed(result);
-            img_timer_->cancel();
             RCLCPP_INFO(get_logger(), "Focus action completed successfully.");
         }
     }
@@ -631,7 +605,6 @@ class FocusActionServer : public rclcpp::Node {
         [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
             request,
         std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        img_timer_->reset();
         cv::Mat frame = get_img();
         if (!frame.empty()) {
             std::string pkg_share =
@@ -645,7 +618,6 @@ class FocusActionServer : public rclcpp::Node {
                         "No image captured – background not saved");
             response->success = false;
         }
-        img_timer_->cancel();
     }
 };
 
