@@ -527,6 +527,9 @@ class CoordinatorNode : public rclcpp::Node {
             if (!autofocus_.load()) {
                 end_state_ = false;
             }
+            if (!full_scan_read_) {
+                pc_ = 0;
+            }
             old_sub_msg_ = *msg;
         }
     }
@@ -625,6 +628,7 @@ class CoordinatorNode : public rclcpp::Node {
             previous_action_ = UserAction::None;
             cancel_action_ = false;
             success_ = false;
+            scan_trigger_store_ = scan_trigger_read_.load();
             return;
         }
 
@@ -793,7 +797,7 @@ class CoordinatorNode : public rclcpp::Node {
             scan_3d_ = false;
             triggered_service_ = false;
             scan_trigger_ = false;
-            pc_ = 0;
+            scan_trigger_store_ = scan_trigger_read_.load();
             break;
         }
     }
