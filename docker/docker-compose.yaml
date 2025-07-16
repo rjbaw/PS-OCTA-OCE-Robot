@@ -11,8 +11,7 @@ services:
       - $HOME/:/workspace/home/
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - $HOME/.Xauthority:/root/.Xauthority:ro
-      # debugging
-      #- $HOME/PS-OCTA-OCE-Robot:/workspace/ps-oce-robot/
+      #- $HOME/PS-OCTA-OCE-Robot:/workspace/ps-oce-robot/ # debugging
     restart: always
     network_mode: host
     privileged: true

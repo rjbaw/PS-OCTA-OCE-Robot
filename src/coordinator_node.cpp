@@ -462,7 +462,11 @@ class CoordinatorNode : public rclcpp::Node {
         scan_trigger_read_ = msg->scan_trigger;
         scan_3d_read_ = msg->scan_3d;
         z_height_ = msg->z_height;
-        full_scan_read_ = msg->full_scan;
+	if (octa_mode_.load()) {
+	    full_scan_read_ = true;
+	} else {
+	    full_scan_read_ = msg->full_scan;
+	}
         robot_mode_read_ = msg->robot_mode;
         oct_mode_read_ = msg->oct_mode;
         octa_mode_read_ = msg->octa_mode;
@@ -579,8 +583,8 @@ class CoordinatorNode : public rclcpp::Node {
 
                 RCLCPP_INFO(get_logger(), pub_log.str().c_str());
             }
-            if (scan_trigger_) {
-                if ((now() - scan_start).seconds() > 3.0) {
+            if (scan_trigger_.load()) {
+                if ((now() - scan_start).seconds() > 2.0) {
                     scan_trigger_ = false;
                 }
             }
@@ -627,6 +631,11 @@ class CoordinatorNode : public rclcpp::Node {
             success_ = false;
             triggered_service_ = false;
             scan_trigger_store_ = scan_trigger_read_.load();
+	    robot_mode_ = true;
+	    octa_mode_ = false;
+	    oct_mode_ = false;
+	    oce_mode_ = false;
+            trigger_apply_config();
             return;
         }
 

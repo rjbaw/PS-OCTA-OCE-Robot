@@ -123,11 +123,11 @@ class FocusActionServer : public rclcpp::Node {
     double tmp_pitch_ = 0.0;
     double tmp_yaw_ = 0.0;
 
-    const double gating_interval_ = 0.05;
+    const double gating_interval_ = 0.02;
     const int width_ = 500;
     const int height_ = 512;
     const bool single_interval_ = false;
-    const double px_per_mm = 60.0;
+    const double px_per_mm = 65.0;
 
     double angle_tolerance_ = 0.0;
     double z_tolerance_ = 0.0;
