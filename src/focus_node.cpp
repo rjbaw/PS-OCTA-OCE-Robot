@@ -65,7 +65,7 @@ class FocusActionServer : public rclcpp::Node {
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
-            "oct_image", rclcpp::QoS(rclcpp::KeepLast(3)).best_effort(),
+            "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
             std::bind(&FocusActionServer::imageCallback, this,
                       std::placeholders::_1));
 
@@ -99,7 +99,6 @@ class FocusActionServer : public rclcpp::Node {
     std::atomic<size_t> tail_ = 0;
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr img_subscriber_;
 
-    std::vector<cv::Mat> img_array_;
     std::vector<Eigen::Vector3d> pc_lines_;
     Eigen::Matrix3d rotmat_eigen_;
     tf2::Quaternion q_;
@@ -123,7 +122,7 @@ class FocusActionServer : public rclcpp::Node {
     double tmp_pitch_ = 0.0;
     double tmp_yaw_ = 0.0;
 
-    const double gating_interval_ = 0.05;
+    const double gating_interval_ = 0.02;
     const int width_ = 500;
     const int height_ = 512;
     const bool single_interval_ = false;
@@ -265,15 +264,6 @@ class FocusActionServer : public rclcpp::Node {
     }
 
     void imageCallback(const octa_ros::msg::Img::SharedPtr msg) {
-        cv::Mat new_img(height_, width_, CV_8UC1, msg->img.data());
-        // cv::Mat new_img(height_, width_, CV_8UC1);
-        // std::copy(msg->img.begin(), msg->img.end(), new_img.data);
-
-        if (isBlack(new_img)) {
-            RCLCPP_DEBUG(get_logger(), "Discarding black frame");
-            return;
-        };
-
         auto now = this->now();
         auto elapsed = (now - last_store_time_).seconds();
         if (elapsed < gating_interval_) {
@@ -284,6 +274,15 @@ class FocusActionServer : public rclcpp::Node {
         RCLCPP_DEBUG(get_logger(),
                      "Storing new frame after %.2f sec (size=%zu)", elapsed,
                      msg->img.size());
+
+        cv::Mat new_img(height_, width_, CV_8UC1, msg->img.data());
+        // cv::Mat new_img(height_, width_, CV_8UC1);
+        // std::copy(msg->img.begin(), msg->img.end(), new_img.data);
+
+        if (isBlack(new_img)) {
+            RCLCPP_DEBUG(get_logger(), "Discarding black frame");
+            return;
+        };
 
         last_store_time_ = now;
         pushFrame(new_img);
@@ -355,13 +354,13 @@ class FocusActionServer : public rclcpp::Node {
                 }
                 rclcpp::sleep_for(50ms);
             }
-            img_array_.clear();
+            std::vector<cv::Mat> img_array;
             for (int i = 0; i < interval_; i++) {
                 start = now();
                 while (true) {
                     cv::Mat frame = get_img();
                     if (!frame.empty()) {
-                        img_array_.push_back(frame);
+                        img_array.push_back(frame);
                         break;
                     }
                     if (!goal_handle->is_active()) {
@@ -416,12 +415,12 @@ class FocusActionServer : public rclcpp::Node {
             msg_ = "Calculating Rotations";
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
-            pc_lines_ = lines_3d(img_array_, interval_, single_interval_);
-            open3d::geometry::PointCloud pcd_;
+            pc_lines_ = lines_3d(img_array, interval_, single_interval_);
+            open3d::geometry::PointCloud pcd;
             for (const auto &point : pc_lines_) {
-                pcd_.points_.emplace_back(point);
+                pcd.points_.emplace_back(point);
             }
-            auto boundbox = pcd_.GetMinimalOrientedBoundingBox(false);
+            auto boundbox = pcd.GetMinimalOrientedBoundingBox(false);
             Eigen::Vector3d center = boundbox.GetCenter();
             rotmat_eigen_ = align_to_direction(boundbox.R_);
 

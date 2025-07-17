@@ -374,44 +374,6 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> octa_mode_read_ = false;
     std::atomic<bool> oce_mode_read_ = false;
 
-    // template <class Flag>
-    // void triggerFlag(Flag &flag, rclcpp::TimerBase::SharedPtr &timer_ptr,
-    //                  std::weak_ptr<rclcpp::TimerBase> &weak_ptr,
-    //                  rclcpp::Node &node, std::chrono::milliseconds duration,
-    //                  bool block) {
-    //     if (timer_ptr) {
-    //         timer_ptr->cancel();
-    //         timer_ptr.reset();
-    //     }
-    //     flag = true;
-    //     auto done_ptr = std::make_shared<std::promise<void>>();
-    //     auto future = done_ptr->get_future();
-    //     auto fired = std::make_shared<std::atomic<bool>>(false);
-    //     timer_ptr = node.create_wall_timer(duration, [&, done_ptr, fired]() {
-    //         if (fired->exchange(true)) {
-    //             return;
-    //         }
-    //         flag = false;
-    //         done_ptr->set_value();
-    //     });
-    //     weak_ptr = timer_ptr;
-    //     if (block) {
-    //         future.wait();
-    //     }
-    // }
-
-    // void trigger_scan() {
-    //     //triggerFlag(scan_trigger_, scan_timer_, scan_timer_weak_, *this,
-    //     20ms, false); scan_trigger_ = true;
-    //     rclcpp::sleep_for(std::chrono::milliseconds(100));
-    //     scan_trigger_ = false;
-    // }
-
-    // void trigger_apply_config() {
-    //     triggerFlag(apply_config_, config_timer_, config_timer_weak_, *this,
-    //                 20ms, false);
-    // }
-
     void trigger_apply_config() {
         std::chrono::milliseconds duration = std::chrono::milliseconds(50);
         apply_config_ = true;
@@ -425,7 +387,6 @@ class CoordinatorNode : public rclcpp::Node {
             apply_config_ = false;
         });
         config_timer_weak_ = config_timer_;
-        // rclcpp::sleep_for(duration);
     }
 
     template <typename GH> bool goal_still_active(const GH &handle) {
@@ -462,11 +423,11 @@ class CoordinatorNode : public rclcpp::Node {
         scan_trigger_read_ = msg->scan_trigger;
         scan_3d_read_ = msg->scan_3d;
         z_height_ = msg->z_height;
-	if (octa_mode_.load()) {
-	    full_scan_read_ = true;
-	} else {
-	    full_scan_read_ = msg->full_scan;
-	}
+        if (octa_mode_.load()) {
+            full_scan_read_ = true;
+        } else {
+            full_scan_read_ = msg->full_scan;
+        }
         robot_mode_read_ = msg->robot_mode;
         oct_mode_read_ = msg->oct_mode;
         octa_mode_read_ = msg->octa_mode;
@@ -632,17 +593,18 @@ class CoordinatorNode : public rclcpp::Node {
             success_ = false;
             triggered_service_ = false;
             scan_trigger_store_ = scan_trigger_read_.load();
-	    robot_mode_ = true;
-	    octa_mode_ = false;
-	    oct_mode_ = false;
-	    oce_mode_ = false;
+            robot_mode_ = true;
+            octa_mode_ = false;
+            oct_mode_ = false;
+            oce_mode_ = false;
             trigger_apply_config();
             return;
         }
 
         if (full_scan_read_) {
             full_scan_ = true;
-            if ((pc_.load() + 1) > full_scan_recipe.size()) {
+            unsigned int pc = pc_.load();
+            if ((pc + 1) > full_scan_recipe.size()) {
                 full_scan_ = false;
                 msg_ = "Full Scan complete!\n";
                 return;
@@ -751,10 +713,10 @@ class CoordinatorNode : public rclcpp::Node {
             break;
         case UserAction::MoveZangle:
             if (previous_action_ != current_action_) {
+                int n = num_pt_.load();
                 angle_increment_ =
-                    (num_pt_ == 0)
-                        ? 0.0
-                        : (angle_limit_ / static_cast<double>(num_pt_));
+                    (n == 0) ? 0.0
+                             : (angle_limit_.load() / static_cast<double>(n));
                 if (next_) {
                     yaw_ = angle_increment_;
                     msg_ = std::format("[Action] Next: {}\n", yaw_);
