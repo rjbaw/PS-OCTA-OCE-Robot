@@ -81,10 +81,10 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
     {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
+    {UserAction::Scan, Mode::OCE, 0},
     // second 60 deg
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
@@ -97,10 +97,10 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     {UserAction::MoveZangle, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
     // intermediate OCT scans
     {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
+    {UserAction::Scan, Mode::OCE, 0},
     // third 60 deg
     {UserAction::MoveZangle, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
@@ -535,6 +535,7 @@ class CoordinatorNode : public rclcpp::Node {
         cancel_action_ = msg->data;
         if (cancel_action_) {
             autofocus_ = false;
+            full_scan_ = false;
         }
     }
 

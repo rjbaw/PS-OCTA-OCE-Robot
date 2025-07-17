@@ -93,7 +93,7 @@ class FocusActionServer : public rclcpp::Node {
     rclcpp::Time last_store_time_;
     // std::mutex img_mutex_;
 
-    static constexpr size_t kBuffersize = 8;
+    static constexpr size_t kBuffersize = 8; // must be powers of 2
     std::array<cv::Mat, kBuffersize> buffer_;
     std::atomic<size_t> head_ = 0;
     std::atomic<size_t> tail_ = 0;
@@ -123,7 +123,7 @@ class FocusActionServer : public rclcpp::Node {
     double tmp_pitch_ = 0.0;
     double tmp_yaw_ = 0.0;
 
-    const double gating_interval_ = 0.02;
+    const double gating_interval_ = 0.05;
     const int width_ = 500;
     const int height_ = 512;
     const bool single_interval_ = false;
