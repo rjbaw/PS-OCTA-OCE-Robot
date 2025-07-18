@@ -139,6 +139,8 @@ class CoordinatorNode : public rclcpp::Node {
                    .automatically_declare_parameters_from_overrides(true)) {}
 
     void init() {
+        parallel_group_ =
+            this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
         {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
@@ -146,25 +148,33 @@ class CoordinatorNode : public rclcpp::Node {
         }
 
         {
+            rclcpp::SubscriptionOptions options;
+            options.callback_group = parallel_group_;
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             sub_handle_ = this->create_subscription<octa_ros::msg::Labviewdata>(
                 "labview_data", qos,
                 std::bind(&CoordinatorNode::subscriberCallback, this,
-                          std::placeholders::_1));
+                          std::placeholders::_1),
+                options);
         }
         {
+            rclcpp::SubscriptionOptions options;
+            options.callback_group = parallel_group_;
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             cancel_handle_ = this->create_subscription<std_msgs::msg::Bool>(
                 "cancel_current_action", qos,
                 std::bind(&CoordinatorNode::cancelCallback, this,
-                          std::placeholders::_1));
+                          std::placeholders::_1),
+                options);
         }
 
         {
+            auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             scan_3d_srv_ = create_service<Scan3d>(
                 "scan_3d",
                 std::bind(&CoordinatorNode::scan3dCallback, this,
-                          std::placeholders::_1, std::placeholders::_2));
+                          std::placeholders::_1, std::placeholders::_2),
+                qos, parallel_group_);
         }
 
         moveit_cpp_ =
@@ -247,7 +257,12 @@ class CoordinatorNode : public rclcpp::Node {
 
         pub_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5),
-            std::bind(&CoordinatorNode::publisherCallback, this));
+            std::bind(&CoordinatorNode::publisherCallback, this),
+            parallel_group_);
+
+        main_loop_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(5),
+            std::bind(&CoordinatorNode::mainLoop, this), parallel_group_);
 
         focus_action_client_ =
             rclcpp_action::create_client<FocusAction>(this, "focus_action");
@@ -260,10 +275,6 @@ class CoordinatorNode : public rclcpp::Node {
 
         service_capture_background_ =
             create_client<std_srvs::srv::Trigger>("capture_background");
-
-        main_loop_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(5),
-            std::bind(&CoordinatorNode::mainLoop, this));
 
         if (!focus_action_client_->wait_for_action_server(
                 std::chrono::milliseconds(200))) {
@@ -299,6 +310,8 @@ class CoordinatorNode : public rclcpp::Node {
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     moveit::planning_interface::PlanningSceneInterface psi;
 
+    rclcpp::CallbackGroup::SharedPtr parallel_group_;
+
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr sub_handle_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cancel_handle_;
@@ -314,8 +327,8 @@ class CoordinatorNode : public rclcpp::Node {
     ResetGoalHandle::SharedPtr active_reset_goal_handle_;
 
     // Internal variables
-    UserAction current_action_ = UserAction::None;
-    UserAction previous_action_ = UserAction::None;
+    std::atomic<UserAction> current_action_ = UserAction::None;
+    std::atomic<UserAction> previous_action_ = UserAction::None;
     octa_ros::msg::Labviewdata old_sub_msg_;
     octa_ros::msg::Robotdata old_pub_msg_;
     double roll_ = 0.0;
@@ -324,7 +337,7 @@ class CoordinatorNode : public rclcpp::Node {
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;
     bool scan_trigger_store_ = false;
-    bool success_ = false;
+    std::atomic<bool> success_ = false;
     std::atomic<unsigned int> pc_ = 0;
     rclcpp::Time scan_start;
 
@@ -701,7 +714,7 @@ class CoordinatorNode : public rclcpp::Node {
                     previous_action_ = UserAction::Focus;
                 }
             } else {
-                if (!success_) {
+                if (!success_.load()) {
                     msg_ = "Canceling Focus action\n";
                     RCLCPP_INFO(this->get_logger(), msg_.c_str());
                     if (goal_still_active(active_focus_goal_handle_)) {
@@ -1006,8 +1019,13 @@ class CoordinatorNode : public rclcpp::Node {
         }
         if (request->activate) {
             if (scan_3d_read_) {
-                // wait for scan to actually trigger
-                rclcpp::sleep_for(std::chrono::milliseconds(50));
+                rclcpp::Time deadline =
+                    now() + rclcpp::Duration(0, 50 * 1'000'000); // 50 ms
+                while (now() < deadline && !scan_3d_read_) {
+                    rclcpp::spin_some(get_node_base_interface());
+                    rclcpp::sleep_for(std::chrono::milliseconds(1));
+                }
+
                 response->success = true;
                 triggered_service_ = false;
             } else {
@@ -1040,10 +1058,10 @@ int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<CoordinatorNode>();
     node->init();
-    // rclcpp::executors::MultiThreadedExecutor exec;
-    // exec.add_node(node);
-    // exec.spin();
-    rclcpp::spin(node);
+    rclcpp::executors::MultiThreadedExecutor exec;
+    exec.add_node(node);
+    exec.spin();
+    // rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

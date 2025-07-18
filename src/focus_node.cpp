@@ -62,12 +62,16 @@ class FocusActionServer : public rclcpp::Node {
         planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
             "ur_manipulator", moveit_cpp_);
 
+        auto parallel_group_ =
+            this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+        rclcpp::SubscriptionOptions img_options;
+        img_options.callback_group = parallel_group_;
         last_store_time_ =
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
             "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
             std::bind(&FocusActionServer::imageCallback, this,
-                      std::placeholders::_1));
+                      std::placeholders::_1), img_options);
 
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
 
@@ -288,9 +292,25 @@ class FocusActionServer : public rclcpp::Node {
         pushFrame(new_img);
     }
 
+    //bool call_scan3d(bool activate) {
+    //    if (!service_scan_3d_->wait_for_service(200ms)) {
+    //        return false;
+    //    }
+    //    auto req = std::make_shared<Scan3d::Request>();
+    //    req->activate = activate;
+    //    auto fut = service_scan_3d_->async_send_request(req);
+    //    if (fut.wait_for(std::chrono::seconds(5)) !=
+    //        std::future_status::ready) {
+    //        RCLCPP_WARN(get_logger(), "scan_3d service call timed out");
+    //        return false;
+    //    }
+    //    return fut.get()->success;
+    //}
+
     bool call_scan3d(bool activate) {
-        if (!service_scan_3d_->wait_for_service(0s))
+        if (!service_scan_3d_->wait_for_service(200ms)) {
             return false;
+	}
         auto req = std::make_shared<Scan3d::Request>();
         req->activate = activate;
         auto fut = service_scan_3d_->async_send_request(req);
@@ -330,6 +350,14 @@ class FocusActionServer : public rclcpp::Node {
                 return;
             }
 
+            // if (!call_scan3d(true)) {
+            //     tem_->stopExecution(true);
+            //     planning_component_->setStartStateToCurrentState();
+            //     RCLCPP_WARN(get_logger(), "activate_3d_scan not responding...");
+            //     result->status = "activate_3d_scan failed or timed out\n";
+            //     goal_handle->abort(result);
+            //     return;
+            // }
             start = now();
             while (!call_scan3d(true)) {
                 if (!goal_handle->is_active()) {
@@ -352,7 +380,7 @@ class FocusActionServer : public rclcpp::Node {
                     goal_handle->abort(result);
                     return;
                 }
-                rclcpp::sleep_for(50ms);
+                //rclcpp::sleep_for(50ms);
             }
             std::vector<cv::Mat> img_array;
             for (int i = 0; i < interval_; i++) {
@@ -388,6 +416,14 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
             }
 
+            //if (!call_scan3d(false)) {
+            //    tem_->stopExecution(true);
+            //    RCLCPP_WARN(get_logger(), "deactivate_3d_scan not responding…");
+            //    result->status = "deactivate_3d_scan failed or timed out\n";
+            //    goal_handle->abort(result);
+            //    planning_component_->setStartStateToCurrentState();
+            //    return;
+            //}
             start = now();
             while (!call_scan3d(false)) {
                 if (!goal_handle->is_active()) {
@@ -405,12 +441,12 @@ class FocusActionServer : public rclcpp::Node {
                 }
                 if ((now() - start).seconds() > 5.0) {
                     RCLCPP_WARN(get_logger(),
-                                "deactivate_3d_scan not responding…");
-                    result->status = "deactivate_3d_scan not responding\n";
+                                "activate_3d_scan not responding...");
+                    result->status = "activate_3d_scan timed out\n";
                     goal_handle->abort(result);
                     return;
                 }
-                rclcpp::sleep_for(50ms);
+                //rclcpp::sleep_for(50ms);
             }
             msg_ = "Calculating Rotations";
             RCLCPP_INFO(get_logger(), msg_.c_str());
@@ -624,7 +660,10 @@ int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<FocusActionServer>();
     node->init();
-    rclcpp::spin(node);
+    rclcpp::executors::MultiThreadedExecutor exec;
+    exec.add_node(node);
+    exec.spin();
+    //rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }
