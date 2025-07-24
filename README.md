@@ -153,6 +153,8 @@ bash utils/ur_moveit.sh
 
 ## Hardware
 ![setup](./assets/setup.jpeg)
+![end_eff](./assets/schematics.jpg) ![robot_focal](./assets/robot_focal.png)
+![tcp](./assets/robot_tcp.jpg) ![slow](./assets/robot_slow_fast.png)
 
 ## Funding
 

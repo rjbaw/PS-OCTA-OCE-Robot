@@ -71,7 +71,8 @@ class FocusActionServer : public rclcpp::Node {
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
             "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
             std::bind(&FocusActionServer::imageCallback, this,
-                      std::placeholders::_1), img_options);
+                      std::placeholders::_1),
+            img_options);
 
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
 
@@ -115,6 +116,7 @@ class FocusActionServer : public rclcpp::Node {
     bool angle_focused_ = false;
     bool z_focused_ = false;
     bool planning_ = false;
+    bool angle_corrected_ = false;
 
     rclcpp::Client<Scan3d>::SharedPtr service_scan_3d_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
@@ -160,6 +162,7 @@ class FocusActionServer : public rclcpp::Node {
         auto result = std::make_shared<Focus::Result>();
         result->status = "Focus action canceled by user request\n";
         call_scan3d(false);
+        head_.notify_all();
         tem_->stopExecution(true);
         planning_component_->setStartStateToCurrentState();
         RCLCPP_INFO(get_logger(), "Focus action canceled");
@@ -280,8 +283,6 @@ class FocusActionServer : public rclcpp::Node {
                      msg->img.size());
 
         cv::Mat new_img(height_, width_, CV_8UC1, msg->img.data());
-        // cv::Mat new_img(height_, width_, CV_8UC1);
-        // std::copy(msg->img.begin(), msg->img.end(), new_img.data);
 
         if (isBlack(new_img)) {
             RCLCPP_DEBUG(get_logger(), "Discarding black frame");
@@ -292,25 +293,10 @@ class FocusActionServer : public rclcpp::Node {
         pushFrame(new_img);
     }
 
-    //bool call_scan3d(bool activate) {
-    //    if (!service_scan_3d_->wait_for_service(200ms)) {
-    //        return false;
-    //    }
-    //    auto req = std::make_shared<Scan3d::Request>();
-    //    req->activate = activate;
-    //    auto fut = service_scan_3d_->async_send_request(req);
-    //    if (fut.wait_for(std::chrono::seconds(5)) !=
-    //        std::future_status::ready) {
-    //        RCLCPP_WARN(get_logger(), "scan_3d service call timed out");
-    //        return false;
-    //    }
-    //    return fut.get()->success;
-    //}
-
     bool call_scan3d(bool activate) {
         if (!service_scan_3d_->wait_for_service(200ms)) {
             return false;
-	}
+        }
         auto req = std::make_shared<Scan3d::Request>();
         req->activate = activate;
         auto fut = service_scan_3d_->async_send_request(req);
@@ -334,13 +320,15 @@ class FocusActionServer : public rclcpp::Node {
         goal_handle->publish_feedback(feedback);
         angle_focused_ = false;
         z_focused_ = false;
+        angle_corrected_ = false;
+        planning_ = false;
 
         while (!angle_focused_ || !z_focused_) {
-            if (!goal_handle->is_active()) {
-                tem_->stopExecution(true);
-                planning_component_->setStartStateToCurrentState();
-                return;
-            }
+            // if (!goal_handle->is_active()) {
+            //     tem_->stopExecution(true);
+            //     planning_component_->setStartStateToCurrentState();
+            //     return;
+            // }
             if (goal_handle->is_canceling()) {
                 tem_->stopExecution(true);
                 result->status = "Cancel requested!\n";
@@ -349,22 +337,13 @@ class FocusActionServer : public rclcpp::Node {
                 planning_component_->setStartStateToCurrentState();
                 return;
             }
-
-            // if (!call_scan3d(true)) {
-            //     tem_->stopExecution(true);
-            //     planning_component_->setStartStateToCurrentState();
-            //     RCLCPP_WARN(get_logger(), "activate_3d_scan not responding...");
-            //     result->status = "activate_3d_scan failed or timed out\n";
-            //     goal_handle->abort(result);
-            //     return;
-            // }
             start = now();
             while (!call_scan3d(true)) {
-                if (!goal_handle->is_active()) {
-                    tem_->stopExecution(true);
-                    planning_component_->setStartStateToCurrentState();
-                    return;
-                }
+                // if (!goal_handle->is_active()) {
+                //     tem_->stopExecution(true);
+                //     planning_component_->setStartStateToCurrentState();
+                //     return;
+                // }
                 if (goal_handle->is_canceling()) {
                     tem_->stopExecution(true);
                     result->status = "Cancel requested!\n";
@@ -380,7 +359,7 @@ class FocusActionServer : public rclcpp::Node {
                     goal_handle->abort(result);
                     return;
                 }
-                //rclcpp::sleep_for(50ms);
+                // rclcpp::sleep_for(50ms);
             }
             std::vector<cv::Mat> img_array;
             for (int i = 0; i < interval_; i++) {
@@ -391,11 +370,11 @@ class FocusActionServer : public rclcpp::Node {
                         img_array.push_back(frame);
                         break;
                     }
-                    if (!goal_handle->is_active()) {
-                        tem_->stopExecution(true);
-                        planning_component_->setStartStateToCurrentState();
-                        return;
-                    }
+                    // if (!goal_handle->is_active()) {
+                    //     tem_->stopExecution(true);
+                    //     planning_component_->setStartStateToCurrentState();
+                    //     return;
+                    // }
                     if (goal_handle->is_canceling()) {
                         tem_->stopExecution(true);
                         result->status = "Cancel requested!\n";
@@ -416,21 +395,13 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
             }
 
-            //if (!call_scan3d(false)) {
-            //    tem_->stopExecution(true);
-            //    RCLCPP_WARN(get_logger(), "deactivate_3d_scan not responding…");
-            //    result->status = "deactivate_3d_scan failed or timed out\n";
-            //    goal_handle->abort(result);
-            //    planning_component_->setStartStateToCurrentState();
-            //    return;
-            //}
             start = now();
             while (!call_scan3d(false)) {
-                if (!goal_handle->is_active()) {
-                    tem_->stopExecution(true);
-                    planning_component_->setStartStateToCurrentState();
-                    return;
-                }
+                // if (!goal_handle->is_active()) {
+                //     tem_->stopExecution(true);
+                //     planning_component_->setStartStateToCurrentState();
+                //     return;
+                // }
                 if (goal_handle->is_canceling()) {
                     tem_->stopExecution(true);
                     result->status = "Cancel requested!\n";
@@ -446,7 +417,7 @@ class FocusActionServer : public rclcpp::Node {
                     goal_handle->abort(result);
                     return;
                 }
-                //rclcpp::sleep_for(50ms);
+                // rclcpp::sleep_for(50ms);
             }
             msg_ = "Calculating Rotations";
             RCLCPP_INFO(get_logger(), msg_.c_str());
@@ -503,12 +474,13 @@ class FocusActionServer : public rclcpp::Node {
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 goal_handle->publish_feedback(feedback);
             } else {
-                if (!skip_angle_tolerance_) {
-                    angle_focused_ = false;
-                }
-                if (skip_angle_tolerance_ && planning_) {
+                if (!angle_corrected_) {
+                    planning_ = true;
+                    angle_corrected_ = true;
+                } else if (skip_angle_tolerance_) {
                     angle_focused_ = true;
-                    planning_ = false;
+                } else {
+                    angle_focused_ = false;
                 }
             }
             if (std::abs(dz_) < (z_tolerance_ / 1000.0)) {
@@ -539,9 +511,6 @@ class FocusActionServer : public rclcpp::Node {
             }
 
             if (planning_) {
-                if (!skip_angle_tolerance_) {
-                    planning_ = false;
-                }
                 planning_component_->setStartStateToCurrentState();
 
                 moveit::core::RobotStatePtr cur_state =
@@ -578,11 +547,11 @@ class FocusActionServer : public rclcpp::Node {
                 planning_interface::MotionPlanResponse plan_solution =
                     planning_component_->plan(req, choose_shortest);
                 if (plan_solution) {
-                    if (!goal_handle->is_active()) {
-                        tem_->stopExecution(true);
-                        planning_component_->setStartStateToCurrentState();
-                        return;
-                    }
+                    // if (!goal_handle->is_active()) {
+                    //     tem_->stopExecution(true);
+                    //     planning_component_->setStartStateToCurrentState();
+                    //     return;
+                    // }
                     if (goal_handle->is_canceling()) {
                         tem_->stopExecution(true);
                         result->status = "Cancel requested!\n";
@@ -594,6 +563,7 @@ class FocusActionServer : public rclcpp::Node {
                     bool execute_success =
                         moveit_cpp_->execute(plan_solution.trajectory);
                     if (execute_success) {
+                        planning_ = false;
                         RCLCPP_INFO(get_logger(), "Execute Success!");
                         if (early_terminate_) {
                             angle_focused_ = true;
@@ -601,6 +571,7 @@ class FocusActionServer : public rclcpp::Node {
                             break;
                         }
                     } else {
+                        angle_corrected_ = false;
                         RCLCPP_INFO(get_logger(), "Execute Failed!");
                         feedback->debug_msgs += "Execute Failed!\n";
                     }
@@ -615,11 +586,11 @@ class FocusActionServer : public rclcpp::Node {
         msg_ = "Within tolerance or Early termination\n";
         feedback->debug_msgs = msg_;
         goal_handle->publish_feedback(feedback);
-        if (!goal_handle->is_active()) {
-            tem_->stopExecution(true);
-            planning_component_->setStartStateToCurrentState();
-            return;
-        }
+        // if (!goal_handle->is_active()) {
+        //     tem_->stopExecution(true);
+        //     planning_component_->setStartStateToCurrentState();
+        //     return;
+        // }
         if (goal_handle->is_canceling()) {
             tem_->stopExecution(true);
             feedback->debug_msgs = "Focus action canceled\n";
@@ -663,7 +634,7 @@ int main(int argc, char **argv) {
     rclcpp::executors::MultiThreadedExecutor exec;
     exec.add_node(node);
     exec.spin();
-    //rclcpp::spin(node);
+    // rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

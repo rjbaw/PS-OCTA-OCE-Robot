@@ -436,7 +436,7 @@ class CoordinatorNode : public rclcpp::Node {
         scan_trigger_read_ = msg->scan_trigger;
         scan_3d_read_ = msg->scan_3d;
         z_height_ = msg->z_height;
-        if (octa_mode_.load()) {
+        if (octa_mode_.load() && full_scan_read_) {
             full_scan_read_ = true;
         } else {
             full_scan_read_ = msg->full_scan;
