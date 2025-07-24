@@ -78,6 +78,8 @@ d     Debug
 ```
 - Notes: Preview images and button control is sent over the RTI DDS layer. Control of the robot is done using Moveit and ROS2 UR drivers.
 
+[](https://github.com/user-attachments/assets/10f69ab5-a535-4c98-a0bc-1e19c28c5a8c)
+
 ### Directory layout
 ```
 |-- action/    # action definitions
@@ -153,8 +155,29 @@ bash utils/ur_moveit.sh
 
 ## Hardware
 ![setup](./assets/setup.jpeg)
-![end_eff](./assets/schematics.jpg) ![robot_focal](./assets/robot_focal.png)
-![tcp](./assets/robot_tcp.jpg) ![slow](./assets/robot_slow_fast.png)
+
+
+<table width="100%">
+  <tr>
+    <td align="center">UR Schematics</td>
+    <td align="center">Physical Hardware Lens Center</td>
+  </tr>
+  <tr>
+  <td width="50%"><img src="./assets/schematics.jpg" alt="end_eff"/></td>
+  <td width="50%"><img src="./assets/robot_focal.png" alt="robot_focal"/></td>
+  </tr>
+</table>
+
+<table width="100%">
+  <tr>
+    <td align="center">Default Position</td>
+    <td align="center">Robot TCP</td>
+  </tr>
+  <tr>
+  <td width="50%"><img src="./assets/robot_tcp.jpg" alt="tcp"/></td>
+  <td width="50%"><img src="./assets/robot_slow_fast.png" alt="slow"/></td>
+  </tr>
+</table>
 
 ## Funding
 
