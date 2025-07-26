@@ -63,13 +63,6 @@ static void medianFilter1D(std::vector<double> &signal, int window_size) {
 cv::Mat gradient(const cv::Mat &img) {
     CV_Assert(img.channels() == 1);
 
-    // img_f = img.astype(np.float32);
-    // kx = np.array([ [ 0, 0, 0 ], [ -0.5, 0, 0.5 ], [ 0, 0, 0 ] ],
-    // np.float32); ky = kx.T; cv::Mat gy; cv::Mat gx; cv::filter2D(img_f, gy,
-    // -1, ky, borderType = cv::BORDER_REPLICATE); cv::filter2D(img_f, gx, -1,
-    // kx, borderType = cv::BORDER_REPLICATE); return np.sqrt(0.65 * gy * *2 +
-    // gx * *2, dtype = np.float32);
-
     cv::Mat img_f;
     img.convertTo(img_f, CV_32F);
 
@@ -94,12 +87,6 @@ cv::Mat gradient(const cv::Mat &img) {
 }
 
 cv::Mat build_gaussian_filter(int nx, int ny) {
-    // def build_gaussian_filter(nx, ny):
-    //     x = np.arange(nx, dtype=np.float32) - (nx - 1) / 2
-    //     y = np.arange(ny, dtype=np.float32) - (ny - 1) / 2
-    //     xx, yy = np.meshgrid(x, y)
-    //     k = np.exp(-(xx**2) / (nx / 4) ** 2) * np.exp(-(yy**2) / (ny / 4) **
-    //     2) k /= k.sum() return k
 
     cv::Mat kernel(ny, nx, CV_32F);
 
@@ -162,55 +149,6 @@ cv::Mat bg_sub(const cv::Mat &input) {
 
     return output;
 }
-
-// cv::Mat wienerFilter(const cv::Mat &input) {
-
-//     cv::Mat floatImg;
-//     input.convertTo(floatImg, CV_32F);
-
-//     cv::Mat dft_complex;
-//     cv::dft(floatImg, dft_complex, cv::DFT_COMPLEX_OUTPUT);
-
-//     cv::Mat S_nn = getPSD();
-//     if (S_nn.empty()) {
-//         std::cerr << "[wienerFilter] PSD is empty. Returning input.\n";
-//         return input.clone();
-//     }
-
-//     std::vector<cv::Mat> channels(2);
-//     cv::split(dft_complex, channels);
-
-//     cv::Mat mag;
-//     cv::magnitude(channels[0], channels[1], mag);
-//     cv::Mat mag2 = mag.mul(mag);
-
-//     cv::Mat S_xx = mag2 - S_nn;
-//     cv::max(S_xx, 0.0f, S_xx);
-
-//     float eps = 1e-8f;
-//     cv::Mat denom = S_xx + S_nn + eps;
-//     cv::Mat H;
-//     cv::divide(S_xx, denom, H);
-
-//     channels[0] = channels[0].mul(H);
-//     channels[1] = channels[1].mul(H);
-
-//     cv::Mat dft_filt;
-//     cv::merge(channels, dft_filt);
-
-//     cv::Mat out_float;
-//     cv::dft(dft_filt, out_float,
-//             cv::DFT_REAL_OUTPUT | cv::DFT_SCALE | cv::DFT_INVERSE);
-
-//     double minVal, maxVal;
-//     cv::minMaxLoc(out_float, &minVal, &maxVal);
-//     cv::Mat out_8u;
-//     double eps_d = 1e-8;
-//     out_float.convertTo(out_8u, CV_8U, 255.0 / (maxVal - minVal + eps_d),
-//                         -minVal * 255.0 / (maxVal - minVal + eps_d));
-
-//     return out_8u;
-// }
 
 cv::Mat spatialFilter(cv::Mat &input) {
 
@@ -357,14 +295,6 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
 
     std::vector<cv::Point> ret_coords = get_max_coor(denoised_image);
 
-    // std::vector<double> ys;
-    // ys.reserve(ret_coords.size());
-    // for (const auto &pt : ret_coords)
-    //     ys.push_back(static_cast<double>(pt.y));
-    // medianFilter1D(ys, 15);
-    // for (std::size_t i = 0; i < ret_coords.size(); ++i)
-    //     ret_coords[i].y = static_cast<int>(std::round(ys[i]));
-
     ret_coords = ol_removal(ret_coords);
 
     std::vector<double> obs;
@@ -386,20 +316,42 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     return result;
 }
 
+inline std::filesystem::path
+prepare_output_dir(const std::filesystem::path &base_dir, bool make_session) {
+    std::filesystem::path dir = base_dir;
+    if (make_session) {
+        auto now = std::chrono::system_clock::now();
+        auto tt = std::chrono::system_clock::to_time_t(now);
+
+        std::tm tm{};
+        localtime_r(&tt, &tm);
+        std::ostringstream oss;
+        oss << std::put_time(&tm, "%Y-%m-%dT%H-%M-%S");
+        dir /= oss.str();
+    }
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
-                                      const int interval,
-                                      const bool acq_interval) {
+                                      const int interval) {
+    const std::filesystem::path base_out_dir = "result";
+    const bool create_session_dir = true;
+    const std::filesystem::path out_dir =
+        prepare_output_dir(base_out_dir, create_session_dir);
+
     std::vector<Eigen::Vector3d> pc_3d;
     int num_frames = interval > 1 ? interval : 2;
     double increments = 499.0 / static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
         cv::Mat img = img_array[i];
-        std::string raw_filename = std::format("raw_image{}.jpg", i);
-        cv::imwrite(raw_filename.c_str(), img);
         SegmentResult pc = detect_lines(img);
-        std::string processed_filename = std::format("detected_image{}.jpg", i);
-        cv::imwrite(processed_filename.c_str(), pc.image);
+        const std::string raw_filename = std::format("raw_image{}.jpg", i);
+        const std::string processed_filename =
+            std::format("detected_image{}.jpg", i);
+        cv::imwrite((out_dir / raw_filename).string(), img);
+        cv::imwrite((out_dir / processed_filename).string(), pc.image);
         assert(!pc.coordinates.empty());
 
         int idx = static_cast<int>(i) % interval;
@@ -409,11 +361,6 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
             double x = static_cast<double>(pc.coordinates[j].x);
             double y = static_cast<double>(pc.coordinates[j].y);
             pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
-            // pc_3d.emplace_back(Eigen::Vector3d(-y, z_val, x));
-        }
-
-        if (acq_interval && pc_3d.size() >= static_cast<size_t>(interval)) {
-            break;
         }
     }
 

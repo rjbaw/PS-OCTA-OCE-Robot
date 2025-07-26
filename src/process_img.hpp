@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <cmath>
+#include <filesystem>
 #include <open3d/Open3D.h>
 #include <opencv2/opencv.hpp>
 
@@ -21,7 +22,6 @@ std::vector<cv::Point> get_max_coor(const cv::Mat &img);
 SegmentResult detect_lines(const cv::Mat &inputImg);
 
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
-                                      const int interval,
-                                      const bool acq_interval = false);
+                                      const int interval);
 
 #endif // PROCESS_IMG_HPP

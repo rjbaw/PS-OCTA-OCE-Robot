@@ -131,7 +131,6 @@ class FocusActionServer : public rclcpp::Node {
     const double gating_interval_ = 0.02;
     const int width_ = 500;
     const int height_ = 512;
-    const bool single_interval_ = false;
     const double px_per_mm = 65.0;
 
     double angle_tolerance_ = 0.0;
@@ -422,7 +421,7 @@ class FocusActionServer : public rclcpp::Node {
             msg_ = "Calculating Rotations";
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
-            pc_lines_ = lines_3d(img_array, interval_, single_interval_);
+            pc_lines_ = lines_3d(img_array, interval_);
             open3d::geometry::PointCloud pcd;
             for (const auto &point : pc_lines_) {
                 pcd.points_.emplace_back(point);
