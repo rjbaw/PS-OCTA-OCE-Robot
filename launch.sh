@@ -32,7 +32,9 @@ while getopts ":hsd" option; do
 	esac
 done
 
-CHECK_INTERVAL=0.1
+CHECK_INTERVAL=0.3
+PING_TIMEOUT=0.3
+MAX_RETRIES=10
 TMUX_SESSION="ros_driver_session"
 init_start=true
 HOST="192.168.0.2"
@@ -78,16 +80,17 @@ start_ros() {
 }
 
 check_labview_topic() {
-	output=$(ros2 topic echo --once --timeout 0.2 /run_state std_msgs/msg/Bool 2>/dev/null)
-	if [ -z "$output" ]; then
-		echo ""
-		return
-	fi
-	if [[ $output =~ "true" ]]; then
-		echo "true"
-	else
-		echo "false"
-	fi
+	# output=$(ros2 topic echo --once --timeout 0.2 /run_state std_msgs/msg/Bool 2>/dev/null)
+	# if [ -z "$output" ]; then
+	# 	echo ""
+	# 	return
+	# fi
+	# if [[ $output =~ "true" ]]; then
+	# 	echo "true"
+	# else
+	# 	echo "false"
+	# fi
+	tail -n1 /tmp/run_state.out 2>/dev/null
 }
 
 if [[ $debug == "true" ]]; then
@@ -106,9 +109,11 @@ fi
 echo "[INFO] Checking connectivity to $MONITOR_IP every $CHECK_INTERVAL seconds."
 echo "[INFO] Press Ctrl+C to stop this monitor script."
 ros_running=false
+fails=0
 echo "[INFO] ROS is waiting for Robot to be online...."
 while true; do
-	if ping -c 1 -W 3 "$MONITOR_IP" &>/dev/null; then
+	if timeout "$PING_TIMEOUT" ping -c 1 -W 1 "$MONITOR_IP" &>/dev/null; then
+		fails=0
 		if $init_start; then
 			echo "[INFO] init_start=true"
 			echo "[INFO] Robot is online. Starting ROS..."
@@ -140,11 +145,16 @@ while true; do
 		fi
 
 	else
+		((fails += 1))
 		if $ros_running; then
 			echo "[INFO] $MONITOR_IP is offline. Stopping ROS..."
 			stop_ros
 			ros_running=false
 			echo "[INFO] ROS is waiting for Robot to be online...."
+		fi
+		if ((fails >= MAX_RETRIES)); then
+			ip neigh flush to "$MONITOR_IP" nud failed stale reachable 2>/dev/null
+			fails=0
 		fi
 	fi
 	sleep "$CHECK_INTERVAL"

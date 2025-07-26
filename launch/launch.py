@@ -457,6 +457,14 @@ def launch_setup():
         parameters=common_parameters,
     )
 
+    run_state_listener = Node(
+        package="octa_ros",
+        executable="run_state_listener.py",
+        name="run_state_listener",
+        output="screen",
+        arguments=["--unavailable-timeout", "5.0", "--log-file", "/tmp/run_state.out"],
+    )
+
     nodes_after_driver = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=wait_robot_description,
@@ -519,6 +527,7 @@ def launch_setup():
             controller_stopper_node,
             urscript_interface,
             robot_description,
+            run_state_listener,
             initial_joint_controller_spawner_stopped,
             initial_joint_controller_spawner_started,
             wait_robot_description,

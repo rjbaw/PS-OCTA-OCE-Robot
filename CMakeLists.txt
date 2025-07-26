@@ -155,6 +155,8 @@ add_executable(test_detect src/test_detect.cpp src/process_img.cpp)
 ament_target_dependencies(test_detect ament_index_cpp OpenCV)
 target_link_libraries(test_detect ${OpenCV_LIBS})
 
+install(PROGRAMS utils/run_state_listener.py DESTINATION lib/${PROJECT_NAME})
+
 install(
   TARGETS sub_img
           joint_state_publisher
