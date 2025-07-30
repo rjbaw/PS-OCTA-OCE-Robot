@@ -49,14 +49,20 @@ tmux_session_alive() {
 	tmux has-session -t "$TMUX_SESSION" 2>/dev/null
 }
 
+start_listener() {
+	ros2 run octa_ros run_state_listener \
+		--unavailable-timeout 5 --log-file /tmp/run_state.out &
+	LISTENER_PID=$!
+}
+
+stop_listener() {
+	[[ -n ${LISTENER_PID:-} ]] && kill "$LISTENER_PID" 2>/dev/null || true
+	pkill -f run_state_listener
+}
+
 stop_ros() {
 	echo "[INFO] Stopping left over ROS processes (tmux session '$TMUX_SESSION')..."
 	pkill -f octa_ros
-	pkill -f dashboard_client
-	pkill -f urscript
-	pkill -f controller
-	pkill -f moveit
-	pkill -f ros
 	rm -f core*
 	tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
@@ -90,7 +96,12 @@ check_labview_topic() {
 	# else
 	# 	echo "false"
 	# fi
-	tail -n1 /tmp/run_state.out 2>/dev/null
+	local line
+	line=$(tail -n1 /tmp/run_state.out 2>/dev/null | tr -d '\r\n')
+	case "$line" in
+	true | false | unavailable) printf '%s\n' "$line" ;;
+	*) printf '\n' ;; # unknown / not ready
+	esac
 }
 
 if [[ $debug == "true" ]]; then
@@ -120,6 +131,7 @@ while true; do
 			start_ros
 			ros_running=true
 			init_start=false
+			start_listener
 		fi
 		new_state=$(check_labview_topic)
 		if [[ "$new_state" == "true" ]]; then

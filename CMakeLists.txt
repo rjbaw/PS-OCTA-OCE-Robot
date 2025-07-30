@@ -141,8 +141,6 @@ ament_target_dependencies(
   std_msgs)
 target_link_libraries(freedrive_node "${cpp_typesupport_target}")
 
-# target_include_directories(octa_ctrl PRIVATE
-# "/opt/ros/jazzy/include/ur_dashboard_msgs" )
 add_executable(reconnect_client src/reconnect_node.cpp)
 ament_target_dependencies(reconnect_client rclcpp rclcpp_action
                           ur_dashboard_msgs std_srvs)
@@ -155,10 +153,12 @@ add_executable(test_detect src/test_detect.cpp src/process_img.cpp)
 ament_target_dependencies(test_detect ament_index_cpp OpenCV)
 target_link_libraries(test_detect ${OpenCV_LIBS})
 
-install(PROGRAMS utils/run_state_listener.py DESTINATION lib/${PROJECT_NAME})
+add_executable(run_state_listener src/run_state_listener.cpp)
+ament_target_dependencies(run_state_listener rclcpp std_msgs)
 
 install(
-  TARGETS sub_img
+  TARGETS run_state_listener
+          sub_img
           joint_state_publisher
           test_detect
           reconnect_client
