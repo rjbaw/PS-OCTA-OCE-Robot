@@ -49,17 +49,6 @@ tmux_session_alive() {
 	tmux has-session -t "$TMUX_SESSION" 2>/dev/null
 }
 
-start_listener() {
-	ros2 run octa_ros run_state_listener \
-		--unavailable-timeout 5 --log-file /tmp/run_state.out &
-	LISTENER_PID=$!
-}
-
-stop_listener() {
-	[[ -n ${LISTENER_PID:-} ]] && kill "$LISTENER_PID" 2>/dev/null || true
-	pkill -f run_state_listener
-}
-
 stop_ros() {
 	echo "[INFO] Stopping left over ROS processes (tmux session '$TMUX_SESSION')..."
 	pkill -f octa_ros
@@ -86,22 +75,13 @@ start_ros() {
 }
 
 check_labview_topic() {
-	# output=$(ros2 topic echo --once --timeout 0.2 /run_state std_msgs/msg/Bool 2>/dev/null)
-	# if [ -z "$output" ]; then
-	# 	echo ""
-	# 	return
-	# fi
-	# if [[ $output =~ "true" ]]; then
-	# 	echo "true"
-	# else
-	# 	echo "false"
-	# fi
-	local line
-	line=$(tail -n1 /tmp/run_state.out 2>/dev/null | tr -d '\r\n')
-	case "$line" in
-	true | false | unavailable) printf '%s\n' "$line" ;;
-	*) printf '\n' ;; # unknown / not ready
-	esac
+	# timeout 0.25s ros2 topic echo -n 1 -q --field data /run_state 2>/dev/null
+	if ! timeout 0.25s ros2 run octa_ros run_state_listener \
+		>/tmp/run_state.out 2>/dev/null; then
+		printf '\n'
+		return
+	fi
+	cat /tmp/run_state.out
 }
 
 if [[ $debug == "true" ]]; then
@@ -131,7 +111,6 @@ while true; do
 			start_ros
 			ros_running=true
 			init_start=false
-			start_listener
 		fi
 		new_state=$(check_labview_topic)
 		if [[ "$new_state" == "true" ]]; then
