@@ -1,3 +1,8 @@
+/**
+ * @file process_img.hpp
+ * @brief Image processing functions for focus node
+ */
+
 #ifndef PROCESS_IMG_HPP
 #define PROCESS_IMG_HPP
 

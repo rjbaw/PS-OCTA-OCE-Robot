@@ -1,0 +1,44 @@
+name: Deploy Doxygen to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: setup pages
+        uses: actions/configure-pages@v4
+      - name: install doxygen and graphviz
+        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
+      - name: run doxygen
+        run: doxygen Doxyfile
+      - name: upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './docs/doxygen'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: deploy to github pages
+        id: deployment
+        uses: actions/deploy-pages@v4

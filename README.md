@@ -1,5 +1,6 @@
 # Polarization Sensitive Optical Coherence Tomography Angiography (PS-OCTA) and Optical Coherence Elastography (OCE) Robot Platform. 
 
+[![Documentation](https://img.shields.io/badge/docs-main-brightgreen.svg)](https://rjbaw.github.io/PS-OCTA-OCE-Robot/)
 [![ROS 2 Jazzy](https://img.shields.io/badge/ROS2-Jazzy-blue.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![LabVIEW 2024 Q1](https://img.shields.io/badge/LabVIEW-2024%20Q1-yellow.svg)](https://www.ni.com/en/shop/labview.html)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
