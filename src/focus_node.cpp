@@ -56,11 +56,25 @@ class FocusActionServer : public rclcpp::Node {
             std::bind(&FocusActionServer::handle_accepted, this,
                       std::placeholders::_1));
 
-        moveit_cpp_ =
-            std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
-        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
-        planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
-            "ur_manipulator", moveit_cpp_);
+        if (!this->has_parameter("plan_only"))
+            this->declare_parameter<bool>("plan_only", false);
+        if (!this->has_parameter("offline_mode"))
+            this->declare_parameter<bool>("offline_mode", false);
+
+        bool plan_only = this->get_parameter("plan_only").as_bool();
+        bool offline_mode = this->get_parameter("offline_mode").as_bool();
+        if (!(plan_only || offline_mode)) {
+            moveit_cpp_ =
+                std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+            tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
+            planning_component_ =
+                std::make_shared<moveit_cpp::PlanningComponent>(
+                    "ur_manipulator", moveit_cpp_);
+        } else {
+            RCLCPP_INFO(
+                get_logger(),
+                "Plan-only/Offline mode: skipping MoveIt initialization");
+        }
 
         auto parallel_group_ =
             this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -317,6 +331,26 @@ class FocusActionServer : public rclcpp::Node {
         auto result = std::make_shared<Focus::Result>();
 
         goal_handle->publish_feedback(feedback);
+        bool plan_only_fb = this->get_parameter("plan_only").as_bool();
+        bool offline_mode_fb = this->get_parameter("offline_mode").as_bool();
+        if (plan_only_fb || offline_mode_fb) {
+            feedback->debug_msgs =
+                "Plan-only/Offline mode: skipping execution.\n";
+            goal_handle->publish_feedback(feedback);
+            result->status = "Focus completed (plan-only/offline)\n";
+            goal_handle->succeed(result);
+            return;
+        }
+        bool plan_only = this->get_parameter("plan_only").as_bool();
+        bool offline_mode = this->get_parameter("offline_mode").as_bool();
+        if (plan_only || offline_mode) {
+            feedback->debug_msgs =
+                "Plan-only/Offline mode: skipping execution.\n";
+            goal_handle->publish_feedback(feedback);
+            result->status = "Focus completed (plan-only/offline)\n";
+            goal_handle->succeed(result);
+            return;
+        }
         angle_focused_ = false;
         z_focused_ = false;
         angle_corrected_ = false;

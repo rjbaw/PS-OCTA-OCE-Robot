@@ -38,11 +38,28 @@ class MoveZAngleActionServer : public rclcpp::Node {
                rclcpp::NodeOptions(options)
                    .automatically_declare_parameters_from_overrides(true)) {}
     void init() {
-        moveit_cpp_ =
-            std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
-        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
-        planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
-            "ur_manipulator", moveit_cpp_);
+        if (!this->has_parameter("plan_only"))
+            this->declare_parameter<bool>("plan_only", false);
+        if (!this->has_parameter("offline_mode"))
+            this->declare_parameter<bool>("offline_mode", false);
+        bool plan_only = false;
+        bool offline_mode = false;
+        if (this->has_parameter("plan_only"))
+            plan_only = this->get_parameter("plan_only").as_bool();
+        if (this->has_parameter("offline_mode"))
+            offline_mode = this->get_parameter("offline_mode").as_bool();
+        if (!(plan_only || offline_mode)) {
+            moveit_cpp_ =
+                std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+            tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
+            planning_component_ =
+                std::make_shared<moveit_cpp::PlanningComponent>(
+                    "ur_manipulator", moveit_cpp_);
+        } else {
+            RCLCPP_INFO(
+                get_logger(),
+                "Plan-only/Offline mode: skipping MoveIt initialization");
+        }
 
         action_server_ = rclcpp_action::create_server<MoveZAngle>(
             this, "move_z_angle_action",
@@ -147,13 +164,28 @@ class MoveZAngleActionServer : public rclcpp::Node {
     }
 
     void execute(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
-        RCLCPP_INFO(get_logger(),
-                    "Starting Move Z Angle execution with MoveItCpp...");
+        RCLCPP_INFO(get_logger(), "Starting Move Z Angle execution...");
         auto feedback = std::make_shared<MoveZAngle::Feedback>();
         auto result = std::make_shared<MoveZAngle::Result>();
 
         double target_angle = goal_handle->get_goal()->target_angle;
         RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle);
+
+        bool plan_only = false;
+        bool offline_mode = false;
+        if (this->has_parameter("plan_only"))
+            plan_only = this->get_parameter("plan_only").as_bool();
+        if (this->has_parameter("offline_mode"))
+            offline_mode = this->get_parameter("offline_mode").as_bool();
+        if (plan_only || offline_mode) {
+            feedback->debug_msgs =
+                "Plan-only/Offline mode: skipping planning and execution.\n";
+            feedback->current_z_angle = target_angle;
+            goal_handle->publish_feedback(feedback);
+            result->status = "Move Z Angle completed (plan-only/offline)\n";
+            goal_handle->succeed(result);
+            return;
+        }
 
         if (goal_handle->is_canceling()) {
             feedback->debug_msgs = "MoveZAngle was canceled before starting.\n";
@@ -249,7 +281,13 @@ class MoveZAngleActionServer : public rclcpp::Node {
             return;
         }
 
-        bool execute_success = moveit_cpp_->execute(plan_solution.trajectory);
+        bool execute_success = true;
+        if (!(plan_only || offline_mode)) {
+            execute_success = moveit_cpp_->execute(plan_solution.trajectory);
+        } else {
+            RCLCPP_INFO(get_logger(),
+                        "Plan-only/Offline mode: skipping execution");
+        }
         if (!execute_success) {
             RCLCPP_ERROR(get_logger(), "Execution failed!");
             feedback->debug_msgs = "Execution failed!\n";

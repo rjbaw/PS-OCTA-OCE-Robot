@@ -35,18 +35,27 @@ class FreedriveActionServer : public rclcpp::Node {
         this->declare_parameter<double>("keepalive_rate",
                                         5.0);                   // Hz
         this->declare_parameter<double>("switch_timeout", 3.0); // s
+        if (!this->has_parameter("dry_run"))
+            this->declare_parameter<bool>("dry_run", false);
 
-        switch_client_ = this->create_client<SwitchSrv>(
-            "/controller_manager/switch_controller");
+        bool dry_run = this->get_parameter("dry_run").as_bool();
+        if (!dry_run) {
+            switch_client_ = this->create_client<SwitchSrv>(
+                "/controller_manager/switch_controller");
+            if (!switch_client_->wait_for_service(std::chrono::seconds(5))) {
+                RCLCPP_FATAL(get_logger(),
+                             "controller_manager service not available – is "
+                             "ros2_control running?");
+                throw std::runtime_error("no /controller_manager service");
+            }
+        } else {
+            RCLCPP_INFO(
+                get_logger(),
+                "Dry-run mode: skipping controller_manager client setup");
+        }
         freedrive_pub_ = this->create_publisher<std_msgs::msg::Bool>(
             "/freedrive_mode_controller/enable_freedrive_mode",
             rclcpp::QoS(1).reliable());
-
-        if (!switch_client_->wait_for_service(std::chrono::seconds(5))) {
-            RCLCPP_FATAL(get_logger(), "controller_manager service not "
-                                       "available – is ros2_control running?");
-            throw std::runtime_error("no /controller_manager service");
-        }
 
         action_server_ = rclcpp_action::create_server<Freedrive>(
             this, "freedrive_action",
@@ -105,11 +114,15 @@ class FreedriveActionServer : public rclcpp::Node {
         auto result = std::make_shared<Freedrive::Result>();
         RCLCPP_INFO(get_logger(), "Starting Freedrive execution...");
         bool enable = goal_handle->get_goal()->enable;
+        bool dry_run = this->get_parameter("dry_run").as_bool();
         feedback->debug_msgs =
             enable ? "Enabling Freedrive\n" : "Disabling Freedrive\n";
         goal_handle->publish_feedback(feedback);
 
-        if (enable) {
+        if (dry_run) {
+            RCLCPP_INFO(get_logger(),
+                        "Dry-run mode: skipping controller switches");
+        } else if (enable) {
             if (!switch_to_freedrive_controller(true)) {
                 result->status = "Controller switch failed\n";
                 goal_handle->abort(result);
@@ -186,6 +199,11 @@ class FreedriveActionServer : public rclcpp::Node {
         req->timeout = rclcpp::Duration::from_seconds(
             this->get_parameter("switch_timeout").as_double());
 
+        if (!switch_client_) {
+            RCLCPP_INFO(get_logger(),
+                        "Dry-run mode: pretend controller switch OK");
+            return true;
+        }
         auto future = switch_client_->async_send_request(req);
         if (future.wait_for(std::chrono::seconds(5)) !=
             std::future_status::ready)

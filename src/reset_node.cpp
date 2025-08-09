@@ -53,11 +53,24 @@ class ResetActionServer : public rclcpp::Node {
 
         publisher_ = this->create_publisher<std_msgs::msg::String>(
             "/urscript_interface/script_command", qos);
-        moveit_cpp_ =
-            std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
-        tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
-        planning_component_ = std::make_shared<moveit_cpp::PlanningComponent>(
-            "ur_manipulator", moveit_cpp_);
+        if (!this->has_parameter("plan_only"))
+            this->declare_parameter<bool>("plan_only", false);
+        if (!this->has_parameter("offline_mode"))
+            this->declare_parameter<bool>("offline_mode", false);
+        bool plan_only = this->get_parameter("plan_only").as_bool();
+        bool offline_mode = this->get_parameter("offline_mode").as_bool();
+        if (!(plan_only || offline_mode)) {
+            moveit_cpp_ =
+                std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
+            tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
+            planning_component_ =
+                std::make_shared<moveit_cpp::PlanningComponent>(
+                    "ur_manipulator", moveit_cpp_);
+        } else {
+            RCLCPP_INFO(
+                get_logger(),
+                "Plan-only/Offline mode: skipping MoveIt initialization");
+        }
     }
 
   private:
@@ -244,12 +257,20 @@ class ResetActionServer : public rclcpp::Node {
                     return;
                 }
 
-                auto execute_status =
-                    moveit_cpp_->execute(plan_solution.trajectory);
-
-                auto execute_success =
-                    (execute_status ==
-                     moveit_controller_manager::ExecutionStatus::SUCCEEDED);
+                bool plan_only = this->get_parameter("plan_only").as_bool();
+                bool offline_mode =
+                    this->get_parameter("offline_mode").as_bool();
+                bool execute_success = true;
+                if (!(plan_only || offline_mode)) {
+                    auto execute_status =
+                        moveit_cpp_->execute(plan_solution.trajectory);
+                    execute_success =
+                        (execute_status ==
+                         moveit_controller_manager::ExecutionStatus::SUCCEEDED);
+                } else {
+                    RCLCPP_INFO(get_logger(),
+                                "Plan-only/Offline mode: skipping execution");
+                }
 
                 if (execute_success) {
                     RCLCPP_INFO(get_logger(), "Execute Success!");

@@ -1,19 +1,51 @@
 cmake_minimum_required(VERSION 3.10)
 project(octa_ros)
 
-set(CMAKE_GENERATOR "Ninja")
+#set(CMAKE_GENERATOR "Ninja")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   add_compile_options(-Wall -Wextra -Wpedantic)
+elseif(MSVC)
+  add_compile_options(/W4)
+endif()
+
+# Optionally enable clang-tidy analysis during compilation for C/C++ files
+option(ENABLE_CLANG_TIDY "Run clang-tidy during the build (C/C++ only)" ON)
+option(CLANG_TIDY_WARN_AS_ERRORS "Treat clang-tidy warnings as errors" OFF)
+set(CLANG_TIDY_EXTRA_ARGS "--extra-arg-before=--gcc-toolchain=/usr" CACHE STRING "Extra arguments to pass to clang-tidy")
+find_program(CLANG_TIDY_EXE
+  NAMES clang-tidy-wrapper.sh clang-tidy clang-tidy-18 clang-tidy-17 clang-tidy-16
+  HINTS ${CMAKE_SOURCE_DIR}/tools
+)
+if(ENABLE_CLANG_TIDY AND CLANG_TIDY_EXE)
+  # Limit analysis strictly to this package's sources (src/ only by default)
+  set(_clang_tidy_args
+    "--format-style=file"
+    "--project-root" "${CMAKE_SOURCE_DIR}"
+    "--allow-subdir" "src"
+    "-header-filter=^${CMAKE_SOURCE_DIR}/src/"
+  )
+  if(CLANG_TIDY_WARN_AS_ERRORS)
+    list(APPEND _clang_tidy_args "-warnings-as-errors=*")
+  endif()
+  if(CLANG_TIDY_EXTRA_ARGS)
+    separate_arguments(_extra_args NATIVE_COMMAND "${CLANG_TIDY_EXTRA_ARGS}")
+    list(APPEND _clang_tidy_args ${_extra_args})
+  endif()
+  string(REPLACE ";" " " _clang_tidy_args_str "${_clang_tidy_args}")
+  set(CMAKE_C_CLANG_TIDY   "${CLANG_TIDY_EXE};${_clang_tidy_args_str}")
+  set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};${_clang_tidy_args_str}")
+  message(STATUS "clang-tidy enabled: ${CLANG_TIDY_EXE} ${_clang_tidy_args_str}")
 endif()
 
 # option(GLIBCXX_USE_CXX11_ABI ON) option(BUILD_CUDA_MODULE ON)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+## find_package(ament_cmake_gtest QUIET)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -33,10 +65,11 @@ find_package(ur_dashboard_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(unique_identifier_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
+find_package(launch_testing_ament_cmake QUIET)
 
-include_directories(${OpenCV_INCLUDE_DIRS})
-include_directories(${Open3D_INCLUDE_DIRS})
-include_directories(${EIGEN3_INCLUDE_DIRS})
+include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
+include_directories(SYSTEM ${Open3D_INCLUDE_DIRS})
+include_directories(SYSTEM ${EIGEN3_INCLUDE_DIRS})
 
 set(msg_files "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
               "msg/Labviewdata.msg")
@@ -144,6 +177,7 @@ target_link_libraries(freedrive_node "${cpp_typesupport_target}")
 add_executable(reconnect_client src/reconnect_node.cpp)
 ament_target_dependencies(reconnect_client rclcpp rclcpp_action
                           ur_dashboard_msgs std_srvs)
+target_link_libraries(reconnect_client)
 
 add_executable(sub_img src/sub_img.cpp)
 ament_target_dependencies(sub_img rclcpp std_msgs OpenCV)
@@ -155,6 +189,7 @@ target_link_libraries(test_detect ${OpenCV_LIBS})
 
 add_executable(run_state_listener src/run_state_listener.cpp)
 ament_target_dependencies(run_state_listener rclcpp std_msgs)
+target_link_libraries(run_state_listener)
 
 install(
   TARGETS run_state_listener
@@ -172,3 +207,7 @@ install(
 install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})
 
 ament_package()
+
+if(launch_testing_ament_cmake_FOUND)
+  add_launch_test(test/launch/test_actions.py TARGET test_actions TIMEOUT 60)
+endif()

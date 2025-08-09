@@ -1,0 +1,15 @@
+CompileFlags:
+  Add: ["-Wall", "-Wextra", "-Wpedantic"]
+  Remove: ["-fno-exceptions"]
+Index:
+  Background: Build
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*, performance-*, readability-*, modernize-*]
+    Remove: [modernize-use-trailing-return-type, readability-magic-numbers]
+  UnusedIncludes: Strict
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+

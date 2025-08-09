@@ -13,6 +13,8 @@ RUN apt-get update &&\
     sudo \
     iproute2 \
     iputils-ping \
+    clang-format \
+    clang-tidy \
     ros-$ROS_DISTRO-ros2-control \ 
     ros-$ROS_DISTRO-ros2-controllers
 
@@ -45,6 +47,7 @@ WORKDIR /workspace/ps-oce-robot/
 RUN ulimit -c 0
 
 RUN cd /workspace/ps-oce-robot &&\
+    chmod +x tools/* &&\
     bash -c "source /opt/ros/jazzy/setup.bash && colcon build --symlink-install" &&\
     chmod +x launch.sh
 

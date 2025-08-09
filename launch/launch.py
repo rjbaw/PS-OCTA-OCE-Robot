@@ -430,7 +430,7 @@ def launch_setup():
         executable="freedrive_node",
         name="freedrive_node",
         output="screen",
-        parameters=common_parameters,
+        parameters=common_parameters + [{"dry_run": LaunchConfiguration("use_mock_hardware")}],
     )
 
     focus_node = Node(
@@ -438,7 +438,11 @@ def launch_setup():
         executable="focus_node",
         name="focus_node",
         output="screen",
-        parameters=common_parameters,
+        parameters=common_parameters
+        + [
+            {"plan_only": LaunchConfiguration("use_mock_hardware")},
+            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
+        ],
     )
 
     reset_node = Node(
@@ -446,7 +450,11 @@ def launch_setup():
         executable="reset_node",
         name="reset_node",
         output="screen",
-        parameters=common_parameters,
+        parameters=common_parameters
+        + [
+            {"plan_only": LaunchConfiguration("use_mock_hardware")},
+            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
+        ],
     )
 
     move_z_angle_node = Node(
@@ -454,7 +462,11 @@ def launch_setup():
         executable="move_z_angle_node",
         name="move_z_angle_node",
         output="screen",
-        parameters=common_parameters,
+        parameters=common_parameters
+        + [
+            {"plan_only": LaunchConfiguration("use_mock_hardware")},
+            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
+        ],
     )
 
     nodes_after_driver = RegisterEventHandler(

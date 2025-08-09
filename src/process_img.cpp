@@ -123,20 +123,29 @@ cv::Mat lowpass(const cv::Mat &img, int nx, int ny) {
 }
 
 cv::Mat load_bg() {
-    std::string pkg_share =
-        ament_index_cpp::get_package_share_directory("octa_ros");
-    std::string bg_path = pkg_share + "/config/bg.jpg";
-    cv::Mat bg = cv::imread(bg_path, cv::IMREAD_GRAYSCALE);
-    if (bg.empty()) {
-        std::cerr << "Failed to load background image: " << bg_path
-                  << std::endl;
+    try {
+        std::string pkg_share =
+            ament_index_cpp::get_package_share_directory("octa_ros");
+        std::string bg_path = pkg_share + "/config/bg.jpg";
+        cv::Mat bg = cv::imread(bg_path, cv::IMREAD_GRAYSCALE);
+        if (bg.empty()) {
+            std::cerr << "[process_img] Background image not found at: "
+                      << bg_path << "; skipping background subtraction.\n";
+        }
+        return bg;
+    } catch (const std::exception &e) {
+        std::cerr << "[process_img] Could not resolve package share ("
+                  << e.what() << "); skipping background subtraction.\n";
+        return {};
     }
-    return bg;
 }
 
 cv::Mat bg_sub(const cv::Mat &input) {
     cv::Mat bg = load_bg();
-    CV_Assert(input.size() == bg.size() && input.type() == bg.type());
+    if (bg.empty() || bg.size() != input.size() || bg.type() != input.type()) {
+        // Fallback: return input unchanged if no valid background available
+        return input.clone();
+    }
 
     cv::Mat input_f;
     cv::Mat bg_f;
@@ -335,10 +344,18 @@ prepare_output_dir(const std::filesystem::path &base_dir, bool make_session) {
 
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       const int interval) {
-    const std::filesystem::path base_out_dir = "result";
-    const bool create_session_dir = true;
-    const std::filesystem::path out_dir =
-        prepare_output_dir(base_out_dir, create_session_dir);
+    bool save_debug = false;
+    if (const char *env = std::getenv("OCTA_SAVE_DEBUG"); env != nullptr) {
+        std::string v(env);
+        save_debug = (v != "0" && v != "false" && v != "FALSE");
+    }
+
+    std::filesystem::path out_dir;
+    if (save_debug) {
+        const std::filesystem::path base_out_dir = "result";
+        const bool create_session_dir = true;
+        out_dir = prepare_output_dir(base_out_dir, create_session_dir);
+    }
 
     std::vector<Eigen::Vector3d> pc_3d;
     int num_frames = interval > 1 ? interval : 2;
@@ -347,11 +364,13 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     for (size_t i = 0; i < img_array.size(); ++i) {
         cv::Mat img = img_array[i];
         SegmentResult pc = detect_lines(img);
-        const std::string raw_filename = std::format("raw_image{}.jpg", i);
-        const std::string processed_filename =
-            std::format("detected_image{}.jpg", i);
-        cv::imwrite((out_dir / raw_filename).string(), img);
-        cv::imwrite((out_dir / processed_filename).string(), pc.image);
+        if (save_debug) {
+            const std::string raw_filename = std::format("raw_image{}.jpg", i);
+            const std::string processed_filename =
+                std::format("detected_image{}.jpg", i);
+            cv::imwrite((out_dir / raw_filename).string(), img);
+            cv::imwrite((out_dir / processed_filename).string(), pc.image);
+        }
         assert(!pc.coordinates.empty());
 
         int idx = static_cast<int>(i) % interval;
