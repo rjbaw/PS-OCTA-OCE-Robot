@@ -29,8 +29,7 @@ ReconnectClient::ReconnectClient() : Node("reconnect_client_node") {
         "/io_and_status_controller/resend_robot_program");
     restart_safety_client_ = this->create_client<std_srvs::srv::Trigger>(
         "/dashboard_client/restart_safety");
-    timer_ = this->create_wall_timer(
-        5s, std::bind(&ReconnectClient::timerCallback, this));
+    timer_ = this->create_wall_timer(5s, [this]() { this->timerCallback(); });
 }
 
 bool ReconnectClient::callTriggerService(
@@ -45,16 +44,17 @@ bool ReconnectClient::callTriggerService(
     auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
 
     client->async_send_request(
-        request, [this, service_name](
-                     rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture fut) {
-            auto response = fut.get();
-            if (!response->success) {
+        request,
+        [this, service_name](
+            rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+            const auto &resp = future.get();
+            if (!resp->success) {
                 RCLCPP_WARN(this->get_logger(),
                             "Service [%s] responded with failure: %s",
-                            service_name.c_str(), response->message.c_str());
+                            service_name.c_str(), resp->message.c_str());
             } else {
                 RCLCPP_INFO(this->get_logger(), "Service [%s] succeeded: %s",
-                            service_name.c_str(), response->message.c_str());
+                            service_name.c_str(), resp->message.c_str());
             };
         });
     return true;
@@ -80,7 +80,7 @@ void ReconnectClient::timerCallback() {
         [this](
             rclcpp::Client<ur_dashboard_msgs::srv::GetRobotMode>::SharedFuture
                 future) {
-            auto resp = future.get();
+            const auto &resp = future.get();
             if (!resp->success) {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] get_robot_mode failed: %s",
@@ -121,7 +121,7 @@ void ReconnectClient::timerCallback() {
         [this](
             rclcpp::Client<ur_dashboard_msgs::srv::GetSafetyMode>::SharedFuture
                 future) {
-            auto resp_safety = future.get();
+            const auto &resp_safety = future.get();
             if (!resp_safety->success) {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] get_safety_mode failed: %s",
@@ -147,7 +147,7 @@ void ReconnectClient::timerCallback() {
         running_req,
         [this](rclcpp::Client<
                ur_dashboard_msgs::srv::IsProgramRunning>::SharedFuture future) {
-            auto resp = future.get();
+            const auto &resp = future.get();
             if (!resp->success) {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] IsProgramRunning failed: %s",

@@ -53,7 +53,6 @@ WORKDIR /workspace/ps-oce-robot/
 RUN ulimit -c 0
 
 RUN cd /workspace/ps-oce-robot &&\
-    chmod +x tools/* &&\
     bash -c "source /opt/ros/jazzy/setup.bash && colcon build --symlink-install" &&\
     chmod +x launch.sh
 

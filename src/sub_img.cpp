@@ -20,14 +20,7 @@ class MinimalSubscriber : public rclcpp::Node {
                             std::format("length: {}", msg->img.size()).c_str());
                 int width = 500;
                 int height = 512;
-                uint8_t reshape_img[512][500];
-                for (int row = 0; row < height; row++) {
-                    for (int col = 0; col < width; col++) {
-                        reshape_img[row][col] = msg->img[(col + row * width)];
-                    }
-                }
-
-                cv::Mat img(height, width, CV_8UC1, reshape_img);
+                cv::Mat img(height, width, CV_8UC1, msg->img.data());
 
                 cv::imwrite("test/test.jpg", img);
                 std::string filename = std::format("test/test{}.jpg", count);
@@ -35,7 +28,7 @@ class MinimalSubscriber : public rclcpp::Node {
                     count++;
                     filename = std::format("test/test{}.jpg", count);
                 }
-                cv::imwrite(filename.c_str(), img);
+                cv::imwrite(filename, img);
             });
     }
 

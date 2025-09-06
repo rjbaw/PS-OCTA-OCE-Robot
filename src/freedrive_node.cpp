@@ -35,8 +35,9 @@ class FreedriveActionServer : public rclcpp::Node {
         this->declare_parameter<double>("keepalive_rate",
                                         5.0);                   // Hz
         this->declare_parameter<double>("switch_timeout", 3.0); // s
-        if (!this->has_parameter("dry_run"))
+        if (!this->has_parameter("dry_run")) {
             this->declare_parameter<bool>("dry_run", false);
+        }
 
         bool dry_run = this->get_parameter("dry_run").as_bool();
         if (!dry_run) {
@@ -59,12 +60,16 @@ class FreedriveActionServer : public rclcpp::Node {
 
         action_server_ = rclcpp_action::create_server<Freedrive>(
             this, "freedrive_action",
-            std::bind(&FreedriveActionServer::handle_goal, this,
-                      std::placeholders::_1, std::placeholders::_2),
-            std::bind(&FreedriveActionServer::handle_cancel, this,
-                      std::placeholders::_1),
-            std::bind(&FreedriveActionServer::handle_accepted, this,
-                      std::placeholders::_1));
+            [this](const rclcpp_action::GoalUUID &uuid,
+                   std::shared_ptr<const Freedrive::Goal> goal) {
+                return this->handle_goal(uuid, goal);
+            },
+            [this](const std::shared_ptr<GoalHandleFreedrive> goal_handle) {
+                return this->handle_cancel(goal_handle);
+            },
+            [this](const std::shared_ptr<GoalHandleFreedrive> goal_handle) {
+                this->handle_accepted(goal_handle);
+            });
     }
 
   private:
@@ -75,7 +80,7 @@ class FreedriveActionServer : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr keepalive_timer_;
 
     rclcpp_action::GoalResponse
-    handle_goal(const rclcpp_action::GoalUUID &,
+    handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID goal_id,
                 std::shared_ptr<const Freedrive::Goal> goal) {
         RCLCPP_INFO(get_logger(), "Received freedrive goal – enable=%s",
                     goal->enable ? "true" : "false");
@@ -170,8 +175,9 @@ class FreedriveActionServer : public rclcpp::Node {
 
     void stop_keepalive() {
         publish_bool(false);
-        if (keepalive_timer_)
+        if (keepalive_timer_) {
             keepalive_timer_->cancel();
+        }
         keepalive_timer_.reset();
     }
 
@@ -206,8 +212,9 @@ class FreedriveActionServer : public rclcpp::Node {
         }
         auto future = switch_client_->async_send_request(req);
         if (future.wait_for(std::chrono::seconds(5)) !=
-            std::future_status::ready)
+            std::future_status::ready) {
             return false;
+        }
         return future.get()->ok;
     }
 };

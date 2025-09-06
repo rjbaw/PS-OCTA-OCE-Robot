@@ -6,7 +6,6 @@
 #ifndef UTILS_HPP_
 #define UTILS_HPP_
 
-#include <format>
 #include <geometry_msgs/msg/pose.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_interface/planning_interface.hpp>

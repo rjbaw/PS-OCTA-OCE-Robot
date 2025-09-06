@@ -1,0 +1,21 @@
+# Ignore heavy/generated dirs
+-/build
+-/install
+-/log
+-/cmake-build-debug
+-/cmake-build-*
+-/result
+-/octa_ros__py
+-/.cache
+-/.devcontainer
+
+# Ignore CMake/colcon
+-CMakeFiles
+-CTestTestfile.cmake
+-CMakeCache.txt
+
+# Object and binary artifacts
+-*.o
+-*.so
+-*.a
+-*.pyc

@@ -8,6 +8,25 @@ Checks: >
   -clang-diagnostic-*,
   -clang-analyzer-*,
   -readability-function-cognitive-complexity,
-  -performance-unnecessary-value-param
+  -performance-unnecessary-value-param,
+  -readability-convert-member-functions-to-static,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape
 HeaderFilterRegex: '^src/'
 FormatStyle: none
+CheckOptions:
+  # Relax identifier-length for common short names used in loops and math.
+  - key: readability-identifier-length.MinimumVariableNameLength
+    value: '3'
+  - key: readability-identifier-length.MinimumParameterNameLength
+    value: '2'
+  - key: readability-identifier-length.MinimumMemberNameLength
+    value: '2'
+  - key: readability-identifier-length.AllowedShortVariableNames
+    value: 'i,j,k,x,y,z,dx,dy,dz,ok,id'
+  - key: readability-identifier-length.AllowedShortParameterNames
+    value: 'i,j,k,x,y,z,dx,dy,dz,ok,id'
+  - key: readability-identifier-length.AllowedShortMemberNames
+    value: 'i,j,k,x,y,z,dx,dy,dz,dx_,dy_,dz_,ok,id'
+  - key: readability-identifier-length.IgnoredIdentifierPattern
+    value: '^(k[A-Z].*|g_.*|_.*|[A-Z]$|[a-zA-Z]{1,2}_$)'

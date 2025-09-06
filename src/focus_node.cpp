@@ -5,9 +5,8 @@
  */
 
 #include <cmath>
-#include <condition_variable>
+#include <cstddef>
 #include <format>
-#include <mutex>
 #include <open3d/Open3D.h>
 #include <opencv2/img_hash.hpp>
 #include <opencv2/opencv.hpp>
@@ -31,6 +30,7 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "process_img.hpp"
+#include "shape_msgs/msg/solid_primitive.hpp"
 #include "utils.hpp"
 
 using namespace std::chrono_literals;
@@ -50,17 +50,23 @@ class FocusActionServer : public rclcpp::Node {
     void init() {
         action_server_ = rclcpp_action::create_server<Focus>(
             this, "focus_action",
-            std::bind(&FocusActionServer::handle_goal, this,
-                      std::placeholders::_1, std::placeholders::_2),
-            std::bind(&FocusActionServer::handle_cancel, this,
-                      std::placeholders::_1),
-            std::bind(&FocusActionServer::handle_accepted, this,
-                      std::placeholders::_1));
+            [this](const rclcpp_action::GoalUUID &uuid,
+                   std::shared_ptr<const Focus::Goal> goal) {
+                return this->handle_goal(uuid, goal);
+            },
+            [this](const std::shared_ptr<GoalHandleFocus> goal_handle) {
+                return this->handle_cancel(goal_handle);
+            },
+            [this](const std::shared_ptr<GoalHandleFocus> goal_handle) {
+                this->handle_accepted(goal_handle);
+            });
 
-        if (!this->has_parameter("plan_only"))
+        if (!this->has_parameter("plan_only")) {
             this->declare_parameter<bool>("plan_only", false);
-        if (!this->has_parameter("offline_mode"))
+        }
+        if (!this->has_parameter("offline_mode")) {
             this->declare_parameter<bool>("offline_mode", false);
+        }
 
         bool plan_only = this->get_parameter("plan_only").as_bool();
         bool offline_mode = this->get_parameter("offline_mode").as_bool();
@@ -85,16 +91,12 @@ class FocusActionServer : public rclcpp::Node {
             now() - rclcpp::Duration::from_seconds(gating_interval_);
         img_subscriber_ = create_subscription<octa_ros::msg::Img>(
             "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
-            std::bind(&FocusActionServer::imageCallback, this,
-                      std::placeholders::_1),
+            [this](const octa_ros::msg::Img::SharedPtr msg) {
+                this->imageCallback(msg);
+            },
             img_options);
 
         service_scan_3d_ = create_client<Scan3d>("scan_3d");
-
-        capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
-            "capture_background",
-            std::bind(&FocusActionServer::captureBackgroundCallback, this,
-                      std::placeholders::_1, std::placeholders::_2));
     }
 
   private:
@@ -121,7 +123,7 @@ class FocusActionServer : public rclcpp::Node {
 
     std::vector<Eigen::Vector3d> pc_lines_;
     Eigen::Matrix3d rotmat_eigen_;
-    tf2::Quaternion q_;
+    tf2::Quaternion current_quat_;
     tf2::Quaternion target_q_;
     double dz_ = 0.0;
 
@@ -134,7 +136,6 @@ class FocusActionServer : public rclcpp::Node {
     bool angle_corrected_ = false;
 
     rclcpp::Client<Scan3d>::SharedPtr service_scan_3d_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
 
     double roll_ = 0.0;
     double pitch_ = 0.0;
@@ -198,43 +199,44 @@ class FocusActionServer : public rclcpp::Node {
     moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
                                                double lin_radius_m,
                                                double ang_radius_rad) const {
-        moveit_msgs::msg::Constraints c;
+        moveit_msgs::msg::Constraints constraints;
 
         const std::string planning_frame =
             moveit_cpp_->getPlanningSceneMonitor()
                 ->getPlanningScene()
                 ->getPlanningFrame();
 
-        moveit_msgs::msg::PositionConstraint pc;
-        pc.header.frame_id = planning_frame;
-        pc.link_name = "tcp";
-        pc.weight = 1.0;
+        moveit_msgs::msg::PositionConstraint pos_constraint;
+        pos_constraint.header.frame_id = planning_frame;
+        pos_constraint.link_name = "tcp";
+        pos_constraint.weight = 1.0;
         shape_msgs::msg::SolidPrimitive sphere;
-        sphere.type = sphere.SPHERE;
+        sphere.type = shape_msgs::msg::SolidPrimitive::SPHERE;
         sphere.dimensions = {lin_radius_m};
-        pc.constraint_region.primitives.push_back(sphere);
+        pos_constraint.constraint_region.primitives.push_back(sphere);
         geometry_msgs::msg::Pose centre_pose;
         centre_pose.position.x = centre.translation().x();
         centre_pose.position.y = centre.translation().y();
         centre_pose.position.z = centre.translation().z();
         centre_pose.orientation.w = 1.0;
-        pc.constraint_region.primitive_poses.push_back(centre_pose);
+        pos_constraint.constraint_region.primitive_poses.push_back(centre_pose);
 
-        moveit_msgs::msg::OrientationConstraint oc;
-        oc.header.frame_id = planning_frame;
-        oc.link_name = "tcp";
-        oc.weight = 1.0;
-        Eigen::Quaterniond q(centre.rotation());
-        oc.orientation.x = q.x();
-        oc.orientation.y = q.y();
-        oc.orientation.z = q.z();
-        oc.orientation.w = q.w();
-        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
-            oc.absolute_z_axis_tolerance = ang_radius_rad;
+        moveit_msgs::msg::OrientationConstraint orient_constraint;
+        orient_constraint.header.frame_id = planning_frame;
+        orient_constraint.link_name = "tcp";
+        orient_constraint.weight = 1.0;
+        Eigen::Quaterniond quaternion(centre.rotation());
+        orient_constraint.orientation.x = quaternion.x();
+        orient_constraint.orientation.y = quaternion.y();
+        orient_constraint.orientation.z = quaternion.z();
+        orient_constraint.orientation.w = quaternion.w();
+        orient_constraint.absolute_x_axis_tolerance =
+            orient_constraint.absolute_y_axis_tolerance =
+                orient_constraint.absolute_z_axis_tolerance = ang_radius_rad;
 
-        c.position_constraints.push_back(pc);
-        c.orientation_constraints.push_back(oc);
-        return c;
+        constraints.position_constraints.push_back(pos_constraint);
+        constraints.orientation_constraints.push_back(orient_constraint);
+        return constraints;
     }
 
     bool isBlack(const cv::Mat &img, uint8_t pixel_thres = 5,
@@ -247,8 +249,8 @@ class FocusActionServer : public rclcpp::Node {
         cv::threshold(img, thresh, pixel_thres, 255, cv::THRESH_BINARY);
         int black_pixels =
             static_cast<int>(img.total()) - cv::countNonZero(thresh);
-        bool black =
-            ((static_cast<double>(black_pixels) / img.total()) >= ratio);
+        bool black = ((static_cast<double>(black_pixels) /
+                       static_cast<double>(img.total())) >= ratio);
         return black;
     }
 
@@ -545,9 +547,9 @@ class FocusActionServer : public rclcpp::Node {
 
             if (!angle_focused_) {
                 planning_ = true;
-                rotmat_tf_.getRotation(q_);
+                rotmat_tf_.getRotation(current_quat_);
                 tf2::fromMsg(target_pose_.pose.orientation, target_q_);
-                target_q_ = target_q_ * q_;
+                target_q_ = target_q_ * current_quat_;
                 target_q_.normalize();
                 target_pose_.pose.orientation = tf2::toMsg(target_q_);
                 target_pose_.pose.position.z += dz_;
@@ -578,13 +580,14 @@ class FocusActionServer : public rclcpp::Node {
                            &sols) {
                         return *std::min_element(
                             sols.begin(), sols.end(),
-                            [](const auto &a, const auto &b) {
-                                if (a && b)
+                            [](const auto &lhs, const auto &rhs) {
+                                if (lhs && rhs) {
                                     return robot_trajectory::pathLength(
-                                               *a.trajectory) <
+                                               *lhs.trajectory) <
                                            robot_trajectory::pathLength(
-                                               *b.trajectory);
-                                return static_cast<bool>(a);
+                                               *rhs.trajectory);
+                                }
+                                return static_cast<bool>(lhs);
                             });
                     };
 
@@ -604,8 +607,8 @@ class FocusActionServer : public rclcpp::Node {
                         planning_component_->setStartStateToCurrentState();
                         return;
                     }
-                    bool execute_success =
-                        moveit_cpp_->execute(plan_solution.trajectory);
+                    auto execute_success = static_cast<bool>(
+                        moveit_cpp_->execute(plan_solution.trajectory));
                     if (execute_success) {
                         planning_ = false;
                         RCLCPP_INFO(get_logger(), "Execute Success!");
@@ -648,25 +651,6 @@ class FocusActionServer : public rclcpp::Node {
             result->status = "Focus completed successfully\n";
             goal_handle->succeed(result);
             RCLCPP_INFO(get_logger(), "Focus action completed successfully.");
-        }
-    }
-
-    void captureBackgroundCallback(
-        [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
-            request,
-        std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        cv::Mat frame = get_img();
-        if (!frame.empty()) {
-            std::string pkg_share =
-                ament_index_cpp::get_package_share_directory("octa_ros");
-            std::string bg_path = pkg_share + "/config/bg.jpg";
-            cv::imwrite(bg_path.c_str(), frame);
-            cv::imwrite("config/bg.jpg", frame);
-            response->success = true;
-        } else {
-            RCLCPP_INFO(get_logger(),
-                        "No image captured – background not saved");
-            response->success = false;
         }
     }
 };

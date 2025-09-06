@@ -11,15 +11,9 @@
 #include <open3d/Open3D.h>
 #include <opencv2/opencv.hpp>
 
-// #include <algorithm>
-// #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
-// #include <filesystem>
-// #include <format>
-// #include <iomanip>
-// #include <sstream>
 
 #include <c10/core/TensorOptions.h>
 #include <torch/script.h>
@@ -52,6 +46,6 @@ std::vector<cv::Point> get_max_coor(const cv::Mat &img);
 SegmentResult detect_lines(const cv::Mat &inputImg);
 
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
-                                      const int interval);
+                                      int interval);
 
 #endif // PROCESS_IMG_HPP

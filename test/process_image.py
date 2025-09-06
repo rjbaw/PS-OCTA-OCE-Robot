@@ -992,7 +992,7 @@ def ol_removal(ret_coords):
             prev_pt = observations[i - 1]
             mse = np.sqrt((pt - prev_pt) ** 2)
             if mse > z_max:
-                print(mse)
+                # print(mse)
                 # observations[i] = m * i + np.median(observations[:10])
                 observations[i] = m + prev_pt
                 # found = False
@@ -1267,7 +1267,7 @@ def test_basic(file_list, data_path, result_path, interval):
         file_list, data_path, result_path, interval, detect_lines, acq_interval=False
     )
     pc_lines = np.vstack(pc_lines)
-    print(pc_lines)
+    # print(pc_lines)
 
     pcd_lines = o3d.geometry.PointCloud()
     pcd_lines.points = o3d.utility.Vector3dVector(pc_lines)
@@ -1358,8 +1358,9 @@ def main(data_path, result_path, interval):
     start_idx = 0
     shutil.rmtree(result_path)
     os.makedirs(result_path)
-    file_list = sorted(os.listdir(data_path), key=lambda x: int(os.path.splitext(x)[0]))
-    file_list = file_list[(interval * start_idx) :]
+    # file_list = sorted(os.listdir(data_path), key=lambda x: int(os.path.splitext(x)[0]))
+    # file_list = file_list[(interval * start_idx) :]
+    file_list = os.listdir(data_path)
 
     test_basic(file_list, data_path, result_path, interval)
     # test_3d(file_list, data_path, result_path, interval)
@@ -1381,6 +1382,7 @@ if __name__ == "__main__":
     # path = "data/current"
     # path = "data/real2"
     path = "data/new_capture"
+    path = "raw"
 
     save_path = "data/result"
     interval = 6

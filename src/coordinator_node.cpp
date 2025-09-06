@@ -40,7 +40,6 @@
 
 #include "moveit_msgs/msg/collision_object.hpp"
 #include "shape_msgs/msg/solid_primitive.hpp"
-#include "utils.hpp"
 
 using namespace std::chrono_literals;
 

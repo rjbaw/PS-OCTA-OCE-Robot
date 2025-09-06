@@ -1,0 +1,3 @@
+FROM ghcr.io/rjbaw/octa_ros:latest
+
+CMD ["bash"]

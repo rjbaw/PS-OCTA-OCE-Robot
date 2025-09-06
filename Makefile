@@ -11,7 +11,10 @@ COLCON = source "$(ROS_SETUP)" && colcon
 
 CXX_FILES := $(shell git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx')
 TIDY_FILES := $(shell git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.cxx')
-TIDY_JOBS ?= $(shell (command -v nproc >/dev/null && nproc) || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4)
+MAKE_JOBS := $(shell echo '$(MAKEFLAGS)' | sed -n 's/.*-j\([0-9][0-9]*\).*/\1/p')
+TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null && nproc) || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4))
+GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
+GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
 .PHONY: help build test format tidy lint clean
 
@@ -72,17 +75,24 @@ tidy:
 	files="$(if $(FILE),$(FILE),$(TIDY_FILES))"; \
 	if [ -z "$$files" ]; then echo "No C/C++ source files under src/."; exit 0; fi; \
 	echo "Running clang-tidy (parallel: $(TIDY_JOBS)) on: $$(echo $$files | wc -w) files"; \
-	printf '%s\n' $$files | xargs -r -n1 -P $(TIDY_JOBS) clang-tidy -p . --format-style=file -header-filter="^$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)/src/" -extra-arg-before=--gcc-toolchain=/usr
+	printf '%s\n' $$files | xargs -r -n1 -P $(TIDY_JOBS) clang-tidy \
+	  -p . \
+	  --quiet \
+	  --format-style=file \
+	  -header-filter="^$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)/src/" \
+	  -extra-arg-before=-std=c++23 \
+	  -extra-arg-before=-stdlib=libstdc++ \
+	  -extra-arg-before=--gcc-toolchain=/usr \
+	  -extra-arg-before=-isystem/usr/include/c++/$(GCC_MAJOR) \
+	  -extra-arg-before=-isystem/usr/include/$(GCC_MULTIARCH)/c++/$(GCC_MAJOR)
 
 format:
 	@set -euo pipefail; \
 	if ! command -v clang-format >/dev/null; then echo "clang-format not found"; exit 1; fi; \
-	if [ -n "$(CXX_FILES)" ]; then \
-	  echo "Formatting C/C++ sources..."; \
-	  printf '%s\n' $(CXX_FILES) | xargs -r clang-format -i; \
-	else \
-	  echo "No C/C++ source files found."; \
-	fi
+	files="$(if $(FILE),$(FILE),$(CXX_FILES))"; \
+	if [ -z "$$files" ]; then echo "No C/C++ source files found."; exit 0; fi; \
+	echo "Formatting C/C++ sources... ($$(echo $$files | wc -w) files)"; \
+	printf '%s\n' $$files | xargs -r clang-format -i
 
 lint: format tidy
 

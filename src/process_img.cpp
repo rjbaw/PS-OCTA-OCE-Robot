@@ -1,4 +1,5 @@
 #include "process_img.hpp"
+#include <format>
 
 static torch::jit::script::Module &load_model(const std::string &path,
                                               const torch::Device &device) {
@@ -6,15 +7,7 @@ static torch::jit::script::Module &load_model(const std::string &path,
     static std::unique_ptr<torch::jit::script::Module> mod_cuda;
     static std::unique_ptr<torch::jit::script::Module> mod_xpu;
 
-    if (device.type() == torch::kCPU) {
-        if (!mod_cpu) {
-            mod_cpu = std::make_unique<torch::jit::script::Module>(
-                torch::jit::load(path));
-            mod_cpu->to(device);
-            mod_cpu->eval();
-        }
-        return *mod_cpu;
-    } else if (device.type() == torch::kCUDA) {
+    if (device.type() == torch::kCUDA) {
         if (!mod_cuda) {
             mod_cuda = std::make_unique<torch::jit::script::Module>(
                 torch::jit::load(path));
@@ -22,7 +15,8 @@ static torch::jit::script::Module &load_model(const std::string &path,
             mod_cuda->eval();
         }
         return *mod_cuda;
-    } else {
+    }
+    if (device.type() == torch::kXPU) {
         if (!mod_xpu) {
             mod_xpu = std::make_unique<torch::jit::script::Module>(
                 torch::jit::load(path));
@@ -31,6 +25,14 @@ static torch::jit::script::Module &load_model(const std::string &path,
         }
         return *mod_xpu;
     }
+
+    if (!mod_cpu) {
+        mod_cpu = std::make_unique<torch::jit::script::Module>(
+            torch::jit::load(path));
+        mod_cpu->to(device);
+        mod_cpu->eval();
+    }
+    return *mod_cpu;
 }
 
 Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
@@ -62,9 +64,9 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     CV_Assert(inputImg.channels() == 1);
 
     const auto share = ament_index_cpp::get_package_share_directory("octa_ros");
-    std::filesystem::path p =
+    std::filesystem::path model_stdpath =
         std::filesystem::path(share) / "config/curve_model.ts";
-    const std::string model_path = p.string();
+    const std::string model_path = model_stdpath.string();
 
     torch::Device device = torch::kCPU;
     if (torch::cuda::is_available()) {
@@ -90,9 +92,9 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
 
     auto opts = torch::TensorOptions().dtype(torch::kFloat32);
     auto mean =
-        torch::tensor({0.485f, 0.456f, 0.406f}, opts).view({1, 3, 1, 1});
+        torch::tensor({0.485F, 0.456F, 0.406F}, opts).view({1, 3, 1, 1});
     auto stdev =
-        torch::tensor({0.229f, 0.224f, 0.225f}, opts).view({1, 3, 1, 1});
+        torch::tensor({0.229F, 0.224F, 0.225F}, opts).view({1, 3, 1, 1});
     img_tensor = (img_tensor - mean) / stdev;
     img_tensor = img_tensor.to(device);
 
@@ -107,17 +109,18 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     torch::Tensor presence_logits = tup->elements()[0].toTensor(); // (1,)
     torch::Tensor curve_logits = tup->elements()[1].toTensor();    // (1,500)
 
-    float p_curve = torch::sigmoid(presence_logits).item<float>();
+    auto p_curve = torch::sigmoid(presence_logits).item<float>();
 
     std::vector<cv::Point> ret_coords;
-    if (p_curve >= 0.5f) {
+    if (p_curve >= 0.5F) {
         torch::Tensor y_vec = curve_logits.squeeze(0).to(torch::kFloat32);
         ret_coords.reserve(500);
         auto y_cpu = y_vec.to(torch::kCPU).contiguous();
         const float *y_ptr = y_cpu.data_ptr<float>();
-        for (int x = 0; x < 500; ++x) {
-            int yy = std::clamp((int)std::lround(y_ptr[x]), 0, 512 - 1);
-            ret_coords.emplace_back(x, yy);
+        for (int x_pt = 0; x_pt < 500; ++x_pt) {
+            int y_clamped =
+                std::clamp((int)std::lround(y_ptr[x_pt]), 0, 512 - 1);
+            ret_coords.emplace_back(x_pt, y_clamped);
         }
     }
 
@@ -137,12 +140,12 @@ prepare_output_dir(const std::filesystem::path &base_dir, bool make_session) {
     std::filesystem::path dir = base_dir;
     if (make_session) {
         auto now = std::chrono::system_clock::now();
-        auto tt = std::chrono::system_clock::to_time_t(now);
+        auto time_t = std::chrono::system_clock::to_time_t(now);
 
-        std::tm tm{};
-        localtime_r(&tt, &tm);
+        std::tm time_struct{};
+        localtime_r(&time_t, &time_struct);
         std::ostringstream oss;
-        oss << std::put_time(&tm, "%Y-%m-%dT%H-%M-%S");
+        oss << std::put_time(&time_struct, "%Y-%m-%dT%H-%M-%S");
         dir /= oss.str();
     }
     std::filesystem::create_directories(dir);
@@ -153,8 +156,9 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       const int interval) {
     bool save_debug = true;
     if (const char *env = std::getenv("OCTA_SAVE_DEBUG"); env != nullptr) {
-        std::string v(env);
-        save_debug = (v != "0" && v != "false" && v != "FALSE");
+        std::string env_var = env;
+        save_debug =
+            (env_var != "0" && env_var != "false" && env_var != "FALSE");
     }
 
     std::filesystem::path out_dir;
@@ -169,24 +173,25 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     double increments = 499.0 / static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
-        cv::Mat img = img_array[i];
-        SegmentResult pc = detect_lines(img);
+        const cv::Mat &img = img_array[i];
+        SegmentResult point_cloud = detect_lines(img);
         if (save_debug) {
             const std::string raw_filename = std::format("raw_image{}.jpg", i);
             const std::string processed_filename =
                 std::format("detected_image{}.jpg", i);
             cv::imwrite((out_dir / raw_filename).string(), img);
-            cv::imwrite((out_dir / processed_filename).string(), pc.image);
+            cv::imwrite((out_dir / processed_filename).string(),
+                        point_cloud.image);
         }
-        assert(!pc.coordinates.empty());
+        assert(!point_cloud.coordinates.empty());
 
         int idx = static_cast<int>(i) % interval;
         double z_val = idx * increments;
 
-        for (size_t j = 0; j < pc.coordinates.size(); ++j) {
-            double x = static_cast<double>(pc.coordinates[j].x);
-            double y = static_cast<double>(pc.coordinates[j].y);
-            pc_3d.emplace_back(Eigen::Vector3d(x, z_val, y));
+        for (auto &coordinate : point_cloud.coordinates) {
+            auto x_pts = static_cast<double>(coordinate.x);
+            auto y_pts = static_cast<double>(coordinate.y);
+            pc_3d.emplace_back(x_pts, z_val, y_pts);
         }
     }
 

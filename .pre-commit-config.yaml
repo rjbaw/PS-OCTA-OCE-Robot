@@ -11,18 +11,18 @@ repos:
 
   - repo: local
     hooks:
+      - id: make-lint
+        name: make lint (format + clang-tidy)
+        entry: bash -lc 'make lint FILE="$@"'
+        language: system
+        types_or: [c, c++]
+        require_serial: true
+        pass_filenames: true
       - id: clang-format
         name: clang-format
         entry: clang-format -i
         language: system
         files: \.(c|cc|cxx|cpp|h|hh|hpp|hxx)$
-      - id: clang-tidy
-        name: clang-tidy (project sources only)
-        entry: bash -lc 'tools/clang-tidy-wrapper.sh --project-root $(git rev-parse --show-toplevel) --allow-subdir src --allow-subdir include'
-        language: system
-        types_or: [c, c++]
-        require_serial: true
-        pass_filenames: true
       - id: cmake-format
         name: cmake-format
         entry: cmake-format -i

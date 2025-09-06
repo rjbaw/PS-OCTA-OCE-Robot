@@ -19,16 +19,38 @@ endif()
 
 option(ENABLE_CLANG_TIDY "Run clang-tidy during the build" ON)
 option(CLANG_TIDY_WARN_AS_ERRORS "Treat clang-tidy warnings as errors" OFF)
+set(_OCTA_CLANG_TIDY_CMD "")
 if(ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy)
   if(CLANG_TIDY_EXE)
+    set(_OCTA_CLANG_TIDY_CMD "${CLANG_TIDY_EXE}")
+    list(APPEND _OCTA_CLANG_TIDY_CMD "-quiet")
+    list(APPEND _OCTA_CLANG_TIDY_CMD "-extra-arg-before=-std=c++${CMAKE_CXX_STANDARD}")
+
+    find_program(_SYS_GXX NAMES ${CMAKE_CXX_COMPILER} g++ c++)
+    if(_SYS_GXX)
+      execute_process(COMMAND ${_SYS_GXX} -dumpversion
+        OUTPUT_VARIABLE _gcc_ver OUTPUT_STRIP_TRAILING_WHITESPACE)
+      execute_process(COMMAND ${_SYS_GXX} -print-multiarch
+        OUTPUT_VARIABLE _gcc_multiarch OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+      if(_gcc_ver)
+        string(REGEX REPLACE "^([0-9]+).*" "\\1" _gcc_major "${_gcc_ver}")
+        if(_gcc_major)
+          list(APPEND _OCTA_CLANG_TIDY_CMD "-extra-arg-before=-isystem/usr/include/c++/${_gcc_major}")
+          if(_gcc_multiarch)
+            list(APPEND _OCTA_CLANG_TIDY_CMD "-extra-arg-before=-isystem/usr/include/${_gcc_multiarch}/c++/${_gcc_major}")
+          elseif(CMAKE_LIBRARY_ARCHITECTURE)
+            list(APPEND _OCTA_CLANG_TIDY_CMD "-extra-arg-before=-isystem/usr/include/${CMAKE_LIBRARY_ARCHITECTURE}/c++/${_gcc_major}")
+          endif()
+        endif()
+      endif()
+    endif()
+
     if(CLANG_TIDY_WARN_AS_ERRORS)
-      set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-warnings-as-errors=*")
-      message(STATUS "clang-tidy enabled (errors): ${CLANG_TIDY_EXE}")
+      list(APPEND _OCTA_CLANG_TIDY_CMD "-warnings-as-errors=*")
+      message(STATUS "clang-tidy prepared (errors): ${CLANG_TIDY_EXE}")
     else()
-      set(CMAKE_CXX_CLANG_TIDY
-        "sh;-c;${CLANG_TIDY_EXE} -extra-arg-before=-std=c++${CMAKE_CXX_STANDARD} -extra-arg-before=--gcc-toolchain=/usr \"$@\" || true;--")
-      message(STATUS "clang-tidy enabled (warn-only): ${CLANG_TIDY_EXE}")
+      message(STATUS "clang-tidy prepared (warn-only): ${CLANG_TIDY_EXE}")
     endif()
   endif()
 endif()
@@ -236,6 +258,26 @@ if(TORCH_LIB_DIR)
         INSTALL_RPATH "${TORCH_LIB_DIR}")
     endif()
   endforeach()
+endif()
+
+if(_OCTA_CLANG_TIDY_CMD)
+  set(_OCTA_TIDY_TARGETS
+      joint_state_publisher
+      coordinator_node
+      focus_node
+      move_z_angle_node
+      reset_node
+      freedrive_node
+      reconnect_client
+      sub_img
+      test_detect
+      run_state_listener)
+  foreach(t IN LISTS _OCTA_TIDY_TARGETS)
+    if(TARGET ${t})
+      set_target_properties(${t} PROPERTIES CXX_CLANG_TIDY "${_OCTA_CLANG_TIDY_CMD}")
+    endif()
+  endforeach()
+  message(STATUS "clang-tidy applied to src/ targets only: ${_OCTA_TIDY_TARGETS}")
 endif()
 
 install(

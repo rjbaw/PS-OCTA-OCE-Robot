@@ -5,6 +5,7 @@
  */
 
 #include <Eigen/Geometry>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
@@ -38,16 +39,20 @@ class MoveZAngleActionServer : public rclcpp::Node {
                rclcpp::NodeOptions(options)
                    .automatically_declare_parameters_from_overrides(true)) {}
     void init() {
-        if (!this->has_parameter("plan_only"))
+        if (!this->has_parameter("plan_only")) {
             this->declare_parameter<bool>("plan_only", false);
-        if (!this->has_parameter("offline_mode"))
+        }
+        if (!this->has_parameter("offline_mode")) {
             this->declare_parameter<bool>("offline_mode", false);
+        }
         bool plan_only = false;
         bool offline_mode = false;
-        if (this->has_parameter("plan_only"))
+        if (this->has_parameter("plan_only")) {
             plan_only = this->get_parameter("plan_only").as_bool();
-        if (this->has_parameter("offline_mode"))
+        }
+        if (this->has_parameter("offline_mode")) {
             offline_mode = this->get_parameter("offline_mode").as_bool();
+        }
         if (!(plan_only || offline_mode)) {
             moveit_cpp_ =
                 std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
@@ -63,12 +68,16 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
         action_server_ = rclcpp_action::create_server<MoveZAngle>(
             this, "move_z_angle_action",
-            std::bind(&MoveZAngleActionServer::handle_goal, this,
-                      std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MoveZAngleActionServer::handle_cancel, this,
-                      std::placeholders::_1),
-            std::bind(&MoveZAngleActionServer::handle_accepted, this,
-                      std::placeholders::_1));
+            [this](const rclcpp_action::GoalUUID &uuid,
+                   std::shared_ptr<const MoveZAngle::Goal> goal) {
+                return this->handle_goal(uuid, goal);
+            },
+            [this](const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+                return this->handle_cancel(goal_handle);
+            },
+            [this](const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+                this->handle_accepted(goal_handle);
+            });
         RCLCPP_INFO(get_logger(),
                     "MoveZAngleActionServer using MoveItCpp is ready.");
     }
@@ -121,46 +130,47 @@ class MoveZAngleActionServer : public rclcpp::Node {
         std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
     }
 
-    moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
-                                               double lin_radius_m,
-                                               double ang_radius_rad) const {
-        moveit_msgs::msg::Constraints c;
+    [[nodiscard]] moveit_msgs::msg::Constraints
+    makeEnvelope(const Eigen::Isometry3d &centre, double lin_radius_m,
+                 double ang_radius_rad) const {
+        moveit_msgs::msg::Constraints constraint;
 
         const std::string planning_frame =
             moveit_cpp_->getPlanningSceneMonitor()
                 ->getPlanningScene()
                 ->getPlanningFrame();
 
-        moveit_msgs::msg::PositionConstraint pc;
-        pc.header.frame_id = planning_frame;
-        pc.link_name = "tcp";
-        pc.weight = 1.0;
+        moveit_msgs::msg::PositionConstraint pos_constraint;
+        pos_constraint.header.frame_id = planning_frame;
+        pos_constraint.link_name = "tcp";
+        pos_constraint.weight = 1.0;
         shape_msgs::msg::SolidPrimitive sphere;
-        sphere.type = sphere.SPHERE;
+        sphere.type = shape_msgs::msg::SolidPrimitive::SPHERE;
         sphere.dimensions = {lin_radius_m};
-        pc.constraint_region.primitives.push_back(sphere);
+        pos_constraint.constraint_region.primitives.push_back(sphere);
         geometry_msgs::msg::Pose centre_pose;
         centre_pose.position.x = centre.translation().x();
         centre_pose.position.y = centre.translation().y();
         centre_pose.position.z = centre.translation().z();
         centre_pose.orientation.w = 1.0;
-        pc.constraint_region.primitive_poses.push_back(centre_pose);
+        pos_constraint.constraint_region.primitive_poses.push_back(centre_pose);
 
-        moveit_msgs::msg::OrientationConstraint oc;
-        oc.header.frame_id = planning_frame;
-        oc.link_name = "tcp";
-        oc.weight = 1.0;
-        Eigen::Quaterniond q(centre.rotation());
-        oc.orientation.x = q.x();
-        oc.orientation.y = q.y();
-        oc.orientation.z = q.z();
-        oc.orientation.w = q.w();
-        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
-            oc.absolute_z_axis_tolerance = ang_radius_rad;
+        moveit_msgs::msg::OrientationConstraint orient_constraint;
+        orient_constraint.header.frame_id = planning_frame;
+        orient_constraint.link_name = "tcp";
+        orient_constraint.weight = 1.0;
+        Eigen::Quaterniond quaternion(centre.rotation());
+        orient_constraint.orientation.x = quaternion.x();
+        orient_constraint.orientation.y = quaternion.y();
+        orient_constraint.orientation.z = quaternion.z();
+        orient_constraint.orientation.w = quaternion.w();
+        orient_constraint.absolute_x_axis_tolerance =
+            orient_constraint.absolute_y_axis_tolerance =
+                orient_constraint.absolute_z_axis_tolerance = ang_radius_rad;
 
-        c.position_constraints.push_back(pc);
-        c.orientation_constraints.push_back(oc);
-        return c;
+        constraint.position_constraints.push_back(pos_constraint);
+        constraint.orientation_constraints.push_back(orient_constraint);
+        return constraint;
     }
 
     void execute(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
@@ -173,10 +183,12 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
         bool plan_only = false;
         bool offline_mode = false;
-        if (this->has_parameter("plan_only"))
+        if (this->has_parameter("plan_only")) {
             plan_only = this->get_parameter("plan_only").as_bool();
-        if (this->has_parameter("offline_mode"))
+        }
+        if (this->has_parameter("offline_mode")) {
             offline_mode = this->get_parameter("offline_mode").as_bool();
+        }
         if (plan_only || offline_mode) {
             feedback->debug_msgs =
                 "Plan-only/Offline mode: skipping planning and execution.\n";
@@ -221,7 +233,8 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
         moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
         Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
-        auto envelope = makeEnvelope(start_tcp, 0.05, M_PI);
+        moveit_msgs::msg::Constraints envelope =
+            makeEnvelope(start_tcp, 0.05, M_PI);
         planning_component_->setPathConstraints(envelope);
 
         planning_component_->setGoal(target_pose, "tcp");
@@ -240,19 +253,19 @@ class MoveZAngleActionServer : public rclcpp::Node {
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
                 shared_from_this(), {"pilz_ptp", "pilz_lin"});
 
-        // auto stop_on_first =
-        //     [](const PlanningComponent::PlanSolutions &sols,
-        //        const auto &) { return sols.hasSuccessfulSolution();
-        //        };
         auto choose_shortest =
             [](const std::vector<planning_interface::MotionPlanResponse>
-                   &sols) {
+                   &solutions) {
                 return *std::min_element(
-                    sols.begin(), sols.end(), [](const auto &a, const auto &b) {
-                        if (a && b)
-                            return robot_trajectory::pathLength(*a.trajectory) <
-                                   robot_trajectory::pathLength(*b.trajectory);
-                        return static_cast<bool>(a);
+                    solutions.begin(), solutions.end(),
+                    [](const auto &lhs, const auto &rhs) {
+                        if (lhs && rhs) {
+                            return robot_trajectory::pathLength(
+                                       *lhs.trajectory) <
+                                   robot_trajectory::pathLength(
+                                       *rhs.trajectory);
+                        }
+                        return static_cast<bool>(lhs);
                     });
             };
         planning_interface::MotionPlanResponse plan_solution =
@@ -283,7 +296,8 @@ class MoveZAngleActionServer : public rclcpp::Node {
 
         bool execute_success = true;
         if (!(plan_only || offline_mode)) {
-            execute_success = moveit_cpp_->execute(plan_solution.trajectory);
+            execute_success = static_cast<bool>(
+                moveit_cpp_->execute(plan_solution.trajectory));
         } else {
             RCLCPP_INFO(get_logger(),
                         "Plan-only/Offline mode: skipping execution");

@@ -1,4 +1,3 @@
-#include <cmath>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/int32.hpp>
@@ -8,8 +7,9 @@ class JointStateListener : public rclcpp::Node {
     JointStateListener() : Node("joint_state_listener") {
         subscription_ = this->create_subscription<sensor_msgs::msg::JointState>(
             "/joint_states", 10,
-            std::bind(&JointStateListener::topic_callback, this,
-                      std::placeholders::_1));
+            [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+                topic_callback(msg);
+            });
         publisher_ =
             this->create_publisher<std_msgs::msg::Int32>("/robot_state", 10);
     }
@@ -23,7 +23,7 @@ class JointStateListener : public rclcpp::Node {
         }
 
         auto state_msg = std_msgs::msg::Int32();
-        state_msg.data = (sum_vel <= 0.01);
+        state_msg.data = static_cast<int>(sum_vel <= 0.01);
 
         publisher_->publish(state_msg);
     }

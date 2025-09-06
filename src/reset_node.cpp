@@ -42,21 +42,27 @@ class ResetActionServer : public rclcpp::Node {
     void init() {
         action_server_ = rclcpp_action::create_server<ResetAction>(
             this, "reset_action",
-            std::bind(&ResetActionServer::handle_goal, this,
-                      std::placeholders::_1, std::placeholders::_2),
-            std::bind(&ResetActionServer::handle_cancel, this,
-                      std::placeholders::_1),
-            std::bind(&ResetActionServer::handle_accepted, this,
-                      std::placeholders::_1));
+            [this](const rclcpp_action::GoalUUID &uuid,
+                   std::shared_ptr<const ResetAction::Goal> goal) {
+                return this->handle_goal(uuid, goal);
+            },
+            [this](const std::shared_ptr<GoalHandleResetAction> goal_handle) {
+                return this->handle_cancel(goal_handle);
+            },
+            [this](const std::shared_ptr<GoalHandleResetAction> goal_handle) {
+                this->handle_accepted(goal_handle);
+            });
 
         auto qos = rclcpp::SystemDefaultsQoS{};
 
         publisher_ = this->create_publisher<std_msgs::msg::String>(
             "/urscript_interface/script_command", qos);
-        if (!this->has_parameter("plan_only"))
+        if (!this->has_parameter("plan_only")) {
             this->declare_parameter<bool>("plan_only", false);
-        if (!this->has_parameter("offline_mode"))
+        }
+        if (!this->has_parameter("offline_mode")) {
             this->declare_parameter<bool>("offline_mode", false);
+        }
         bool plan_only = this->get_parameter("plan_only").as_bool();
         bool offline_mode = this->get_parameter("offline_mode").as_bool();
         if (!(plan_only || offline_mode)) {
@@ -88,43 +94,44 @@ class ResetActionServer : public rclcpp::Node {
     moveit_msgs::msg::Constraints makeEnvelope(const Eigen::Isometry3d &centre,
                                                double lin_radius_m,
                                                double ang_radius_rad) const {
-        moveit_msgs::msg::Constraints c;
+        moveit_msgs::msg::Constraints constraints;
 
         const std::string planning_frame =
             moveit_cpp_->getPlanningSceneMonitor()
                 ->getPlanningScene()
                 ->getPlanningFrame();
 
-        moveit_msgs::msg::PositionConstraint pc;
-        pc.header.frame_id = planning_frame;
-        pc.link_name = "tcp";
-        pc.weight = 1.0;
+        moveit_msgs::msg::PositionConstraint pos_constraint;
+        pos_constraint.header.frame_id = planning_frame;
+        pos_constraint.link_name = "tcp";
+        pos_constraint.weight = 1.0;
         shape_msgs::msg::SolidPrimitive sphere;
-        sphere.type = sphere.SPHERE;
+        sphere.type = shape_msgs::msg::SolidPrimitive::SPHERE;
         sphere.dimensions = {lin_radius_m};
-        pc.constraint_region.primitives.push_back(sphere);
+        pos_constraint.constraint_region.primitives.push_back(sphere);
         geometry_msgs::msg::Pose centre_pose;
         centre_pose.position.x = centre.translation().x();
         centre_pose.position.y = centre.translation().y();
         centre_pose.position.z = centre.translation().z();
         centre_pose.orientation.w = 1.0;
-        pc.constraint_region.primitive_poses.push_back(centre_pose);
+        pos_constraint.constraint_region.primitive_poses.push_back(centre_pose);
 
-        moveit_msgs::msg::OrientationConstraint oc;
-        oc.header.frame_id = planning_frame;
-        oc.link_name = "tcp";
-        oc.weight = 1.0;
-        Eigen::Quaterniond q(centre.rotation());
-        oc.orientation.x = q.x();
-        oc.orientation.y = q.y();
-        oc.orientation.z = q.z();
-        oc.orientation.w = q.w();
-        oc.absolute_x_axis_tolerance = oc.absolute_y_axis_tolerance =
-            oc.absolute_z_axis_tolerance = ang_radius_rad;
+        moveit_msgs::msg::OrientationConstraint orient_constraint;
+        orient_constraint.header.frame_id = planning_frame;
+        orient_constraint.link_name = "tcp";
+        orient_constraint.weight = 1.0;
+        Eigen::Quaterniond quaternion(centre.rotation());
+        orient_constraint.orientation.x = quaternion.x();
+        orient_constraint.orientation.y = quaternion.y();
+        orient_constraint.orientation.z = quaternion.z();
+        orient_constraint.orientation.w = quaternion.w();
+        orient_constraint.absolute_x_axis_tolerance =
+            orient_constraint.absolute_y_axis_tolerance =
+                orient_constraint.absolute_z_axis_tolerance = ang_radius_rad;
 
-        c.position_constraints.push_back(pc);
-        c.orientation_constraints.push_back(oc);
-        return c;
+        constraints.position_constraints.push_back(pos_constraint);
+        constraints.orientation_constraints.push_back(orient_constraint);
+        return constraints;
     }
 
     rclcpp_action::GoalResponse
@@ -232,16 +239,17 @@ class ResetActionServer : public rclcpp::Node {
                                                    {"ompl_rrtc"});
             auto choose_shortest =
                 [](const std::vector<planning_interface::MotionPlanResponse>
-                       &sols) {
+                       &solutions) {
                     return *std::min_element(
-                        sols.begin(), sols.end(),
-                        [](const auto &a, const auto &b) {
-                            if (a && b)
+                        solutions.begin(), solutions.end(),
+                        [](const auto &lhs, const auto &rhs) {
+                            if (lhs && rhs) {
                                 return robot_trajectory::pathLength(
-                                           *a.trajectory) <
+                                           *lhs.trajectory) <
                                        robot_trajectory::pathLength(
-                                           *b.trajectory);
-                            return static_cast<bool>(a);
+                                           *rhs.trajectory);
+                            }
+                            return static_cast<bool>(lhs);
                         });
                 };
             planning_interface::MotionPlanResponse plan_solution =
@@ -292,16 +300,17 @@ class ResetActionServer : public rclcpp::Node {
             RCLCPP_INFO(get_logger(), "URScript fall back");
             float robot_vel = 0.5;
             float robot_acc = 0.5;
-            double j0 = to_radian(0.0);
-            double j1 = to_radian(-60.0);
-            double j2 = to_radian(90.0);
-            double j3 = to_radian(-120.0);
-            double j4 = to_radian(-90.0);
-            double j5 = to_radian(-135.0);
+            double joint0 = to_radian(0.0);
+            double joint1 = to_radian(-60.0);
+            double joint2 = to_radian(90.0);
+            double joint3 = to_radian(-120.0);
+            double joint4 = to_radian(-90.0);
+            double joint5 = to_radian(-135.0);
             std::ostringstream prog;
             prog << "def reset_position():\n";
-            prog << "  movej([" << j0 << ", " << j1 << ", " << j2 << ", " << j3
-                 << ", " << j4 << ", " << j5 << "], " << "a=" << robot_acc
+            prog << "  movej([" << joint0 << ", " << joint1 << ", " << joint2
+                 << ", " << joint3 << ", " << joint4 << ", " << joint5
+                 << "], " << "a=" << robot_acc
                  << ", v=" << robot_vel << ")\n";
             prog << "end\n";
             auto message = std_msgs::msg::String();
