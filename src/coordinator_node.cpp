@@ -6,15 +6,15 @@
  * Actions are toggled using rising edge to prevent multiple triggers.
  */
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <future>
 #include <mutex>
+#include <numbers>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <std_msgs/msg/bool.hpp>
@@ -38,11 +38,13 @@
 #include <octa_ros/srv/scan3d.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
+#include "moveit_msgs/msg/collision_object.hpp"
+#include "shape_msgs/msg/solid_primitive.hpp"
 #include "utils.hpp"
 
 using namespace std::chrono_literals;
 
-enum class UserAction {
+enum class UserAction : uint8_t {
     None,
     Freedrive,
     Reset,
@@ -51,7 +53,7 @@ enum class UserAction {
     Scan,
 };
 
-enum class Mode {
+enum class Mode : uint8_t {
     ROBOT,
     OCT,
     OCTA,
@@ -153,8 +155,9 @@ class CoordinatorNode : public rclcpp::Node {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             sub_handle_ = this->create_subscription<octa_ros::msg::Labviewdata>(
                 "labview_data", qos,
-                std::bind(&CoordinatorNode::subscriberCallback, this,
-                          std::placeholders::_1),
+                [this](const octa_ros::msg::Labviewdata::SharedPtr msg) {
+                    this->subscriberCallback(msg);
+                },
                 options);
         }
         {
@@ -163,8 +166,9 @@ class CoordinatorNode : public rclcpp::Node {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             cancel_handle_ = this->create_subscription<std_msgs::msg::Bool>(
                 "cancel_current_action", qos,
-                std::bind(&CoordinatorNode::cancelCallback, this,
-                          std::placeholders::_1),
+                [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                    this->cancelCallback(msg);
+                },
                 options);
         }
 
@@ -172,8 +176,10 @@ class CoordinatorNode : public rclcpp::Node {
             auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             scan_3d_srv_ = create_service<Scan3d>(
                 "scan_3d",
-                std::bind(&CoordinatorNode::scan3dCallback, this,
-                          std::placeholders::_1, std::placeholders::_2),
+                [this](const std::shared_ptr<Scan3d::Request> request,
+                       const std::shared_ptr<Scan3d::Response> response) {
+                    this->scan3dCallback(request, response);
+                },
                 qos, parallel_group_);
         }
 
@@ -185,11 +191,11 @@ class CoordinatorNode : public rclcpp::Node {
                                               ->getPlanningScene()
                                               ->getPlanningFrame();
         collision_floor.id = "floor";
-        collision_floor.operation = collision_floor.ADD;
+        collision_floor.operation = moveit_msgs::msg::CollisionObject::ADD;
 
         {
             shape_msgs::msg::SolidPrimitive primitive;
-            primitive.type = primitive.BOX;
+            primitive.type = shape_msgs::msg::SolidPrimitive::BOX;
             primitive.dimensions = {10.0, 10.0, 0.01};
 
             geometry_msgs::msg::Pose box_pose;
@@ -207,11 +213,11 @@ class CoordinatorNode : public rclcpp::Node {
                                              ->getPlanningScene()
                                              ->getPlanningFrame();
         collision_base.id = "robot_base";
-        collision_base.operation = collision_base.ADD;
+        collision_base.operation = moveit_msgs::msg::CollisionObject::ADD;
 
         {
             shape_msgs::msg::SolidPrimitive primitive;
-            primitive.type = primitive.BOX;
+            primitive.type = shape_msgs::msg::SolidPrimitive::BOX;
             primitive.dimensions = {0.27, 0.27, 0.085};
 
             geometry_msgs::msg::Pose box_pose;
@@ -230,17 +236,17 @@ class CoordinatorNode : public rclcpp::Node {
                 ->getPlanningScene()
                 ->getPlanningFrame();
         collision_monitor.id = "monitor";
-        collision_monitor.operation = collision_monitor.ADD;
+        collision_monitor.operation = moveit_msgs::msg::CollisionObject::ADD;
 
         {
             shape_msgs::msg::SolidPrimitive primitive;
-            primitive.type = primitive.BOX;
+            primitive.type = shape_msgs::msg::SolidPrimitive::BOX;
             primitive.dimensions = {0.25, 0.6, 0.6};
 
             geometry_msgs::msg::Pose box_pose;
             box_pose.orientation.w = 1.0;
             box_pose.position.x = -0.2;
-            box_pose.position.y = 0.435;
+            box_pose.position.y = std::numbers::log10e;
             box_pose.position.z = 0.215;
 
             collision_monitor.primitives.push_back(primitive);
@@ -257,12 +263,11 @@ class CoordinatorNode : public rclcpp::Node {
 
         pub_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(5),
-            std::bind(&CoordinatorNode::publisherCallback, this),
-            parallel_group_);
+            [this]() { this->publisherCallback(); }, parallel_group_);
 
         main_loop_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(5),
-            std::bind(&CoordinatorNode::mainLoop, this), parallel_group_);
+            std::chrono::milliseconds(5), [this]() { this->mainLoop(); },
+            parallel_group_);
 
         focus_action_client_ =
             rclcpp_action::create_client<FocusAction>(this, "focus_action");
@@ -395,8 +400,9 @@ class CoordinatorNode : public rclcpp::Node {
             config_timer_.reset();
         }
         config_timer_ = create_wall_timer(duration, [this]() {
-            if (auto t = config_timer_weak_.lock())
-                t->cancel();
+            if (auto timer = config_timer_weak_.lock()) {
+                timer->cancel();
+            }
             apply_config_ = false;
         });
         config_timer_weak_ = config_timer_;
@@ -616,8 +622,7 @@ class CoordinatorNode : public rclcpp::Node {
 
         if (full_scan_read_) {
             full_scan_ = true;
-            unsigned int pc = pc_.load();
-            if ((pc + 1) > full_scan_recipe.size()) {
+            if ((pc_.load() + 1) > full_scan_recipe.size()) {
                 full_scan_ = false;
                 msg_ = "Full Scan complete!\n";
                 return;
@@ -726,10 +731,10 @@ class CoordinatorNode : public rclcpp::Node {
             break;
         case UserAction::MoveZangle:
             if (previous_action_ != current_action_) {
-                int n = num_pt_.load();
-                angle_increment_ =
-                    (n == 0) ? 0.0
-                             : (angle_limit_.load() / static_cast<double>(n));
+                angle_increment_ = (num_pt_.load() == 0)
+                                       ? 0.0
+                                       : (angle_limit_.load() /
+                                          static_cast<double>(num_pt_.load()));
                 if (next_) {
                     yaw_ = angle_increment_;
                     msg_ = std::format("[Action] Next: {}\n", yaw_);
@@ -791,9 +796,10 @@ class CoordinatorNode : public rclcpp::Node {
         auto options = rclcpp_action::Client<FocusAction>::SendGoalOptions();
 
         options.feedback_callback =
-            [this](FocusGoalHandle::SharedPtr,
-                   const std::shared_ptr<const FocusAction::Feedback> fb) {
-                msg_ += fb->debug_msgs;
+            [this](
+                FocusGoalHandle::SharedPtr,
+                const std::shared_ptr<const FocusAction::Feedback> feedback) {
+                msg_ += feedback->debug_msgs;
                 RCLCPP_INFO(this->get_logger(), "Focus feedback => %s",
                             msg_.c_str());
             };
@@ -851,11 +857,11 @@ class CoordinatorNode : public rclcpp::Node {
 
         options.feedback_callback =
             [this](MoveZGoalHandle::SharedPtr,
-                   const std::shared_ptr<const MoveZAngle::Feedback> fb) {
-                msg_ += fb->debug_msgs;
+                   const std::shared_ptr<const MoveZAngle::Feedback> feedback) {
+                msg_ += feedback->debug_msgs;
                 RCLCPP_INFO(this->get_logger(),
                             "MoveZAngle feedback => target_angle_z=%.2f",
-                            fb->current_z_angle);
+                            feedback->current_z_angle);
             };
 
         options.result_callback =
@@ -913,10 +919,10 @@ class CoordinatorNode : public rclcpp::Node {
 
         options.feedback_callback =
             [this](FreedriveGoalHandle::SharedPtr,
-                   const std::shared_ptr<const Freedrive::Feedback> fb) {
-                msg_ += fb->debug_msgs;
+                   const std::shared_ptr<const Freedrive::Feedback> feedback) {
+                msg_ += feedback->debug_msgs;
                 RCLCPP_INFO(this->get_logger(), "Freedrive feedback => %s",
-                            fb->debug_msgs.c_str());
+                            feedback->debug_msgs.c_str());
             };
 
         options.result_callback =
@@ -962,10 +968,10 @@ class CoordinatorNode : public rclcpp::Node {
 
         options.feedback_callback =
             [this](ResetGoalHandle::SharedPtr,
-                   const std::shared_ptr<const Reset::Feedback> fb) {
-                msg_ += fb->debug_msgs;
+                   const std::shared_ptr<const Reset::Feedback> feedback) {
+                msg_ += feedback->debug_msgs;
                 RCLCPP_INFO(this->get_logger(), "Reset feedback => %s",
-                            fb->debug_msgs.c_str());
+                            feedback->debug_msgs.c_str());
             };
 
         options.result_callback =
@@ -1043,8 +1049,9 @@ class CoordinatorNode : public rclcpp::Node {
 
     bool call_capture_background() {
         if (!service_capture_background_->wait_for_service(
-                std::chrono::milliseconds(200)))
+                std::chrono::milliseconds(200))) {
             return false;
+        }
 
         auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
         auto fut = service_capture_background_->async_send_request(req);

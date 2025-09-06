@@ -1,3 +1,3 @@
-((nil . ((projectile-project-compilation-cmd . "colcon build --mixin compile-commands --cmake-args -DCMAKE_BUILD_TYPE=Debug")
-         (projectile-project-test-cmd . "colcon test --packages-select octa_ros"))))
-
+((nil . ((projectile-project-compilation-cmd . "make build")
+         (projectile-project-test-cmd . "make test")
+         (projectile-project-run-cmd . "bash launch.sh"))))

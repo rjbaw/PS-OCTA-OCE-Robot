@@ -40,8 +40,9 @@ docker compose up -d
 ### Native build
 ```bash
 sudo apt update && rosdep update
+bash utils/setup.sh
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
+make build
 source install/setup.bash
 ```
 

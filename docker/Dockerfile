@@ -15,20 +15,26 @@ RUN apt-get update &&\
     iputils-ping \
     clang-format \
     clang-tidy \
+    python3-typing-extensions \
     ros-$ROS_DISTRO-ros2-control \ 
     ros-$ROS_DISTRO-ros2-controllers
 
-RUN git clone https://github.com/isl-org/Open3D &&\
+RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git &&\
     cd Open3D &&\
-    git checkout v0.19.0 &&\
     yes | bash util/install_deps_ubuntu.sh &&\
     mkdir build &&\ 
     cd build &&\
-    cmake .. &&\
-    make -j $(nproc) &&\
-    make install &&\
+    cmake -G Ninja -DBUILD_WEBRTC=OFF .. &&\
+    cmake --build . --target install &&\
     cd ../../ &&\
     rm -r Open3D
+
+RUN git clone -b v2.8.0 --recurse-submodule https://github.com/pytorch/pytorch.git &&\
+    cd pytorch &&\
+    python3 tools/build_libtorch.py &&\
+    cmake --install build --prefix /usr/local &&\
+    cd ../../ &&\
+    rm -r pytorch
 
 RUN deluser ubuntu
 RUN adduser ubuntu --disabled-password --home /workspace/

@@ -11,6 +11,7 @@
 #include <open3d/Open3D.h>
 #include <opencv2/img_hash.hpp>
 #include <opencv2/opencv.hpp>
+#include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
@@ -456,6 +457,16 @@ class FocusActionServer : public rclcpp::Node {
             RCLCPP_INFO(get_logger(), msg_.c_str());
 
             pc_lines_ = lines_3d(img_array, interval_);
+            if (pc_lines_.empty()) {
+                feedback->debug_msgs = "Background detected"
+                                       "; reacquiring image stack...\n";
+                goal_handle->publish_feedback(feedback);
+                RCLCPP_WARN(
+                    get_logger(),
+                    "Background detected in the image stack; retrying...");
+                continue;
+            }
+
             open3d::geometry::PointCloud pcd;
             for (const auto &point : pc_lines_) {
                 pcd.points_.emplace_back(point);

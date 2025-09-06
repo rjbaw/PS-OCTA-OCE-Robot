@@ -1,6 +1,6 @@
 /**
  * @file process_img.hpp
- * @brief Image processing functions for focus node
+ * @brief Image processing functions
  */
 
 #ifndef PROCESS_IMG_HPP
@@ -8,10 +8,35 @@
 
 #include <Eigen/Dense>
 #include <ament_index_cpp/get_package_share_directory.hpp>
-#include <cmath>
-#include <filesystem>
 #include <open3d/Open3D.h>
 #include <opencv2/opencv.hpp>
+
+// #include <algorithm>
+// #include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
+// #include <filesystem>
+// #include <format>
+// #include <iomanip>
+// #include <sstream>
+
+#include <c10/core/TensorOptions.h>
+#include <torch/script.h>
+#include <torch/torch.h>
+#include <torch/types.h>
+
+#if __has_include(                                                             \
+    <c10/xpu/XPUFunctions.h>) && __has_include(<c10/xpu/impl/xpu_cmake_macros.h>)
+#include <c10/xpu/XPUFunctions.h>
+#ifndef HAS_XPU
+#define HAS_XPU 1
+#endif
+#else
+#ifndef HAS_XPU
+#define HAS_XPU 0
+#endif
+#endif
 
 struct SegmentResult {
     cv::Mat image;

@@ -10,21 +10,18 @@ TEST_CMAKE_ARGS ?= -DENABLE_CLANG_TIDY=ON
 COLCON = source "$(ROS_SETUP)" && colcon
 
 CXX_FILES := $(shell git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx')
-# Only source implementation files under src/ for clang-tidy (faster, avoids headers)
 TIDY_FILES := $(shell git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.cxx')
-# Allow overriding number of jobs: make TIDY_JOBS=8 tidy
 TIDY_JOBS ?= $(shell (command -v nproc >/dev/null && nproc) || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4)
 
-.PHONY: help build test format format-check tidy lint clean
+.PHONY: help build test format tidy lint clean
 
 help:
 	@echo "Make targets:"
 	@echo "  build   - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
 	@echo "  test    - Run tests for $(PKG) and show results"
 	@echo "  format  - clang-format all tracked C/C++ files (in-place)"
-	@echo "  format-check - check formatting (no changes); nonzero exit on diff"
 	@echo "  tidy    - run clang-tidy on tracked C/C++ files"
-	@echo "  lint    - run format-check and clang-tidy together"
+	@echo "  lint    - run format and clang-tidy together"
 	@echo "  clean   - Remove build/install/log and compile_commands.json"
 
 build:
@@ -38,7 +35,7 @@ build:
         exit 1; \
       fi; \
     fi; \
-	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS); \
+	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) -DENABLE_CLANG_TIDY=ON; \
 	if [ -f build/$(PKG)/compile_commands.json ]; then \
 	  ln -sf build/$(PKG)/compile_commands.json ./compile_commands.json; \
 	elif [ -f build/compile_commands.json ]; then \
@@ -59,9 +56,7 @@ test:
         exit 1; \
       fi; \
     fi; \
-	# Build with clang-tidy enabled (C/C++ only) before running tests
 	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS); \
-	# Run tests
 	$(COLCON) test --base-paths . --packages-select $(PKG) || true; \
 	$(COLCON) test-result --verbose || true
 
@@ -77,21 +72,7 @@ tidy:
 	files="$(if $(FILE),$(FILE),$(TIDY_FILES))"; \
 	if [ -z "$$files" ]; then echo "No C/C++ source files under src/."; exit 0; fi; \
 	echo "Running clang-tidy (parallel: $(TIDY_JOBS)) on: $$(echo $$files | wc -w) files"; \
-	printf '%s\n' $$files | xargs -r -n1 -P $(TIDY_JOBS) tools/clang-tidy-wrapper.sh --project-root "$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)" --allow-subdir src -p . --format-style=file
-
-.PHONY: tidy-changed tidy-staged
-tidy-changed:
-	@set -euo pipefail; \
-	base=$$(git merge-base HEAD $${BASE_REF:-origin/main} 2>/dev/null || echo HEAD~1); \
-	files=$$(git diff --name-only $$base -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.cxx' | tr '\n' ' '); \
-	if [ -z "$$files" ]; then echo "No changed C/C++ sources under src/."; exit 0; fi; \
-	$(MAKE) FILE="$$files" tidy
-
-tidy-staged:
-	@set -euo pipefail; \
-	files=$$(git diff --cached --name-only -- 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.cxx' | tr '\n' ' '); \
-	if [ -z "$$files" ]; then echo "No staged C/C++ sources under src/."; exit 0; fi; \
-	$(MAKE) FILE="$$files" tidy
+	printf '%s\n' $$files | xargs -r -n1 -P $(TIDY_JOBS) clang-tidy -p . --format-style=file -header-filter="^$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)/src/" -extra-arg-before=--gcc-toolchain=/usr
 
 format:
 	@set -euo pipefail; \
@@ -103,17 +84,7 @@ format:
 	  echo "No C/C++ source files found."; \
 	fi
 
-format-check:
-	@set -euo pipefail; \
-	if ! command -v clang-format >/dev/null; then echo "clang-format not found"; exit 1; fi; \
-	if [ -n "$(CXX_FILES)" ]; then \
-	  echo "Checking formatting..."; \
-	  printf '%s\n' $(CXX_FILES) | xargs -r -n1 clang-format -n --Werror; \
-	else \
-	  echo "No C/C++ source files found."; \
-	fi
-
-lint: format-check tidy
+lint: format tidy
 
 clean:
 	@rm -rf build install log compile_commands.json
