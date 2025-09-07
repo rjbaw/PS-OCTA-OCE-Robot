@@ -1,3 +1,11 @@
 FROM ghcr.io/rjbaw/octa_ros:latest
 
+USER root
+# Dev-only GUI tools
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ros-$ROS_DISTRO-rviz2 && \
+    rm -rf /var/lib/apt/lists/*
+
+USER ubuntu
 CMD ["bash"]

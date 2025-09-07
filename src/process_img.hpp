@@ -7,18 +7,7 @@
 #define PROCESS_IMG_HPP
 
 #include <Eigen/Dense>
-#include <ament_index_cpp/get_package_share_directory.hpp>
-#include <open3d/Open3D.h>
 #include <opencv2/opencv.hpp>
-
-#include <cmath>
-#include <cstdlib>
-#include <ctime>
-
-#include <c10/core/TensorOptions.h>
-#include <torch/script.h>
-#include <torch/torch.h>
-#include <torch/types.h>
 
 #if __has_include(                                                             \
     <c10/xpu/XPUFunctions.h>) && __has_include(<c10/xpu/impl/xpu_cmake_macros.h>)
@@ -31,6 +20,8 @@
 #define HAS_XPU 0
 #endif
 #endif
+
+namespace octa_ros::img {
 
 struct SegmentResult {
     cv::Mat image;
@@ -47,5 +38,7 @@ SegmentResult detect_lines(const cv::Mat &inputImg);
 
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       int interval);
+
+} // namespace octa_ros::img
 
 #endif // PROCESS_IMG_HPP

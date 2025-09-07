@@ -6,6 +6,9 @@ PKG ?= octa_ros
 BUILD_TYPE ?= Debug
 CMAKE_ARGS ?= -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
 TEST_CMAKE_ARGS ?= -DENABLE_CLANG_TIDY=ON
+BUILD_BASE ?= build
+INSTALL_BASE ?= install
+LOG_BASE ?= log
 
 COLCON = source "$(ROS_SETUP)" && colcon
 
@@ -16,7 +19,7 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: help build test format tidy lint clean
+.PHONY: help build test format tidy lint clean docker-ci-test
 
 help:
 	@echo "Make targets:"
@@ -26,6 +29,7 @@ help:
 	@echo "  tidy    - run clang-tidy on tracked C/C++ files"
 	@echo "  lint    - run format and clang-tidy together"
 	@echo "  clean   - Remove build/install/log and compile_commands.json"
+	@echo "  docker-ci-test  - Build image if needed and run tests in it"
 
 build:
 	@set -eo pipefail; \
@@ -45,9 +49,6 @@ build:
 	  ln -sf build/compile_commands.json ./compile_commands.json; \
 	fi
 
-build-release:
-	@$(MAKE) BUILD_TYPE=Release build
-
 test:
 	@set -eo pipefail; \
     if [ ! -f "$(ROS_SETUP)" ]; then \
@@ -59,9 +60,14 @@ test:
         exit 1; \
       fi; \
     fi; \
-	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS); \
-	$(COLCON) test --base-paths . --packages-select $(PKG) || true; \
-	$(COLCON) test-result --verbose || true
+	$(COLCON) build --base-paths . --packages-select $(PKG) \
+	  --build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	  --cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
+	  --event-handlers console_cohesion+; \
+	$(COLCON) test --base-paths . --packages-select $(PKG) \
+	  --build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	  --event-handlers console_cohesion+ || true; \
+	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE) || true
 
 .PHONY: tidy
 tidy:
@@ -98,3 +104,21 @@ lint: format tidy
 
 clean:
 	@rm -rf build install log compile_commands.json
+
+DOCKER_CI_TAG ?= octa_ros-ci:local
+DOCKERFILE ?= docker/Dockerfile
+
+docker-ci-test:
+	@set -e; \
+	if ! docker image inspect $(DOCKER_CI_TAG) >/dev/null 2>&1; then \
+	  echo "[docker-ci-test] Building CI image: $(DOCKER_CI_TAG)"; \
+	  docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) .; \
+	fi; \
+	docker run --rm --name octa_ci \
+	  -u "$(shell id -u):$(shell id -g)" \
+	  -e HOME=/tmp \
+	  -w /workspace/repo \
+	  -v "$(PWD):/workspace/repo" \
+	  $(DOCKER_CI_TAG) \
+	  bash -lc 'set -euo pipefail; set +u; source /opt/ros/jazzy/setup.bash; set -u; \
+	    make -C /workspace/repo BUILD_BASE=/tmp/colcon_build INSTALL_BASE=/tmp/colcon_install LOG_BASE=/tmp/colcon_log test'

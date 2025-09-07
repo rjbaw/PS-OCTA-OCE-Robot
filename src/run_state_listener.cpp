@@ -13,7 +13,9 @@ class RunStateListener : public rclcpp::Node {
     RunStateListener() : Node("run_state_listener") {
         sub_ = create_subscription<std_msgs::msg::Bool>(
             "/run_state", rclcpp::QoS(1),
-            [this](const std_msgs::msg::Bool::SharedPtr msg) { callback(msg); });
+            [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                callback(msg);
+            });
     }
 
   private:

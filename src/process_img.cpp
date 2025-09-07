@@ -1,5 +1,26 @@
 #include "process_img.hpp"
 #include <format>
+#include <filesystem>
+
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <c10/core/TensorOptions.h>
+#include <torch/script.h>
+#include <torch/torch.h>
+#include <torch/types.h>
+
+#if __has_include(<c10/xpu/XPUFunctions.h>) && \
+    __has_include(<c10/xpu/impl/xpu_cmake_macros.h>)
+#include <c10/xpu/XPUFunctions.h>
+#ifndef HAS_XPU
+#define HAS_XPU 1
+#endif
+#else
+#ifndef HAS_XPU
+#define HAS_XPU 0
+#endif
+#endif
+
+namespace octa_ros::img {
 
 static torch::jit::script::Module &load_model(const std::string &path,
                                               const torch::Device &device) {
@@ -60,7 +81,9 @@ void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
 
 SegmentResult detect_lines(const cv::Mat &inputImg) {
     CV_Assert(!inputImg.empty());
-    CV_Assert(inputImg.rows == 512 && inputImg.cols == 500);
+    const int img_h = inputImg.rows;
+    const int img_w = inputImg.cols;
+    CV_Assert(img_h > 0 && img_w > 0);
     CV_Assert(inputImg.channels() == 1);
 
     const auto share = ament_index_cpp::get_package_share_directory("octa_ros");
@@ -86,7 +109,7 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     CV_Assert(rgb_f32.isContinuous());
 
     auto img_tensor =
-        torch::from_blob(rgb_f32.data, {1, 512, 500, 3}, torch::kFloat32)
+        torch::from_blob(rgb_f32.data, {1, img_h, img_w, 3}, torch::kFloat32)
             .permute({0, 3, 1, 2})
             .contiguous(); // (1,3,512,500)
 
@@ -114,12 +137,12 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     std::vector<cv::Point> ret_coords;
     if (p_curve >= 0.5F) {
         torch::Tensor y_vec = curve_logits.squeeze(0).to(torch::kFloat32);
-        ret_coords.reserve(500);
+        ret_coords.reserve(img_w);
         auto y_cpu = y_vec.to(torch::kCPU).contiguous();
         const float *y_ptr = y_cpu.data_ptr<float>();
-        for (int x_pt = 0; x_pt < 500; ++x_pt) {
+        for (int x_pt = 0; x_pt < img_w; ++x_pt) {
             int y_clamped =
-                std::clamp((int)std::lround(y_ptr[x_pt]), 0, 512 - 1);
+                std::clamp((int)std::lround(y_ptr[x_pt]), 0, img_h - 1);
             ret_coords.emplace_back(x_pt, y_clamped);
         }
     }
@@ -170,7 +193,9 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
 
     std::vector<Eigen::Vector3d> pc_3d;
     int num_frames = interval > 1 ? interval : 2;
-    double increments = 499.0 / static_cast<double>(num_frames - 1);
+    int img_w = img_array.empty() ? 1 : img_array.front().cols;
+    double increments = (static_cast<double>(img_w) - 1.0) /
+                        static_cast<double>(num_frames - 1);
 
     for (size_t i = 0; i < img_array.size(); ++i) {
         const cv::Mat &img = img_array[i];
@@ -183,7 +208,10 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
             cv::imwrite((out_dir / processed_filename).string(),
                         point_cloud.image);
         }
-        assert(!point_cloud.coordinates.empty());
+        if (point_cloud.coordinates.empty()) {
+            // No curve detected; skip this frame gracefully
+            continue;
+        }
 
         int idx = static_cast<int>(i) % interval;
         double z_val = idx * increments;
@@ -197,3 +225,5 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
 
     return pc_3d;
 }
+
+} // namespace octa_ros::img

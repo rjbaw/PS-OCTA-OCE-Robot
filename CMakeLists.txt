@@ -112,7 +112,7 @@ add_executable(joint_state_publisher src/joint_state_publisher.cpp)
 ament_target_dependencies(joint_state_publisher rclcpp std_msgs sensor_msgs)
 
 add_executable(
-  coordinator_node src/coordinator_node.cpp src/utils.cpp)
+  coordinator_node src/coordinator_node.cpp src/utils.cpp src/scene_utils.cpp)
 ament_target_dependencies(
   coordinator_node
   rclcpp
@@ -134,6 +134,10 @@ target_link_libraries(
   "${OpenCV_LIBS}"
   Open3D::Open3D
   Eigen3::Eigen)
+
+add_library(octa_motion_utils STATIC src/motion_utils.cpp)
+target_include_directories(octa_motion_utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+ament_target_dependencies(octa_motion_utils geometry_msgs moveit_msgs shape_msgs)
 
 add_executable(focus_node src/focus_node.cpp src/process_img.cpp src/utils.cpp)
 ament_target_dependencies(
@@ -158,6 +162,7 @@ target_link_libraries(
   "${geometry_msgs_LIBRARIES}"
   "${OpenCV_LIBS}"
   "${TORCH_LIBRARIES}"
+  octa_motion_utils
   Open3D::Open3D
   Eigen3::Eigen)
 
@@ -175,7 +180,7 @@ ament_target_dependencies(
   std_msgs)
 target_link_libraries(
   move_z_angle_node "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}" octa_motion_utils)
 
 add_executable(reset_node src/reset_node.cpp src/utils.cpp)
 ament_target_dependencies(
@@ -190,7 +195,7 @@ ament_target_dependencies(
   std_msgs)
 target_link_libraries(
   reset_node "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}" octa_motion_utils)
 
 add_executable(freedrive_node src/freedrive_node.cpp)
 ament_target_dependencies(

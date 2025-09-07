@@ -1,5 +1,6 @@
 #include "utils.hpp"
 #include <format>
+#include <numbers>
 
 double to_radian(const double degree) {
     return (std::numbers::pi / 180 * degree);

@@ -1,23 +1,29 @@
-FROM osrf/ros:jazzy-desktop-full
+FROM ros:jazzy-ros-base
 
-RUN apt-get update &&\
-    apt-get install -y \
-    libopencv-dev \
-    libglfw3-dev \
-    ros-$ROS_DISTRO-ur \
-    vim \
-    tmux \
-    curl \
-    wget \
-    htop \
-    sudo \
-    iproute2 \
-    iputils-ping \
-    clang-format \
-    clang-tidy \
-    python3-typing-extensions \
-    ros-$ROS_DISTRO-ros2-control \ 
-    ros-$ROS_DISTRO-ros2-controllers
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    # Core dev tools
+    git build-essential cmake ninja-build \
+    # Build system and colcon
+    python3-colcon-common-extensions \
+    # C++ toolchain helpers
+    clang-format clang-tidy \
+    # Networking + utils
+    sudo iproute2 iputils-ping curl wget htop vim tmux \
+    # ROS control and UR drivers
+    ros-$ROS_DISTRO-ros2-control ros-$ROS_DISTRO-ros2-controllers ros-$ROS_DISTRO-ur \
+    # MoveIt and tf2 extras used by this repo
+    ros-$ROS_DISTRO-moveit ros-$ROS_DISTRO-tf2-ros ros-$ROS_DISTRO-tf2-eigen ros-$ROS_DISTRO-tf2-geometry-msgs \
+    ros-$ROS_DISTRO-controller-manager-msgs ros-$ROS_DISTRO-ur-dashboard-msgs \
+    # OpenCV (incl. contrib for img_hash)
+    libopencv-dev libopencv-contrib-dev \
+    # Open3D and math libs used across deps
+    libglfw3-dev libglew-dev libeigen3-dev \
+    # Python bits used by libtorch build script
+    python3 python3-dev python3-pip python3-typing-extensions \
+    # BLAS/LAPACK and Protobuf often required by libtorch/Open3D
+    libopenblas-dev liblapack-dev protobuf-compiler libprotobuf-dev zlib1g-dev libjpeg-dev libpng-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git &&\
     cd Open3D &&\
@@ -36,9 +42,10 @@ RUN git clone -b v2.8.0 --recurse-submodule https://github.com/pytorch/pytorch.g
     cd ../../ &&\
     rm -r pytorch
 
-RUN deluser ubuntu
-RUN adduser ubuntu --disabled-password --home /workspace/
-RUN passwd -d ubuntu && usermod -aG sudo ubuntu
+# Create non-root user for runtime (no GUI tools like RViz installed here)
+RUN id -u ubuntu >/dev/null 2>&1 || useradd -m -d /workspace -s /bin/bash ubuntu && \
+    passwd -d ubuntu || true && usermod -aG sudo ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu
 
 RUN chmod +x /ros_entrypoint.sh
 

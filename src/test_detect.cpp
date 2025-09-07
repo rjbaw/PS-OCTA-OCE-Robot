@@ -55,7 +55,8 @@ int main(int argc, char **argv) {
                 // Mirror tree under out_path
                 auto rel = std::filesystem::relative(file_path, in_root);
                 auto dst = out_path / rel;
-                SegmentResult res = detect_lines(img);
+                octa_ros::img::SegmentResult res =
+                    octa_ros::img::detect_lines(img);
                 std::filesystem::create_directories(dst.parent_path());
                 if (!cv::imwrite(dst.string(), res.image)) {
                     std::cerr << "Failed to write: " << dst << "\n";
@@ -73,16 +74,14 @@ int main(int argc, char **argv) {
             std::cerr << "Cannot open " << in_path << "\n";
             return 1;
         }
-        SegmentResult result = detect_lines(inputImage);
+        octa_ros::img::SegmentResult result =
+            octa_ros::img::detect_lines(inputImage);
         if (!cv::imwrite(out_path.string(), result.image)) {
             std::cerr << "Could not save result to " << out_path << "\n";
             return 1;
         }
         std::cout << "Saved result to " << out_path << "\n";
         return 0;
-    } catch (const c10::Error &e) {
-        std::cerr << "[test_detect] LibTorch error: " << e.msg() << "\n";
-        return 2;
     } catch (const std::exception &e) {
         std::cerr << "[test_detect] Exception: " << e.what() << "\n";
         return 3;
