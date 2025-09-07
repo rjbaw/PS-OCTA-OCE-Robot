@@ -90,7 +90,7 @@ CoordinatorNode::CoordinatorNode(const rclcpp::NodeOptions &options)
            rclcpp::NodeOptions(options)
                .automatically_declare_parameters_from_overrides(true)) {}
 
-  void CoordinatorNode::init() {
+void CoordinatorNode::init() {
     parallel_group_ =
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     {
@@ -150,43 +150,54 @@ CoordinatorNode::CoordinatorNode(const rclcpp::NodeOptions &options)
 
     // Declare tunable parameters with defaults
     if (!this->has_parameter("pub_period_ms")) {
-        this->declare_parameter<int>("pub_period_ms", pub_period_ms_);
+        this->declare_parameter<int64_t>("pub_period_ms", pub_period_ms_);
     }
     if (!this->has_parameter("main_loop_period_ms")) {
-        this->declare_parameter<int>("main_loop_period_ms", main_loop_period_ms_);
+        this->declare_parameter<int64_t>("main_loop_period_ms",
+                                         main_loop_period_ms_);
     }
     if (!this->has_parameter("action_server_wait_ms")) {
-        this->declare_parameter<int>("action_server_wait_ms", action_server_wait_ms_);
+        this->declare_parameter<int64_t>("action_server_wait_ms",
+                                         action_server_wait_ms_);
     }
     if (!this->has_parameter("config_apply_ms")) {
-        this->declare_parameter<int>("config_apply_ms", config_apply_ms_);
+        this->declare_parameter<int64_t>("config_apply_ms", config_apply_ms_);
     }
     if (!this->has_parameter("scan_trigger_timeout_sec")) {
-        this->declare_parameter<double>("scan_trigger_timeout_sec", scan_trigger_timeout_sec_);
+        this->declare_parameter<double>("scan_trigger_timeout_sec",
+                                        scan_trigger_timeout_sec_);
     }
     if (!this->has_parameter("capture_service_wait_ms")) {
-        this->declare_parameter<int>("capture_service_wait_ms", capture_service_wait_ms_);
+        this->declare_parameter<int64_t>("capture_service_wait_ms",
+                                         capture_service_wait_ms_);
     }
     if (!this->has_parameter("capture_response_timeout_ms")) {
-        this->declare_parameter<int>("capture_response_timeout_ms", capture_response_timeout_ms_);
+        this->declare_parameter<int64_t>("capture_response_timeout_ms",
+                                         capture_response_timeout_ms_);
     }
     if (!this->has_parameter("scan3d_window_ms")) {
-        this->declare_parameter<int>("scan3d_window_ms", scan3d_window_ms_);
+        this->declare_parameter<int64_t>("scan3d_window_ms", scan3d_window_ms_);
     }
     if (!this->has_parameter("service_poll_interval_ms")) {
-        this->declare_parameter<int>("service_poll_interval_ms", service_poll_interval_ms_);
+        this->declare_parameter<int64_t>("service_poll_interval_ms",
+                                         service_poll_interval_ms_);
     }
 
     // Load parameters
     pub_period_ms_ = this->get_parameter("pub_period_ms").as_int();
     main_loop_period_ms_ = this->get_parameter("main_loop_period_ms").as_int();
-    action_server_wait_ms_ = this->get_parameter("action_server_wait_ms").as_int();
+    action_server_wait_ms_ =
+        this->get_parameter("action_server_wait_ms").as_int();
     config_apply_ms_ = this->get_parameter("config_apply_ms").as_int();
-    scan_trigger_timeout_sec_ = this->get_parameter("scan_trigger_timeout_sec").as_double();
-    capture_service_wait_ms_ = this->get_parameter("capture_service_wait_ms").as_int();
-    capture_response_timeout_ms_ = this->get_parameter("capture_response_timeout_ms").as_int();
+    scan_trigger_timeout_sec_ =
+        this->get_parameter("scan_trigger_timeout_sec").as_double();
+    capture_service_wait_ms_ =
+        this->get_parameter("capture_service_wait_ms").as_int();
+    capture_response_timeout_ms_ =
+        this->get_parameter("capture_response_timeout_ms").as_int();
     scan3d_window_ms_ = this->get_parameter("scan3d_window_ms").as_int();
-    service_poll_interval_ms_ = this->get_parameter("service_poll_interval_ms").as_int();
+    service_poll_interval_ms_ =
+        this->get_parameter("service_poll_interval_ms").as_int();
 
     pub_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(pub_period_ms_),
@@ -226,11 +237,70 @@ CoordinatorNode::CoordinatorNode(const rclcpp::NodeOptions &options)
         RCLCPP_WARN(get_logger(), "Reset action server not available yet.");
     }
 
+    // Parameter update callback
+    param_cb_handle_ = this->add_on_set_parameters_callback(
+        [this](const std::vector<rclcpp::Parameter> &params) {
+            rcl_interfaces::msg::SetParametersResult res;
+            res.successful = true;
+            res.reason = "";
+            auto must_be_positive_int = [&](const rclcpp::Parameter &param) {
+                if (param.as_int() <= 0) {
+                    res.successful = false;
+                    res.reason = std::string(param.get_name()) + " must be > 0";
+                    return false;
+                }
+                return true;
+            };
+            for (const auto &param : params) {
+                const auto &name = param.get_name();
+                if (name == "pub_period_ms" || name == "main_loop_period_ms" ||
+                    name == "action_server_wait_ms" ||
+                    name == "config_apply_ms" ||
+                    name == "capture_service_wait_ms" ||
+                    name == "capture_response_timeout_ms" ||
+                    name == "scan3d_window_ms" ||
+                    name == "service_poll_interval_ms") {
+                    if (!must_be_positive_int(param)) {
+                        return res;
+                    }
+                } else if (name == "scan_trigger_timeout_sec") {
+                    if (param.as_double() < 0.0) {
+                        res.successful = false;
+                        res.reason = "scan_trigger_timeout_sec must be >= 0";
+                        return res;
+                    }
+                }
+            }
+            for (const auto &param : params) {
+                const auto &name = param.get_name();
+                if (name == "pub_period_ms") {
+                    pub_period_ms_ = param.as_int();
+                } else if (name == "main_loop_period_ms") {
+                    main_loop_period_ms_ = param.as_int();
+                } else if (name == "action_server_wait_ms") {
+                    action_server_wait_ms_ = param.as_int();
+                } else if (name == "config_apply_ms") {
+                    config_apply_ms_ = param.as_int();
+                } else if (name == "capture_service_wait_ms") {
+                    capture_service_wait_ms_ = param.as_int();
+                } else if (name == "capture_response_timeout_ms") {
+                    capture_response_timeout_ms_ = param.as_int();
+                } else if (name == "scan3d_window_ms") {
+                    scan3d_window_ms_ = param.as_int();
+                } else if (name == "service_poll_interval_ms") {
+                    service_poll_interval_ms_ = param.as_int();
+                } else if (name == "scan_trigger_timeout_sec") {
+                    scan_trigger_timeout_sec_ = param.as_double();
+                }
+            }
+            return res;
+        });
+
     RCLCPP_INFO(get_logger(), "Coordinator Node Initialized.");
 }
 
 void CoordinatorNode::trigger_apply_config() {
-    std::chrono::milliseconds duration = std::chrono::milliseconds(config_apply_ms_);
+    auto duration = std::chrono::milliseconds(config_apply_ms_);
     apply_config_ = true;
     if (config_timer_) {
         config_timer_->cancel();
@@ -840,8 +910,8 @@ void CoordinatorNode::scan3d_callback(
     }
     if (request->activate) {
         if (scan_3d_read_) {
-            rclcpp::Time deadline = now() +
-                                    rclcpp::Duration(0, scan3d_window_ms_ * 1'000'000);
+            rclcpp::Time deadline =
+                now() + rclcpp::Duration(0, scan3d_window_ms_ * 1'000'000);
             while (now() < deadline && !scan_3d_read_) {
                 rclcpp::spin_some(get_node_base_interface());
                 rclcpp::sleep_for(
@@ -871,8 +941,8 @@ bool CoordinatorNode::call_capture_background() {
 
     auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
     auto fut = service_capture_background_->async_send_request(req);
-    return fut.wait_for(std::chrono::milliseconds(capture_response_timeout_ms_)) ==
-               std::future_status::ready &&
+    return fut.wait_for(std::chrono::milliseconds(
+               capture_response_timeout_ms_)) == std::future_status::ready &&
            fut.get()->success;
 }
 

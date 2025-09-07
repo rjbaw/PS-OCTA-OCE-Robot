@@ -33,8 +33,14 @@
 
 ### Docker Image (recommended)
 ```bash
-cd docker/
-docker compose up -d
+# Export robot IP address or just use defaults
+export ROBOT_IP=${ROBOT_IP}
+
+# Hardware run
+make run
+
+# Dev container
+make dev
 ```
 
 ### Native build

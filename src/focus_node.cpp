@@ -5,11 +5,12 @@
  */
 
 #include "focus_node.hpp"
-#include <rclcpp/executors.hpp>
-#include "process_img.hpp"
 #include "motion_utils.hpp"
-#include <open3d/Open3D.h>
+#include "process_img.hpp"
+#include <filesystem>
 #include <format>
+#include <open3d/Open3D.h>
+#include <rclcpp/executors.hpp>
 
 using namespace std::chrono_literals;
 
@@ -32,45 +33,129 @@ void FocusActionServer::init() {
             this->handle_accepted(goal_handle);
         });
 
-  if (!this->has_parameter("plan_only")) {
-    this->declare_parameter<bool>("plan_only", false);
-  }
-  if (!this->has_parameter("offline_mode")) {
-    this->declare_parameter<bool>("offline_mode", false);
-  }
-  // Tunable parameters
-  if (!this->has_parameter("gating_interval_sec")) {
-    this->declare_parameter<double>("gating_interval_sec", gating_interval_);
-  }
-  if (!this->has_parameter("focus_step_timeout_sec")) {
-    this->declare_parameter<double>("focus_step_timeout_sec", focus_step_timeout_sec_);
-  }
-  if (!this->has_parameter("scan3d_service_wait_ms")) {
-    this->declare_parameter<int>("scan3d_service_wait_ms", scan3d_service_wait_ms_);
-  }
-  if (!this->has_parameter("scan3d_response_timeout_ms")) {
-    this->declare_parameter<int>("scan3d_response_timeout_ms", scan3d_response_timeout_ms_);
-  }
-  if (!this->has_parameter("image_width")) {
-    this->declare_parameter<int>("image_width", image_width_);
-  }
-  if (!this->has_parameter("image_height")) {
-    this->declare_parameter<int>("image_height", image_height_);
-  }
-  if (!this->has_parameter("px_per_mm")) {
-    this->declare_parameter<double>("px_per_mm", px_per_mm_);
-  }
+    if (!this->has_parameter("plan_only")) {
+        this->declare_parameter<bool>("plan_only", false);
+    }
+    if (!this->has_parameter("offline_mode")) {
+        this->declare_parameter<bool>("offline_mode", false);
+    }
+    // Tunable parameters
+    if (!this->has_parameter("gating_interval_sec")) {
+        this->declare_parameter<double>("gating_interval_sec",
+                                        gating_interval_);
+    }
+    if (!this->has_parameter("focus_step_timeout_sec")) {
+        this->declare_parameter<double>("focus_step_timeout_sec",
+                                        focus_step_timeout_sec_);
+    }
+    if (!this->has_parameter("scan3d_service_wait_ms")) {
+        this->declare_parameter<int64_t>("scan3d_service_wait_ms",
+                                         scan3d_service_wait_ms_);
+    }
+    if (!this->has_parameter("scan3d_response_timeout_ms")) {
+        this->declare_parameter<int64_t>("scan3d_response_timeout_ms",
+                                         scan3d_response_timeout_ms_);
+    }
+    if (!this->has_parameter("image_width")) {
+        this->declare_parameter<int64_t>("image_width", image_width_);
+    }
+    if (!this->has_parameter("image_height")) {
+        this->declare_parameter<int64_t>("image_height", image_height_);
+    }
+    if (!this->has_parameter("px_per_mm")) {
+        this->declare_parameter<double>("px_per_mm", px_per_mm_);
+    }
+    if (!this->has_parameter("curve_model_path")) {
+        this->declare_parameter<std::string>("curve_model_path",
+                                             std::string(""));
+    }
 
-  bool plan_only = this->get_parameter("plan_only").as_bool();
-  bool offline_mode = this->get_parameter("offline_mode").as_bool();
-  gating_interval_ = this->get_parameter("gating_interval_sec").as_double();
-  focus_step_timeout_sec_ = this->get_parameter("focus_step_timeout_sec").as_double();
-  scan3d_service_wait_ms_ = this->get_parameter("scan3d_service_wait_ms").as_int();
-  scan3d_response_timeout_ms_ =
-      this->get_parameter("scan3d_response_timeout_ms").as_int();
-  image_width_ = this->get_parameter("image_width").as_int();
-  image_height_ = this->get_parameter("image_height").as_int();
-  px_per_mm_ = this->get_parameter("px_per_mm").as_double();
+    // Parameter update callback
+    param_cb_handle_ = this->add_on_set_parameters_callback(
+        [this](const std::vector<rclcpp::Parameter> &params) {
+            rcl_interfaces::msg::SetParametersResult result;
+            result.successful = true;
+            result.reason = "";
+            for (const auto &param : params) {
+                if (param.get_name() == "gating_interval_sec") {
+                    if (param.as_double() < 0.0) {
+                        result.successful = false;
+                        result.reason = "gating_interval_sec must be >= 0";
+                        return result;
+                    }
+                } else if (param.get_name() == "focus_step_timeout_sec") {
+                    if (param.as_double() <= 0.0) {
+                        result.successful = false;
+                        result.reason = "focus_step_timeout_sec must be > 0";
+                        return result;
+                    }
+                } else if (param.get_name() == "scan3d_service_wait_ms" ||
+                           param.get_name() == "scan3d_response_timeout_ms" ||
+                           param.get_name() == "image_width" ||
+                           param.get_name() == "image_height") {
+                    if (param.as_int() <= 0) {
+                        result.successful = false;
+                        result.reason = "integer parameter must be > 0";
+                        return result;
+                    }
+                } else if (param.get_name() == "px_per_mm") {
+                    if (param.as_double() <= 0.0) {
+                        result.successful = false;
+                        result.reason = "px_per_mm must be > 0";
+                        return result;
+                    }
+                } else if (param.get_name() == "curve_model_path") {
+                    const auto &path_val = param.as_string();
+                    if (!path_val.empty() &&
+                        !std::filesystem::exists(path_val)) {
+                        result.successful = false;
+                        result.reason = "curve_model_path does not exist";
+                        return result;
+                    }
+                }
+            }
+            for (const auto &param : params) {
+                if (param.get_name() == "gating_interval_sec") {
+                    gating_interval_ = param.as_double();
+                } else if (param.get_name() == "focus_step_timeout_sec") {
+                    focus_step_timeout_sec_ = param.as_double();
+                } else if (param.get_name() == "scan3d_service_wait_ms") {
+                    scan3d_service_wait_ms_ = param.as_int();
+                } else if (param.get_name() == "scan3d_response_timeout_ms") {
+                    scan3d_response_timeout_ms_ = param.as_int();
+                } else if (param.get_name() == "image_width") {
+                    image_width_ = param.as_int();
+                } else if (param.get_name() == "image_height") {
+                    image_height_ = param.as_int();
+                } else if (param.get_name() == "px_per_mm") {
+                    px_per_mm_ = param.as_double();
+                } else if (param.get_name() == "curve_model_path") {
+                    const std::string &path_val = param.as_string();
+                    if (!path_val.empty()) {
+                        octa_ros::img::set_curve_model_path(path_val);
+                    }
+                }
+            }
+            return result;
+        });
+
+    bool plan_only = this->get_parameter("plan_only").as_bool();
+    bool offline_mode = this->get_parameter("offline_mode").as_bool();
+    gating_interval_ = this->get_parameter("gating_interval_sec").as_double();
+    focus_step_timeout_sec_ =
+        this->get_parameter("focus_step_timeout_sec").as_double();
+    scan3d_service_wait_ms_ =
+        this->get_parameter("scan3d_service_wait_ms").as_int();
+    scan3d_response_timeout_ms_ =
+        this->get_parameter("scan3d_response_timeout_ms").as_int();
+    image_width_ = this->get_parameter("image_width").as_int();
+    image_height_ = this->get_parameter("image_height").as_int();
+    px_per_mm_ = this->get_parameter("px_per_mm").as_double();
+    auto curve_model_path = this->get_parameter("curve_model_path").as_string();
+    if (!curve_model_path.empty() &&
+        std::filesystem::exists(curve_model_path)) {
+        octa_ros::img::set_curve_model_path(curve_model_path);
+    }
     if (!(plan_only || offline_mode)) {
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
@@ -208,7 +293,8 @@ void FocusActionServer::image_callback(
     RCLCPP_DEBUG(get_logger(), "Storing new frame after %.2f sec (size=%zu)",
                  elapsed, msg->img.size());
 
-  cv::Mat new_img(image_height_, image_width_, CV_8UC1, msg->img.data());
+    cv::Mat new_img(static_cast<int>(image_height_),
+                    static_cast<int>(image_width_), CV_8UC1, msg->img.data());
 
     if (is_black(new_img)) {
         RCLCPP_DEBUG(get_logger(), "Discarding black frame");
@@ -220,15 +306,16 @@ void FocusActionServer::image_callback(
 }
 
 bool FocusActionServer::call_scan3d(bool activate) {
-  if (!service_scan_3d_->wait_for_service(std::chrono::milliseconds(scan3d_service_wait_ms_))) {
-    return false;
-  }
+    if (!service_scan_3d_->wait_for_service(
+            std::chrono::milliseconds(scan3d_service_wait_ms_))) {
+        return false;
+    }
     auto req = std::make_shared<Scan3d::Request>();
     req->activate = activate;
     auto fut = service_scan_3d_->async_send_request(req);
-  return fut.wait_for(std::chrono::milliseconds(scan3d_response_timeout_ms_)) ==
-             std::future_status::ready &&
-         fut.get()->success;
+    return fut.wait_for(std::chrono::milliseconds(
+               scan3d_response_timeout_ms_)) == std::future_status::ready &&
+           fut.get()->success;
 }
 
 bool FocusActionServer::tol_measure(const double &roll, const double &pitch,

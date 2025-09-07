@@ -89,14 +89,18 @@ class FocusActionServer : public rclcpp::Node {
     double tmp_yaw_ = 0.0;
 
     double gating_interval_ = 0.02;
-    int image_width_ = 500;
-    int image_height_ = 512;
+    int64_t image_width_ = 500;
+    int64_t image_height_ = 512;
     double px_per_mm_ = 65.0;
 
     // Tunables
     double focus_step_timeout_sec_ = 5.0;
-    int scan3d_service_wait_ms_ = 200;
-    int scan3d_response_timeout_ms_ = 2000;
+    int64_t scan3d_service_wait_ms_ = 200;
+    int64_t scan3d_response_timeout_ms_ = 2000;
+
+    // Parameter callback
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
+        param_cb_handle_;
 
     double angle_tolerance_ = 0.0;
     double z_tolerance_ = 0.0;
@@ -111,7 +115,7 @@ class FocusActionServer : public rclcpp::Node {
 
     cv::Mat get_img();
 
-    void image_callback(const octa_ros::msg::Img::SharedPtr msg);
+    void image_callback(octa_ros::msg::Img::SharedPtr msg);
 
     bool call_scan3d(bool activate);
 
@@ -122,9 +126,9 @@ class FocusActionServer : public rclcpp::Node {
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const Focus::Goal> goal);
     rclcpp_action::CancelResponse
-    handle_cancel(const std::shared_ptr<GoalHandleFocus> goal_handle);
-    void handle_accepted(const std::shared_ptr<GoalHandleFocus> goal_handle);
-    void execute(const std::shared_ptr<GoalHandleFocus> goal_handle);
+    handle_cancel(std::shared_ptr<GoalHandleFocus> goal_handle);
+    void handle_accepted(std::shared_ptr<GoalHandleFocus> goal_handle);
+    void execute(std::shared_ptr<GoalHandleFocus> goal_handle);
 };
 
-#endif  // FOCUS_NODE_HPP
+#endif // FOCUS_NODE_HPP

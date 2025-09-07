@@ -17,4 +17,4 @@ moveit_msgs::msg::CollisionObject make_monitor(const std::string &frame_id);
 
 } // namespace octa_ros::scene
 
-#endif  // SCENE_UTILS_HPP
+#endif // SCENE_UTILS_HPP

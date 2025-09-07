@@ -212,7 +212,8 @@ void MoveZAngleActionServer::execute(
 
     bool execute_success = true;
     if (!(plan_only || offline_mode)) {
-        execute_success = moveit_cpp_->execute(plan_solution.trajectory);
+        auto exec_status = moveit_cpp_->execute(plan_solution.trajectory);
+        execute_success = static_cast<bool>(exec_status);
     } else {
         RCLCPP_INFO(get_logger(), "Plan-only/Offline mode: skipping execution");
     }

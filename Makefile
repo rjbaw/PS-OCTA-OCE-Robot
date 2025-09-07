@@ -19,7 +19,7 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: help build test format tidy lint clean docker-ci-test
+.PHONY: help build test format tidy lint clean docker-ci-test dev run
 
 help:
 	@echo "Make targets:"
@@ -29,6 +29,8 @@ help:
 	@echo "  tidy    - run clang-tidy on tracked C/C++ files"
 	@echo "  lint    - run format and clang-tidy together"
 	@echo "  clean   - Remove build/install/log and compile_commands.json"
+	@echo "  run     - Run deploy container"
+	@echo "  dev     - Run dev container"
 	@echo "  docker-ci-test  - Build image if needed and run tests in it"
 
 build:
@@ -110,10 +112,7 @@ DOCKERFILE ?= docker/Dockerfile
 
 docker-ci-test:
 	@set -e; \
-	if ! docker image inspect $(DOCKER_CI_TAG) >/dev/null 2>&1; then \
-	  echo "[docker-ci-test] Building CI image: $(DOCKER_CI_TAG)"; \
-	  docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) .; \
-	fi; \
+	docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) .; \
 	docker run --rm --name octa_ci \
 	  -u "$(shell id -u):$(shell id -g)" \
 	  -e HOME=/tmp \
@@ -122,3 +121,15 @@ docker-ci-test:
 	  $(DOCKER_CI_TAG) \
 	  bash -lc 'set -euo pipefail; set +u; source /opt/ros/jazzy/setup.bash; set -u; \
 	    make -C /workspace/repo BUILD_BASE=/tmp/colcon_build INSTALL_BASE=/tmp/colcon_install LOG_BASE=/tmp/colcon_log test'
+
+.PHONY: dev
+dev:
+	@set -e; \
+	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up --build
+
+.PHONY: run
+run:
+	@set -e; \
+	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up

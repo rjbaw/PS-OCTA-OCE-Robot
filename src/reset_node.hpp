@@ -53,10 +53,10 @@ class ResetActionServer : public rclcpp::Node {
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const ResetAction::Goal> goal);
     rclcpp_action::CancelResponse
-    handle_cancel(const std::shared_ptr<GoalHandleResetAction> goal_handle);
-    void handle_accepted(const std::shared_ptr<GoalHandleResetAction> goal_handle);
+    handle_cancel(std::shared_ptr<GoalHandleResetAction> goal_handle);
+    void handle_accepted(std::shared_ptr<GoalHandleResetAction> goal_handle);
     void publish_stop(double decel = 2.0);
-    void execute(const std::shared_ptr<GoalHandleResetAction> goal_handle);
+    void execute(std::shared_ptr<GoalHandleResetAction> goal_handle);
 };
 
-#endif  // RESET_NODE_HPP
+#endif // RESET_NODE_HPP

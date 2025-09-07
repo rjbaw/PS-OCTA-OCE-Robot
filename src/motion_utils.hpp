@@ -12,10 +12,11 @@
 
 namespace octa_ros::motion {
 
-moveit_msgs::msg::Constraints
-make_envelope(const Eigen::Isometry3d &centre, const std::string &frame_id,
-              double lin_radius_m, double ang_radius_rad);
+moveit_msgs::msg::Constraints make_envelope(const Eigen::Isometry3d &centre,
+                                            const std::string &frame_id,
+                                            double lin_radius_m,
+                                            double ang_radius_rad);
 
 } // namespace octa_ros::motion
 
-#endif  // MOTION_UTILS_HPP
+#endif // MOTION_UTILS_HPP

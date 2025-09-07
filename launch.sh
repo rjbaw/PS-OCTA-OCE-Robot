@@ -19,30 +19,34 @@ sim="false"
 debug="false"
 while getopts ":hsd" option; do
 	case $option in
-	h) # display Help
+	h)
 		help
 		exit
 		;;
 	s) sim="true" ;;
 	d) debug="true" ;;
-	\?) # Invalid option
+	\?)
 		echo "Error: Invalid option"
 		exit
 		;;
 	esac
 done
 
-CHECK_INTERVAL=0.3
-PING_TIMEOUT=0.3
-MAX_RETRIES=10
+CHECK_INTERVAL="${CHECK_INTERVAL:-0.3}"
+PING_TIMEOUT="${PING_TIMEOUT:-0.3}"
+MAX_RETRIES="${MAX_RETRIES:-10}"
+HOST="${HOST:-192.168.0.2}"
+RUN_STATE_TIMEOUT="${RUN_STATE_TIMEOUT:-0.25s}"
+
 TMUX_SESSION="ros_driver_session"
 init_start=true
-HOST="192.168.0.2"
 
-if [[ "$sim" == "true" ]]; then
-	MONITOR_IP="192.168.56.101"
-else
-	MONITOR_IP="192.168.0.10"
+if [[ -z "${ROBOT_IP:-}" ]]; then
+	if [[ "$sim" == "true" ]]; then
+		ROBOT_IP="192.168.56.101"
+	else
+		ROBOT_IP="192.168.0.10"
+	fi
 fi
 
 tmux_session_alive() {
@@ -62,11 +66,11 @@ start_ros() {
 	if [[ "$sim" == "true" ]]; then
 		tmux new-session -d -s "$TMUX_SESSION" \
 			"bash -ic 'source install/setup.bash; \
-             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true 2>&1 | tee /tmp/ros_launch.log'"
+             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true 2>&1 | tee /tmp/ros_launch.log'"
 	else
 		tmux new-session -d -s "$TMUX_SESSION" \
 			"bash -ic 'source install/setup.bash; \
-             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true reverse_ip:=$HOST 2>&1 | tee /tmp/ros_launch.log'"
+             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST 2>&1 | tee /tmp/ros_launch.log'"
 	fi
 
 	echo "[INFO] Tmux session '$TMUX_SESSION' created. You can attach with:"
@@ -75,8 +79,8 @@ start_ros() {
 }
 
 check_labview_topic() {
-	# timeout 0.25s ros2 topic echo -n 1 -q --field data /run_state 2>/dev/null
-	if ! timeout 0.25s ros2 run octa_ros run_state_listener \
+-	# timeout 0.25s ros2 topic echo -n 1 -q --field data /run_state 2>/dev/null
+	if ! timeout "$RUN_STATE_TIMEOUT" ros2 run octa_ros run_state_listener \
 		>/tmp/run_state.out 2>/dev/null; then
 		printf '\n'
 		return
@@ -89,21 +93,21 @@ if [[ $debug == "true" ]]; then
 	set -x
 	stop_ros
 	if [[ $sim == "true" ]]; then
-		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true
+		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true
 	else
-		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$MONITOR_IP headless_mode:=true reverse_ip:=$HOST
+		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST
 	fi
 	stop_ros
 	exit 0
 fi
 
-echo "[INFO] Checking connectivity to $MONITOR_IP every $CHECK_INTERVAL seconds."
+echo "[INFO] Checking connectivity to $ROBOT_IP every $CHECK_INTERVAL seconds."
 echo "[INFO] Press Ctrl+C to stop this monitor script."
 ros_running=false
 fails=0
 echo "[INFO] ROS is waiting for Robot to be online...."
 while true; do
-	if timeout "$PING_TIMEOUT" ping -c 1 -W 1 "$MONITOR_IP" &>/dev/null; then
+	if timeout "$PING_TIMEOUT" ping -c 1 -W 1 "$ROBOT_IP" &>/dev/null; then
 		fails=0
 		if $init_start; then
 			echo "[INFO] init_start=true"
@@ -138,13 +142,13 @@ while true; do
 	else
 		((fails += 1))
 		if $ros_running; then
-			echo "[INFO] $MONITOR_IP is offline. Stopping ROS..."
+			echo "[INFO] $ROBOT_IP is offline. Stopping ROS..."
 			stop_ros
 			ros_running=false
 			echo "[INFO] ROS is waiting for Robot to be online...."
 		fi
 		if ((fails >= MAX_RETRIES)); then
-			ip neigh flush to "$MONITOR_IP" nud failed stale reachable 2>/dev/null
+			ip neigh flush to "$ROBOT_IP" nud failed stale reachable 2>/dev/null
 			fails=0
 		fi
 	fi

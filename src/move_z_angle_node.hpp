@@ -54,11 +54,11 @@ class MoveZAngleActionServer : public rclcpp::Node {
                 std::shared_ptr<const MoveZAngle::Goal> goal);
 
     rclcpp_action::CancelResponse
-    handle_cancel(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    handle_cancel(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
 
-    void handle_accepted(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    void handle_accepted(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
 
-    void execute(const std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    void execute(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
 };
 
-#endif  // MOVE_Z_ANGLE_NODE_HPP
+#endif // MOVE_Z_ANGLE_NODE_HPP

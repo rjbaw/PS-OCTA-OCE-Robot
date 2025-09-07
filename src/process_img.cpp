@@ -1,6 +1,6 @@
 #include "process_img.hpp"
-#include <format>
 #include <filesystem>
+#include <format>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <c10/core/TensorOptions.h>
@@ -79,6 +79,12 @@ void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
     }
 }
 
+static std::string g_curve_model_path;
+
+void set_curve_model_path(const std::string &path) {
+    g_curve_model_path = path;
+}
+
 SegmentResult detect_lines(const cv::Mat &inputImg) {
     CV_Assert(!inputImg.empty());
     const int img_h = inputImg.rows;
@@ -86,10 +92,16 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     CV_Assert(img_h > 0 && img_w > 0);
     CV_Assert(inputImg.channels() == 1);
 
-    const auto share = ament_index_cpp::get_package_share_directory("octa_ros");
-    std::filesystem::path model_stdpath =
-        std::filesystem::path(share) / "config/curve_model.ts";
-    const std::string model_path = model_stdpath.string();
+    std::string model_path;
+    if (!g_curve_model_path.empty()) {
+        model_path = g_curve_model_path;
+    } else {
+        const auto share =
+            ament_index_cpp::get_package_share_directory("octa_ros");
+        std::filesystem::path model_stdpath =
+            std::filesystem::path(share) / "config/curve_model.ts";
+        model_path = model_stdpath.string();
+    }
 
     torch::Device device = torch::kCPU;
     if (torch::cuda::is_available()) {

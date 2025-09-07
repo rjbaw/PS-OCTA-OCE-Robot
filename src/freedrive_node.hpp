@@ -34,15 +34,15 @@ class FreedriveActionServer : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr keepalive_timer_;
 
     rclcpp_action::GoalResponse
-    handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID goal_id,
+    handle_goal([[maybe_unused]] rclcpp_action::GoalUUID goal_id,
                 std::shared_ptr<const Freedrive::Goal> goal);
 
     rclcpp_action::CancelResponse
-    handle_cancel(const std::shared_ptr<GoalHandleFreedrive> goal_handle);
+    handle_cancel(std::shared_ptr<GoalHandleFreedrive> goal_handle);
 
-    void handle_accepted(const std::shared_ptr<GoalHandleFreedrive> goal_handle);
+    void handle_accepted(std::shared_ptr<GoalHandleFreedrive> goal_handle);
 
-    void execute(const std::shared_ptr<GoalHandleFreedrive> goal_handle);
+    void execute(std::shared_ptr<GoalHandleFreedrive> goal_handle);
 
     void start_keepalive();
     void stop_keepalive();
@@ -50,4 +50,4 @@ class FreedriveActionServer : public rclcpp::Node {
     bool switch_to_freedrive_controller(bool to_freedrive);
 };
 
-#endif  // FREEDRIVE_NODE_HPP
+#endif // FREEDRIVE_NODE_HPP

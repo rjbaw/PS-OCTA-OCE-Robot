@@ -39,6 +39,8 @@ SegmentResult detect_lines(const cv::Mat &inputImg);
 std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       int interval);
 
+void set_curve_model_path(const std::string &path);
+
 } // namespace octa_ros::img
 
 #endif // PROCESS_IMG_HPP
