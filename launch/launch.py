@@ -62,6 +62,8 @@ def launch_setup():
     publish_robot_description_semantic = LaunchConfiguration(
         "publish_robot_description_semantic"
     )
+    shutdown_on_exit = LaunchConfiguration("shutdown_on_exit")
+    test_mode = LaunchConfiguration("test_mode")
 
     safety_limits = LaunchConfiguration("safety_limits")
     safety_pos_margin = LaunchConfiguration("safety_pos_margin")
@@ -423,6 +425,7 @@ def launch_setup():
         name="coordinator_node",
         output="screen",
         parameters=common_parameters,
+        condition=UnlessCondition(test_mode),
     )
 
     freedrive_node = Node(
@@ -430,7 +433,8 @@ def launch_setup():
         executable="freedrive_node",
         name="freedrive_node",
         output="screen",
-        parameters=common_parameters + [{"dry_run": LaunchConfiguration("use_mock_hardware")}],
+        parameters=common_parameters
+        + [{"dry_run": LaunchConfiguration("use_mock_hardware")}],
     )
 
     focus_node = Node(
@@ -500,27 +504,28 @@ def launch_setup():
     )
 
     joint_publisher_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=robot_state_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=robot_state_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
-
     coordinator_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=coordinator_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=coordinator_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
-
     freedrive_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=freedrive_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=freedrive_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
-
     focus_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=focus_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=focus_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
-
     reset_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=reset_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=reset_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
-
     move_z_angle_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=move_z_angle_node, on_exit=[Shutdown()])
+        OnProcessExit(target_action=move_z_angle_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
     )
 
     nodes_to_start = (
@@ -902,6 +907,20 @@ def generate_launch_description():
             "publish_robot_description_semantic",
             default_value="true",
             description="MoveGroup publishes robot description semantic",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "shutdown_on_exit",
+            default_value="true",
+            description="Shutdown the launch when key nodes exit",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "test_mode",
+            default_value="false",
+            description="Enable lean test mode",
         )
     )
     return LaunchDescription(declared_arguments + launch_setup())

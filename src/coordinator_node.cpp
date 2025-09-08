@@ -93,10 +93,41 @@ CoordinatorNode::CoordinatorNode(const rclcpp::NodeOptions &options)
 void CoordinatorNode::init() {
     parallel_group_ =
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    // Topic/action/service name parameters
+    auto declare_str = [&](const char *name, const char *def,
+                           const char *desc) {
+        if (!this->has_parameter(name)) {
+            rcl_interfaces::msg::ParameterDescriptor descriptor;
+            descriptor.description = desc;
+            this->declare_parameter<std::string>(name, std::string(def),
+                                                 descriptor);
+        }
+        return this->get_parameter(name).as_string();
+    };
+    const std::string topic_robot_data = declare_str(
+        "topic_robot_data", "robot_data", "Robotdata publish topic");
+    const std::string topic_labview_data = declare_str(
+        "topic_labview_data", "labview_data", "Labviewdata subscription topic");
+    const std::string topic_cancel = declare_str(
+        "topic_cancel", "cancel_current_action", "Cancel Bool topic");
+    const std::string srv_scan3d =
+        declare_str("srv_scan3d", "scan_3d", "Scan3d service name");
+    const std::string srv_capture_background =
+        declare_str("srv_capture_background", "capture_background",
+                    "Capture background service");
+    const std::string action_focus_name =
+        declare_str("action_focus_name", "focus_action", "Focus action name");
+    const std::string action_movez_name = declare_str(
+        "action_movez_name", "move_z_angle_action", "MoveZAngle action name");
+    const std::string action_freedrive_name = declare_str(
+        "action_freedrive_name", "freedrive_action", "Freedrive action name");
+    const std::string action_reset_name =
+        declare_str("action_reset_name", "reset_action", "Reset action name");
+
     {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
-        pub_handle_ =
-            this->create_publisher<octa_ros::msg::Robotdata>("robot_data", qos);
+        pub_handle_ = this->create_publisher<octa_ros::msg::Robotdata>(
+            topic_robot_data, qos);
     }
 
     {
@@ -104,7 +135,7 @@ void CoordinatorNode::init() {
         options.callback_group = parallel_group_;
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         sub_handle_ = this->create_subscription<octa_ros::msg::Labviewdata>(
-            "labview_data", qos,
+            topic_labview_data, qos,
             [this](const octa_ros::msg::Labviewdata::SharedPtr msg) {
                 this->subscriber_callback(msg);
             },
@@ -115,7 +146,7 @@ void CoordinatorNode::init() {
         options.callback_group = parallel_group_;
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         cancel_handle_ = this->create_subscription<std_msgs::msg::Bool>(
-            "cancel_current_action", qos,
+            topic_cancel, qos,
             [this](const std_msgs::msg::Bool::SharedPtr msg) {
                 this->cancel_callback(msg);
             },
@@ -125,7 +156,7 @@ void CoordinatorNode::init() {
     {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
         scan_3d_srv_ = create_service<Scan3d>(
-            "scan_3d",
+            srv_scan3d,
             [this](const std::shared_ptr<Scan3d::Request> request,
                    const std::shared_ptr<Scan3d::Response> response) {
                 this->scan3d_callback(request, response);
@@ -208,16 +239,16 @@ void CoordinatorNode::init() {
         [this]() { this->main_loop(); }, parallel_group_);
 
     focus_action_client_ =
-        rclcpp_action::create_client<FocusAction>(this, "focus_action");
+        rclcpp_action::create_client<FocusAction>(this, action_focus_name);
     move_z_angle_action_client_ =
-        rclcpp_action::create_client<MoveZAngle>(this, "move_z_angle_action");
+        rclcpp_action::create_client<MoveZAngle>(this, action_movez_name);
     freedrive_action_client_ =
-        rclcpp_action::create_client<Freedrive>(this, "freedrive_action");
+        rclcpp_action::create_client<Freedrive>(this, action_freedrive_name);
     reset_action_client_ =
-        rclcpp_action::create_client<Reset>(this, "reset_action");
+        rclcpp_action::create_client<Reset>(this, action_reset_name);
 
     service_capture_background_ =
-        create_client<std_srvs::srv::Trigger>("capture_background");
+        create_client<std_srvs::srv::Trigger>(srv_capture_background);
 
     if (!focus_action_client_->wait_for_action_server(
             std::chrono::milliseconds(action_server_wait_ms_))) {

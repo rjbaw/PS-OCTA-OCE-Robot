@@ -14,6 +14,7 @@ COLCON = source "$(ROS_SETUP)" && colcon
 
 CXX_FILES := $(shell git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx')
 TIDY_FILES := $(shell git ls-files 'src/*.c' 'src/*.cc' 'src/*.cpp' 'src/*.cxx')
+PY_FILES := $(shell git ls-files '*.py')
 MAKE_JOBS := $(shell echo '$(MAKEFLAGS)' | sed -n 's/.*-j\([0-9][0-9]*\).*/\1/p')
 TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null && nproc) || (command -v sysctl >/dev/null && sysctl -n hw.ncpu) || echo 4))
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
@@ -62,14 +63,16 @@ test:
         exit 1; \
       fi; \
     fi; \
+	rm -rf $(BUILD_BASE)/$(PKG)/Testing $(BUILD_BASE)/$(PKG)/test_results $(BUILD_BASE)/Testing $(BUILD_BASE)/test_results || true; \
 	$(COLCON) build --base-paths . --packages-select $(PKG) \
-	  --build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
-	  --cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
-	  --event-handlers console_cohesion+; \
+	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	--cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
+	--event-handlers console_cohesion+; \
 	$(COLCON) test --base-paths . --packages-select $(PKG) \
-	  --build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
-	  --event-handlers console_cohesion+ || true; \
-	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE) || true
+	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	--event-handlers console_cohesion+ \
+	--ctest-args -j 1 -VV; \
+	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE)
 
 .PHONY: tidy
 tidy:
@@ -97,12 +100,27 @@ tidy:
 format:
 	@set -euo pipefail; \
 	if ! command -v clang-format >/dev/null; then echo "clang-format not found"; exit 1; fi; \
-	files="$(if $(FILE),$(FILE),$(CXX_FILES))"; \
-	if [ -z "$$files" ]; then echo "No C/C++ source files found."; exit 0; fi; \
-	echo "Formatting C/C++ sources... ($$(echo $$files | wc -w) files)"; \
-	printf '%s\n' $$files | xargs -r clang-format -i
+	files_cxx="$(if $(FILE),$(FILE),$(CXX_FILES))"; \
+	if [ -n "$$files_cxx" ]; then \
+	  echo "Formatting C/C++ sources... ($$(echo $$files_cxx | wc -w) files)"; \
+	  printf '%s\n' $$files_cxx | xargs -r clang-format -i; \
+	else \
+	  echo "No C/C++ source files found."; \
+	fi; \
+	if command -v ruff >/dev/null; then \
+	  files_py="$(PY_FILES)"; \
+	  if [ -n "$$files_py" ]; then \
+	    echo "Running ruff (format + lint --fix) on Python files..."; \
+	    ruff format $$files_py; \
+	    ruff check --fix $$files_py; \
+	  else \
+	    echo "No Python files found."; \
+	  fi; \
+	else \
+	  echo "ruff not found."; \
+	fi
 
-lint: format tidy
+lint: tidy format
 
 clean:
 	@rm -rf build install log compile_commands.json
@@ -112,7 +130,7 @@ DOCKERFILE ?= docker/Dockerfile
 
 docker-ci-test:
 	@set -e; \
-	docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) .; \
+	docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) --no-cache .; \
 	docker run --rm --name octa_ci \
 	  -u "$(shell id -u):$(shell id -g)" \
 	  -e HOME=/tmp \

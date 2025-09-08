@@ -41,29 +41,100 @@ void FocusActionServer::init() {
     }
     // Tunable parameters
     if (!this->has_parameter("gating_interval_sec")) {
-        this->declare_parameter<double>("gating_interval_sec",
-                                        gating_interval_);
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Minimum seconds between stored frames";
+        rcl_interfaces::msg::FloatingPointRange float_range;
+        float_range.from_value = 0.0;
+        float_range.to_value = 10.0;
+        float_range.step = 0.0;
+        descriptor.floating_point_range.emplace_back(float_range);
+        this->declare_parameter<double>("gating_interval_sec", gating_interval_,
+                                        descriptor);
     }
     if (!this->has_parameter("focus_step_timeout_sec")) {
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Timeout in seconds for each focus step";
+        rcl_interfaces::msg::FloatingPointRange float_range;
+        float_range.from_value = 0.1;
+        float_range.to_value = 120.0;
+        float_range.step = 0.0;
+        descriptor.floating_point_range.emplace_back(float_range);
         this->declare_parameter<double>("focus_step_timeout_sec",
-                                        focus_step_timeout_sec_);
+                                        focus_step_timeout_sec_, descriptor);
     }
     if (!this->has_parameter("scan3d_service_wait_ms")) {
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description =
+            "Wait time for scan3d service availability (ms)";
+        rcl_interfaces::msg::IntegerRange int_range;
+        int_range.from_value = 1;
+        int_range.to_value = 10000;
+        int_range.step = 1;
+        descriptor.integer_range.emplace_back(int_range);
         this->declare_parameter<int64_t>("scan3d_service_wait_ms",
-                                         scan3d_service_wait_ms_);
+                                         scan3d_service_wait_ms_, descriptor);
     }
     if (!this->has_parameter("scan3d_response_timeout_ms")) {
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Timeout for scan3d response (ms)";
+        rcl_interfaces::msg::IntegerRange int_range;
+        int_range.from_value = 1;
+        int_range.to_value = 60000;
+        int_range.step = 1;
+        descriptor.integer_range.emplace_back(int_range);
         this->declare_parameter<int64_t>("scan3d_response_timeout_ms",
-                                         scan3d_response_timeout_ms_);
+                                         scan3d_response_timeout_ms_,
+                                         descriptor);
     }
     if (!this->has_parameter("image_width")) {
-        this->declare_parameter<int64_t>("image_width", image_width_);
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Incoming image width (px)";
+        rcl_interfaces::msg::IntegerRange int_range;
+        int_range.from_value = 1;
+        int_range.to_value = 4096;
+        int_range.step = 1;
+        descriptor.integer_range.emplace_back(int_range);
+        this->declare_parameter<int64_t>("image_width", image_width_,
+                                         descriptor);
     }
     if (!this->has_parameter("image_height")) {
-        this->declare_parameter<int64_t>("image_height", image_height_);
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Incoming image height (px)";
+        rcl_interfaces::msg::IntegerRange int_range;
+        int_range.from_value = 1;
+        int_range.to_value = 4096;
+        int_range.step = 1;
+        descriptor.integer_range.emplace_back(int_range);
+        this->declare_parameter<int64_t>("image_height", image_height_,
+                                         descriptor);
     }
     if (!this->has_parameter("px_per_mm")) {
-        this->declare_parameter<double>("px_per_mm", px_per_mm_);
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Pixels per millimeter calibration";
+        rcl_interfaces::msg::FloatingPointRange float_range;
+        float_range.from_value = 0.001;
+        float_range.to_value = 10000.0;
+        float_range.step = 0.0;
+        descriptor.floating_point_range.emplace_back(float_range);
+        this->declare_parameter<double>("px_per_mm", px_per_mm_, descriptor);
+    }
+    // Declare planning related parameters once here
+    if (!this->has_parameter("tool_link")) {
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description =
+            "Tool link used to build constraints and goals";
+        this->declare_parameter<std::string>("tool_link", std::string("tcp"),
+                                             descriptor);
+    }
+    if (!this->has_parameter("envelope_radius_m")) {
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = "Linear radius (m) for position envelope";
+        rcl_interfaces::msg::FloatingPointRange float_range;
+        float_range.from_value = 0.0;
+        float_range.to_value = 1.0;
+        float_range.step = 0.0;
+        descriptor.floating_point_range.emplace_back(float_range);
+        this->declare_parameter<double>("envelope_radius_m", 0.05, descriptor);
     }
     if (!this->has_parameter("curve_model_path")) {
         this->declare_parameter<std::string>("curve_model_path",
@@ -172,6 +243,7 @@ void FocusActionServer::init() {
     rclcpp::SubscriptionOptions img_options;
     img_options.callback_group = parallel_group_;
     last_store_time_ = now() - rclcpp::Duration::from_seconds(gating_interval_);
+    buffer_.fill(cv::Mat());
     img_subscriber_ = create_subscription<octa_ros::msg::Img>(
         "oct_image", rclcpp::QoS(rclcpp::KeepLast(10)).best_effort(),
         [this](const octa_ros::msg::Img::SharedPtr msg) {
@@ -530,16 +602,20 @@ void FocusActionServer::execute(
             planning_component_->setStartStateToCurrentState();
             moveit::core::RobotStatePtr cur_state =
                 moveit_cpp_->getCurrentState();
+            const std::string tool_link =
+                this->get_parameter("tool_link").as_string();
             Eigen::Isometry3d start_tcp =
-                cur_state->getGlobalLinkTransform("tcp");
+                cur_state->getGlobalLinkTransform(tool_link);
             const std::string planning_frame =
                 moveit_cpp_->getPlanningSceneMonitor()
                     ->getPlanningScene()
                     ->getPlanningFrame();
+            const double envelope_radius =
+                this->get_parameter("envelope_radius_m").as_double();
             auto envelope = octa_ros::motion::make_envelope(
-                start_tcp, planning_frame, 0.05, M_PI);
+                start_tcp, planning_frame, tool_link, envelope_radius, M_PI);
             planning_component_->setPathConstraints(envelope);
-            planning_component_->setGoal(target_pose_, "tcp");
+            planning_component_->setGoal(target_pose_, tool_link);
             auto req = moveit_cpp::PlanningComponent::
                 MultiPipelinePlanRequestParameters(shared_from_this(),
                                                    {"pilz_ptp", "pilz_lin"});

@@ -133,13 +133,18 @@ void ResetActionServer::execute(
         goal_state.setJointGroupPositions("ur_manipulator", joint_values);
 
         moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
-        Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
+        const std::string tool_link =
+            this->declare_parameter<std::string>("tool_link", "tcp");
+        Eigen::Isometry3d start_tcp =
+            cur_state->getGlobalLinkTransform(tool_link);
         const std::string planning_frame =
             moveit_cpp_->getPlanningSceneMonitor()
                 ->getPlanningScene()
                 ->getPlanningFrame();
+        const double envelope_radius =
+            this->declare_parameter<double>("envelope_radius_m", 0.05);
         auto envelope = octa_ros::motion::make_envelope(
-            start_tcp, planning_frame, 0.05, M_PI / 3.0);
+            start_tcp, planning_frame, tool_link, envelope_radius, M_PI / 3.0);
 
         planning_component_->setGoal(goal_state);
         auto req =

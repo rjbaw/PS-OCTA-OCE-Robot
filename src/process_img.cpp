@@ -108,7 +108,7 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
         device = torch::kCUDA;
     }
 #if HAS_XPU
-    if (torch::xpu::is_available()) {
+    else if (torch::xpu::is_available()) {
         device = torch::kXPU;
     }
 #endif

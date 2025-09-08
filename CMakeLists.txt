@@ -236,6 +236,7 @@ ament_target_dependencies(test_detect
 target_include_directories(test_detect PRIVATE ${TORCH_INCLUDE_DIRS})
 target_link_libraries(test_detect ${OpenCV_LIBS} ${TORCH_LIBRARIES} "${cpp_typesupport_target}")
 
+
 add_executable(run_state_listener src/run_state_listener.cpp)
 ament_target_dependencies(run_state_listener
   rclcpp rclcpp_action action_msgs
@@ -243,6 +244,7 @@ ament_target_dependencies(run_state_listener
   moveit_msgs shape_msgs geometry_msgs tf2_ros std_srvs
   std_msgs)
 target_link_libraries(run_state_listener "${cpp_typesupport_target}")
+
 
 target_compile_definitions(joint_state_publisher PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(focus_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
@@ -298,10 +300,23 @@ install(
           freedrive_node
   DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config launch urdf srdf DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch urdf srdf bags DESTINATION share/${PROJECT_NAME})
 
 ament_package()
 
 if(launch_testing_ament_cmake_FOUND)
   add_launch_test(test/launch/test_actions.py TARGET test_actions TIMEOUT 60)
+  add_launch_test(test/launch/test_bag.py TARGET test_bag TIMEOUT 240)
+  if (DEFINED BUILD_TESTING)
+    set_property(TEST test_bag APPEND PROPERTY LABELS fullstack)
+  endif()
+endif()
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(motion_utils_test test/motion_utils_test.cpp)
+  if(TARGET motion_utils_test)
+    target_link_libraries(motion_utils_test octa_motion_utils)
+  endif()
+  # process_img_test omitted due to heavy Torch dependency in implementation
 endif()

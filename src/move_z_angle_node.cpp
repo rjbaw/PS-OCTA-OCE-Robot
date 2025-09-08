@@ -126,9 +126,11 @@ void MoveZAngleActionServer::execute(
     }
 
     planning_component_->setStartStateToCurrentState();
+    const std::string tool_link =
+        this->declare_parameter<std::string>("tool_link", "tcp");
     moveit::core::RobotStatePtr current_state = moveit_cpp_->getCurrentState();
     Eigen::Isometry3d current_pose =
-        current_state->getGlobalLinkTransform("tcp");
+        current_state->getGlobalLinkTransform(tool_link);
     geometry_msgs::msg::PoseStamped target_pose;
     target_pose.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
                                       ->getPlanningScene()
@@ -148,15 +150,17 @@ void MoveZAngleActionServer::execute(
     print_target(get_logger(), target_pose.pose);
 
     moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
-    Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform("tcp");
+    Eigen::Isometry3d start_tcp = cur_state->getGlobalLinkTransform(tool_link);
     const std::string planning_frame = moveit_cpp_->getPlanningSceneMonitor()
                                            ->getPlanningScene()
                                            ->getPlanningFrame();
-    moveit_msgs::msg::Constraints envelope =
-        octa_ros::motion::make_envelope(start_tcp, planning_frame, 0.05, M_PI);
+    const double envelope_radius =
+        this->declare_parameter<double>("envelope_radius_m", 0.05);
+    moveit_msgs::msg::Constraints envelope = octa_ros::motion::make_envelope(
+        start_tcp, planning_frame, tool_link, envelope_radius, M_PI);
     planning_component_->setPathConstraints(envelope);
 
-    planning_component_->setGoal(target_pose, "tcp");
+    planning_component_->setGoal(target_pose, tool_link);
 
     if (goal_handle->is_canceling()) {
         feedback->debug_msgs = "Move Z Angle was canceled before planning.\n";
@@ -167,9 +171,11 @@ void MoveZAngleActionServer::execute(
         return;
     }
 
+    auto pipelines = this->declare_parameter<std::vector<std::string>>(
+        "planning_pipelines", std::vector<std::string>{"pilz_ptp", "pilz_lin"});
     auto req =
         moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-            shared_from_this(), {"pilz_ptp", "pilz_lin"});
+            shared_from_this(), pipelines);
 
     auto choose_shortest =
         [](const std::vector<planning_interface::MotionPlanResponse>

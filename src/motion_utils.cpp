@@ -13,13 +13,14 @@ namespace octa_ros::motion {
 
 moveit_msgs::msg::Constraints make_envelope(const Eigen::Isometry3d &centre,
                                             const std::string &frame_id,
+                                            const std::string &link_name,
                                             double lin_radius_m,
                                             double ang_radius_rad) {
     moveit_msgs::msg::Constraints constraints;
 
     moveit_msgs::msg::PositionConstraint pos_constraint;
     pos_constraint.header.frame_id = frame_id;
-    pos_constraint.link_name = "tcp";
+    pos_constraint.link_name = link_name;
     pos_constraint.weight = 1.0;
     shape_msgs::msg::SolidPrimitive sphere;
     sphere.type = shape_msgs::msg::SolidPrimitive::SPHERE;
@@ -34,7 +35,7 @@ moveit_msgs::msg::Constraints make_envelope(const Eigen::Isometry3d &centre,
 
     moveit_msgs::msg::OrientationConstraint orient_constraint;
     orient_constraint.header.frame_id = frame_id;
-    orient_constraint.link_name = "tcp";
+    orient_constraint.link_name = link_name;
     orient_constraint.weight = 1.0;
     Eigen::Quaterniond quaternion(centre.rotation());
     orient_constraint.orientation.x = quaternion.x();

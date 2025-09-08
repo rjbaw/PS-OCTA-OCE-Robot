@@ -3,7 +3,7 @@ services:
     container_name: ps-oce-robot-dev
     build:
       context: .
-      dockerfile: Dockerfile-dev
+      dockerfile: Dockerfile.dev
     shm_size: '512m'
     environment:
       DISPLAY: ${DISPLAY}
