@@ -11,13 +11,38 @@ jobs:
       contents: read
     runs-on: ubuntu-24.04
     steps:
+      - name: Show disk usage before cleanup
+        run: df -h
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 20480
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: Show disk usage after cleanup
+        run: df -h
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build & Test (Make inside Docker)
-        run: make docker-ci-test
+      - name: Build base image locally for tests
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}
+          file: ${{ github.workspace }}/docker/Dockerfile
+          target: base
+          tags: octa_ros:ci-base
+          platforms: linux/amd64
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run tests in local image
+        run: DOCKER_TAG=octa_ros:ci-base make docker-ci-test
 
   publish:
+    needs: [build-test-docker]
     if: github.ref == 'refs/heads/main'
     name: Publish deploy image
     permissions:
@@ -25,6 +50,19 @@ jobs:
       packages: write
     runs-on: ubuntu-24.04
     steps:
+      - name: Show disk usage before cleanup
+        run: df -h
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 20480
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: Show disk usage after cleanup
+        run: df -h
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -37,8 +75,9 @@ jobs:
       - name: Build and push deploy image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: docker/Dockerfile
+          context: ${{ github.workspace }}
+          file: ${{ github.workspace }}/docker/Dockerfile
+          target: run
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/octa_ros:latest
           cache-from: type=gha

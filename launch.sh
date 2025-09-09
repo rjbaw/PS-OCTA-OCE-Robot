@@ -2,7 +2,8 @@
 trap stop_ros EXIT
 
 source /opt/ros/jazzy/setup.bash
-source install/setup.bash
+source install/setup.bash || true
+source /workspace/app/setup.bash || true
 
 help() {
 	echo "Launch octa/oce ROS program"
@@ -79,7 +80,7 @@ start_ros() {
 }
 
 check_labview_topic() {
--	# timeout 0.25s ros2 topic echo -n 1 -q --field data /run_state 2>/dev/null
+	# timeout 0.25s ros2 topic echo -n 1 -q --field data /run_state 2>/dev/null
 	if ! timeout "$RUN_STATE_TIMEOUT" ros2 run octa_ros run_state_listener \
 		>/tmp/run_state.out 2>/dev/null; then
 		printf '\n'

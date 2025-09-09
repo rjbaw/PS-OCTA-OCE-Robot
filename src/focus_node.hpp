@@ -92,6 +92,7 @@ class FocusActionServer : public rclcpp::Node {
     int64_t image_width_ = 500;
     int64_t image_height_ = 512;
     double px_per_mm_ = 65.0;
+    std::string image_topic_ = "/oct_image";
 
     // Tunables
     double focus_step_timeout_sec_ = 5.0;

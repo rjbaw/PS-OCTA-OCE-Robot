@@ -8,7 +8,6 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch_testing.actions import ReadyToTest
 import launch_testing
-from ament_index_python.packages import get_package_share_directory
 
 try:
     import rclpy
@@ -29,16 +28,11 @@ def generate_test_description():
         shutil.rmtree(os.path.join(repo_root, "result"), ignore_errors=True)
     except Exception:
         pass
-    set_result_dir = SetEnvironmentVariable(
-        name="OCTA_RESULT_DIR", value=os.path.join(repo_root, "result")
-    )
     set_ros_log_dir = SetEnvironmentVariable(
         name="ROS_LOG_DIR", value=os.path.join(repo_root, "log")
     )
 
     pkg_share = FindPackageShare("octa_ros")
-
-    robot_ip = os.getenv("ROBOT_IP", "192.168.56.101")
 
     labview_pub_script = os.path.join(repo_root, "test", "launch", "publish_labview.py")
     labview_pub = ExecuteProcess(
@@ -58,9 +52,6 @@ def generate_test_description():
             "launch",
             ci_launch_path,
             "ur_type:=ur3e",
-            f"robot_ip:={robot_ip}",
-            f"reverse_ip:={os.getenv('HOST', '0.0.0.0')}",
-            "headless_mode:=true",
             "launch_rviz:=false",
             "launch_dashboard_client:=false",
             "use_mock_hardware:=true",
@@ -72,10 +63,6 @@ def generate_test_description():
 
     bag_dir = PathJoinSubstitution([pkg_share, "bags", "fullscan"])
     qos_yaml = PathJoinSubstitution([pkg_share, "config", "bag_qos.yaml"])
-
-    model_path = os.path.join(
-        get_package_share_directory("octa_ros"), "config", "curve_model.ts"
-    )
 
     def retry(cmd):
         return [
@@ -165,19 +152,6 @@ def generate_test_description():
                 ),
                 output="screen",
             ),
-            ExecuteProcess(
-                cmd=retry(
-                    [
-                        "ros2",
-                        "param",
-                        "set",
-                        "/focus_node",
-                        "curve_model_path",
-                        model_path,
-                    ]
-                ),
-                output="screen",
-            ),
         ],
     )
     bag_player = ExecuteProcess(
@@ -198,7 +172,6 @@ def generate_test_description():
 
     ld = LaunchDescription()
     ld.add_action(set_debug_env)
-    ld.add_action(set_result_dir)
     ld.add_action(set_ros_log_dir)
     ld.add_action(labview_pub)
     ld.add_action(scan3d_server)
@@ -250,7 +223,7 @@ class TestFocusAction(unittest.TestCase):
 
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         result_root = os.path.join(repo_root, "result")
-        deadline = time.time() + 7200.0
+        deadline = time.time() + 840.0
         found = False
         while time.time() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.1)

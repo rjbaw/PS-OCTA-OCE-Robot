@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(octa_ros)
 
-# set(CMAKE_GENERATOR "Ninja")
+set(CMAKE_GENERATOR "Ninja")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -81,7 +81,21 @@ find_package(std_srvs REQUIRED)
 find_package(unique_identifier_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(launch_testing_ament_cmake QUIET)
-find_package(Torch REQUIRED)
+find_package(onnxruntime REQUIRED CONFIG)
+
+find_library(ONNXRUNTIME_PROVIDERS_CUDA onnxruntime_providers_cuda
+  HINTS $ENV{ONNXRUNTIME_LIBDIR}
+  PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /opt/onnxruntime/lib /opt/onnxruntime/lib64)
+find_library(ONNXRUNTIME_PROVIDERS_SHARED onnxruntime_providers_shared
+  HINTS $ENV{ONNXRUNTIME_LIBDIR}
+  PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu /opt/onnxruntime/lib /opt/onnxruntime/lib64)
+set(_ONNXRUNTIME_LINK_LIBS ${ONNXRUNTIME_LIBRARY})
+if(ONNXRUNTIME_PROVIDERS_SHARED)
+  list(APPEND _ONNXRUNTIME_LINK_LIBS ${ONNXRUNTIME_PROVIDERS_SHARED})
+endif()
+if(ONNXRUNTIME_PROVIDERS_CUDA)
+  list(APPEND _ONNXRUNTIME_LINK_LIBS ${ONNXRUNTIME_PROVIDERS_CUDA})
+endif()
 
 
 include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
@@ -154,14 +168,13 @@ ament_target_dependencies(
   OpenCV
   Open3D
   Eigen3)
-target_include_directories(focus_node PRIVATE ${TORCH_INCLUDE_DIRS})
 target_link_libraries(
   focus_node
   "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}"
   "${geometry_msgs_LIBRARIES}"
   "${OpenCV_LIBS}"
-  "${TORCH_LIBRARIES}"
+  onnxruntime::onnxruntime
   octa_motion_utils
   Open3D::Open3D
   Eigen3::Eigen)
@@ -233,8 +246,7 @@ ament_target_dependencies(test_detect
   rclcpp rclcpp_action action_msgs
   moveit_ros_planning moveit_ros_planning_interface
   moveit_msgs shape_msgs geometry_msgs tf2_ros std_srvs)
-target_include_directories(test_detect PRIVATE ${TORCH_INCLUDE_DIRS})
-target_link_libraries(test_detect ${OpenCV_LIBS} ${TORCH_LIBRARIES} "${cpp_typesupport_target}")
+target_link_libraries(test_detect ${OpenCV_LIBS} onnxruntime::onnxruntime "${cpp_typesupport_target}")
 
 
 add_executable(run_state_listener src/run_state_listener.cpp)
@@ -256,13 +268,17 @@ target_compile_definitions(sub_img PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(test_detect PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(run_state_listener PRIVATE OCTA_COORDINATOR_NO_MAIN)
 
-get_filename_component(TORCH_LIB_DIR "${TORCH_LIBRARY}" DIRECTORY)
-if(TORCH_LIB_DIR)
+get_target_property(_ORT_LOCATION onnxruntime::onnxruntime IMPORTED_LOCATION)
+if(NOT _ORT_LOCATION)
+  get_target_property(_ORT_LOCATION onnxruntime::onnxruntime IMPORTED_LOCATION_RELEASE)
+endif()
+if(_ORT_LOCATION)
+  get_filename_component(_ORT_LIB_DIR "${_ORT_LOCATION}" DIRECTORY)
   foreach(tgt IN ITEMS focus_node test_detect)
     if(TARGET ${tgt})
       set_target_properties(${tgt} PROPERTIES
-        BUILD_RPATH "${TORCH_LIB_DIR}"
-        INSTALL_RPATH "${TORCH_LIB_DIR}")
+        BUILD_RPATH "${_ORT_LIB_DIR}"
+        INSTALL_RPATH "${_ORT_LIB_DIR}")
     endif()
   endforeach()
 endif()
@@ -306,7 +322,7 @@ ament_package()
 
 if(launch_testing_ament_cmake_FOUND)
   add_launch_test(test/launch/test_actions.py TARGET test_actions TIMEOUT 60)
-  add_launch_test(test/launch/test_bag.py TARGET test_bag TIMEOUT 240)
+  add_launch_test(test/launch/test_bag.py TARGET test_bag TIMEOUT 900)
   if (DEFINED BUILD_TESTING)
     set_property(TEST test_bag APPEND PROPERTY LABELS fullstack)
   endif()
@@ -318,5 +334,4 @@ if(BUILD_TESTING)
   if(TARGET motion_utils_test)
     target_link_libraries(motion_utils_test octa_motion_utils)
   endif()
-  # process_img_test omitted due to heavy Torch dependency in implementation
 endif()

@@ -1,57 +1,115 @@
-FROM ros:jazzy-ros-base
+# syntax=docker/dockerfile:1.7-labs
+FROM ubuntu:24.04 AS open3d-builder
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    git build-essential cmake ninja-build \
-    python3-colcon-common-extensions \
-    clang-format clang-tidy \
-    sudo iproute2 iputils-ping curl wget htop vim tmux \
-    ros-$ROS_DISTRO-ros2-control ros-$ROS_DISTRO-ros2-controllers ros-$ROS_DISTRO-ur \
-    ros-$ROS_DISTRO-moveit ros-$ROS_DISTRO-tf2-ros ros-$ROS_DISTRO-tf2-eigen ros-$ROS_DISTRO-tf2-geometry-msgs \
-    ros-$ROS_DISTRO-controller-manager-msgs ros-$ROS_DISTRO-ur-dashboard-msgs \
-    libopencv-dev libopencv-contrib-dev \
-    libglfw3-dev libglew-dev libeigen3-dev \
-    python3 python3-dev python3-pip python3-typing-extensions \
-    libopenblas-dev liblapack-dev protobuf-compiler libprotobuf-dev zlib1g-dev libjpeg-dev libpng-dev && \
+USER root
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git build-essential cmake ninja-build sudo \
+        python3 curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/src
+RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git \
+    && cd Open3D \
+    && yes | bash util/install_deps_ubuntu.sh \
+    && mkdir build \
+    && cd build \
+    && cmake -G Ninja -DBUILD_WEBRTC=OFF -DCMAKE_INSTALL_PREFIX=/opt/open3d-install .. \
+    && cmake --build . --target install
+
+FROM openvino/ubuntu24_runtime:latest AS base
+
+USER root
+ENV DEBIAN_FRONTEND=noninteractive \
+    ROS_DISTRO=jazzy
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl gnupg2 lsb-release software-properties-common \
+        git build-essential cmake ninja-build \
+        clang-format clang-tidy \
+        sudo iproute2 iputils-ping wget htop vim tmux traceroute \
+        ocl-icd-libopencl1 clinfo \
+        libopencv-dev libopencv-contrib-dev \
+        libglfw3-dev libglew-dev libeigen3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/src
+RUN git clone --depth 1 -b v1.22.2 https://github.com/microsoft/onnxruntime.git && \
+    bash -lc 'source /opt/intel/openvino/setupvars.sh; \
+      cd /opt/src/onnxruntime; \
+      ./build.sh \
+        --allow_running_as_root \
+        --use_dnnl \
+        --use_openvino GPU \
+        --parallel \
+        --skip_tests \
+        --update \
+        --build \
+        --cmake_generator Ninja \
+        --compile_no_warning_as_error \
+        --config Release \
+        --build_shared_lib; \
+        cmake --install build/Linux/Release --prefix /usr/local;' && \
+    rm -rf /opt/src/onnxruntime
+
+RUN set -eux; \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg; \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+      > /etc/apt/sources.list.d/ros2.list; \
+    apt-get update; \
+    apt-get install -y \
+      ros-$ROS_DISTRO-ros-base \
+      ros-$ROS_DISTRO-ros2-control ros-$ROS_DISTRO-ros2-controllers \
+      ros-$ROS_DISTRO-ur \
+      ros-$ROS_DISTRO-launch-testing-ament-cmake \
+      ros-$ROS_DISTRO-ament-cmake-clang-format \
+      ros-dev-tools \
+      libc++-dev libc++abi-dev libgmock-dev && \
     rm -rf /var/lib/apt/lists/*
 
-RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git &&\
-    cd Open3D &&\
-    yes | bash util/install_deps_ubuntu.sh &&\
-    mkdir build &&\ 
-    cd build &&\
-    cmake -G Ninja -DBUILD_WEBRTC=OFF .. &&\
-    cmake --build . --target install &&\
-    cd ../../ &&\
-    rm -r Open3D
+COPY --from=open3d-builder /opt/open3d-install/ /usr/local/
 
-RUN git clone -b v2.8.0 --recurse-submodule https://github.com/pytorch/pytorch.git &&\
-    cd pytorch &&\
-    python3 tools/build_libtorch.py &&\
-    cmake --install build --prefix /usr/local &&\
-    cd ../../ &&\
-    rm -r pytorch
+RUN id -u ubuntu >/dev/null 2>&1 || useradd -m -d /workspace -s /bin/bash ubuntu \
+    && passwd -d ubuntu || true && usermod -aG sudo ubuntu \
+    && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu
 
-RUN id -u ubuntu >/dev/null 2>&1 || useradd -m -d /workspace -s /bin/bash ubuntu && \
-    passwd -d ubuntu || true && usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu
+RUN pip install --no-cache-dir empy catkin_pkg lark pyyaml packaging && rm -rf /root/.cache/pip || true
 
-RUN chmod +x /ros_entrypoint.sh
 
-ARG CACHE=0
-
-RUN git clone https://github.com/rjbaw/PS-OCTA-OCE-Robot.git /workspace/ps-oce-robot/
-RUN chown -R ubuntu:ubuntu /workspace/ps-oce-robot
+FROM base AS app-builder
 
 USER ubuntu
-WORKDIR /workspace/ps-oce-robot/
 
-RUN ulimit -c 0
+WORKDIR /workspace/source
+COPY --chown=ubuntu:ubuntu \
+     --exclude=.git \
+     --exclude=.github \
+     --exclude=.cache \
+     --exclude=.ruff_cache \
+     --exclude=**/data \
+     --exclude=**/build \
+     --exclude=**/install \
+     --exclude=**/log \
+     --exclude=cad \
+     --exclude=result \
+     --exclude=VI \
+     --exclude=core* \
+     . /workspace/source
 
-RUN cd /workspace/ps-oce-robot &&\
-    bash -c "source /opt/ros/jazzy/setup.bash && colcon build --symlink-install" &&\
-    chmod +x launch.sh
+RUN bash -lc 'source /opt/ros/$ROS_DISTRO/setup.bash; \
+    colcon build --merge-install --install-base /workspace/app' \
+    && rm -rf /workspace/source
+COPY launch.sh /workspace/app/launch.sh
 
-ENTRYPOINT ["/ros_entrypoint.sh"]
 
-CMD ["/workspace/ps-oce-robot/launch.sh"]
+FROM base AS run
+
+USER ubuntu
+COPY --from=app-builder --chown=ubuntu:ubuntu /workspace/app /workspace/app
+RUN chmod +x /workspace/app/launch.sh
+USER ubuntu
+
+CMD ["/workspace/app/launch.sh"]

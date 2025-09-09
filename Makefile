@@ -20,19 +20,21 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: help build test format tidy lint clean docker-ci-test dev run
+.PHONY: build clean dev docker-ci-test down format help lint local run test tidy
 
 help:
 	@echo "Make targets:"
-	@echo "  build   - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
-	@echo "  test    - Run tests for $(PKG) and show results"
-	@echo "  format  - clang-format all tracked C/C++ files (in-place)"
-	@echo "  tidy    - run clang-tidy on tracked C/C++ files"
-	@echo "  lint    - run format and clang-tidy together"
-	@echo "  clean   - Remove build/install/log and compile_commands.json"
-	@echo "  run     - Run deploy container"
-	@echo "  dev     - Run dev container"
-	@echo "  docker-ci-test  - Build image if needed and run tests in it"
+	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
+	@echo "  test   - Run tests for $(PKG) and show results"
+	@echo "  format - clang-format tracked C/C++ files; ruff on Python"
+	@echo "  tidy   - Run clang-tidy on tracked C/C++ files"
+	@echo "  lint   - Run 'tidy' and 'format'"
+	@echo "  clean  - Remove build/install/log and compile_commands.json"
+	@echo "  run    - Start deploy container"
+	@echo "  dev    - Start dev container (mounts source, bash)"
+	@echo "  local  - Build deployment image from local sources"
+	@echo "  down   - Stop both dev and run containers"
+	@echo "  docker-ci-test - Run tests inside a container"
 
 build:
 	@set -eo pipefail; \
@@ -63,7 +65,12 @@ test:
         exit 1; \
       fi; \
     fi; \
-	rm -rf $(BUILD_BASE)/$(PKG)/Testing $(BUILD_BASE)/$(PKG)/test_results $(BUILD_BASE)/Testing $(BUILD_BASE)/test_results || true; \
+	rm -rf \
+	  $(BUILD_BASE)/$(PKG)/Testing \
+	  $(BUILD_BASE)/$(PKG)/test_results \
+	  $(BUILD_BASE)/Testing \
+	  $(BUILD_BASE)/test_results \
+	  $(BUILD_BASE)/$(PKG)/CMakeCache.txt || true; \
 	$(COLCON) build --base-paths . --packages-select $(PKG) \
 	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
 	--cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
@@ -125,29 +132,41 @@ lint: tidy format
 clean:
 	@rm -rf build install log compile_commands.json
 
-DOCKER_CI_TAG ?= octa_ros-ci:local
+DOCKER_TAG ?= ghcr.io/rjbaw/octa_ros:latest
 DOCKERFILE ?= docker/Dockerfile
+
+local:
+	@set -e; \
+	echo "Building local deployment image: $(DOCKER_TAG)"; \
+	docker buildx build --load -t $(DOCKER_TAG) -f $(DOCKERFILE) --target run .
 
 docker-ci-test:
 	@set -e; \
-	docker buildx build --load -t $(DOCKER_CI_TAG) -f $(DOCKERFILE) --no-cache .; \
-	docker run --rm --name octa_ci \
-	  -u "$(shell id -u):$(shell id -g)" \
+	docker run --rm \
+	  --entrypoint /bin/bash \
+	  -u $(shell id -u):$(shell id -g) \
 	  -e HOME=/tmp \
 	  -w /workspace/repo \
 	  -v "$(PWD):/workspace/repo" \
-	  $(DOCKER_CI_TAG) \
-	  bash -lc 'set -euo pipefail; set +u; source /opt/ros/jazzy/setup.bash; set -u; \
-	    make -C /workspace/repo BUILD_BASE=/tmp/colcon_build INSTALL_BASE=/tmp/colcon_install LOG_BASE=/tmp/colcon_log test'
+	  $(DOCKER_TAG) \
+	  -lc 'source /opt/ros/jazzy/setup.bash && make clean && make test'
 
 .PHONY: dev
 dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
-	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up --build
+	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up -d
 
 .PHONY: run
 run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
-	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up
+	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
+	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
+
+.PHONY: down
+down:
+	@set -e; \
+	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
+	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true

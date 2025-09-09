@@ -76,11 +76,20 @@ int main(int argc, char **argv) {
         }
         octa_ros::img::SegmentResult result =
             octa_ros::img::detect_lines(inputImage);
-        if (!cv::imwrite(out_path.string(), result.image)) {
-            std::cerr << "Could not save result to " << out_path << "\n";
+        std::filesystem::path dst = out_path;
+        if (std::filesystem::is_directory(out_path) ||
+            out_path.extension().empty()) {
+            std::filesystem::create_directories(out_path);
+            dst = out_path / in_path.filename();
+            dst.replace_extension(".jpg");
+        } else if (!dst.parent_path().empty()) {
+            std::filesystem::create_directories(dst.parent_path());
+        }
+        if (!cv::imwrite(dst.string(), result.image)) {
+            std::cerr << "Could not save result to " << dst << "\n";
             return 1;
         }
-        std::cout << "Saved result to " << out_path << "\n";
+        std::cout << "Saved result to \"" << dst << "\"\n";
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "[test_detect] Exception: " << e.what() << "\n";

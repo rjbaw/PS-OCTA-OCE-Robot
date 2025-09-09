@@ -1,10 +1,10 @@
 services:
   ros2:
-    container_name: ps-oce-robot-dev
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    container_name: ps-oce-robot
+    image: ghcr.io/rjbaw/octa_ros:latest
+    command: ["bash"]
     shm_size: '512m'
+    stdin_open: true
     environment:
       DISPLAY: ${DISPLAY}
       QT_GRAPHICSSYSTEM: native
@@ -16,7 +16,12 @@ services:
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       - ${HOME}:/workspace/home/
-      #- $HOME/PS-OCTA-OCE-Robot:/workspace/ps-oce-robot/ # debugging
+      - ${PWD}:/workspace/app/
+    user: "${UID}:${GID}"
+    devices:
+      - /dev/dri:/dev/dri
+    ulimits:
+      core: 0
     restart: always
     network_mode: host
     privileged: true

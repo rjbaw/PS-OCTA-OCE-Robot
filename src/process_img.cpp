@@ -1,59 +1,62 @@
 #include "process_img.hpp"
+#include <cmath>
 #include <filesystem>
 #include <format>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
-#include <c10/core/TensorOptions.h>
-#include <torch/script.h>
-#include <torch/torch.h>
-#include <torch/types.h>
-
-#if __has_include(<c10/xpu/XPUFunctions.h>) && \
-    __has_include(<c10/xpu/impl/xpu_cmake_macros.h>)
-#include <c10/xpu/XPUFunctions.h>
-#ifndef HAS_XPU
-#define HAS_XPU 1
-#endif
-#else
-#ifndef HAS_XPU
-#define HAS_XPU 0
-#endif
-#endif
+#include <array>
+#include <onnxruntime/onnxruntime_c_api.h>
+#include <onnxruntime/onnxruntime_cxx_api.h>
+#include <onnxruntime/provider_options.h>
+#include <opencv4/opencv2/core/base.hpp>
 
 namespace octa_ros::img {
 
-static torch::jit::script::Module &load_model(const std::string &path,
-                                              const torch::Device &device) {
-    static std::unique_ptr<torch::jit::script::Module> mod_cpu;
-    static std::unique_ptr<torch::jit::script::Module> mod_cuda;
-    static std::unique_ptr<torch::jit::script::Module> mod_xpu;
+static Ort::Env &get_ort_env() {
+    static auto *env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "octa_ros");
+    return *env;
+}
 
-    if (device.type() == torch::kCUDA) {
-        if (!mod_cuda) {
-            mod_cuda = std::make_unique<torch::jit::script::Module>(
-                torch::jit::load(path));
-            mod_cuda->to(device);
-            mod_cuda->eval();
-        }
-        return *mod_cuda;
-    }
-    if (device.type() == torch::kXPU) {
-        if (!mod_xpu) {
-            mod_xpu = std::make_unique<torch::jit::script::Module>(
-                torch::jit::load(path));
-            mod_xpu->to(device);
-            mod_xpu->eval();
-        }
-        return *mod_xpu;
-    }
+static Ort::Session &load_session(const std::string &path) {
+    static Ort::Session *session = nullptr;
+    static std::string cached_path;
 
-    if (!mod_cpu) {
-        mod_cpu = std::make_unique<torch::jit::script::Module>(
-            torch::jit::load(path));
-        mod_cpu->to(device);
-        mod_cpu->eval();
+    if (session == nullptr || cached_path != path) {
+        Ort::SessionOptions opts;
+        opts.SetIntraOpNumThreads(1);
+        opts.SetGraphOptimizationLevel(
+            GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+        bool ep_set = false;
+        try {
+            OrtCUDAProviderOptionsV2 *cuda_opts = nullptr;
+            Ort::ThrowOnError(
+                Ort::GetApi().CreateCUDAProviderOptions(&cuda_opts));
+            Ort::ThrowOnError(
+                Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
+                    opts, cuda_opts));
+            Ort::GetApi().ReleaseCUDAProviderOptions(cuda_opts);
+            ep_set = true;
+        } catch (const Ort::Exception &ex) {
+            (void)ex;
+        }
+        if (!ep_set) {
+            try {
+                OrtOpenVINOProviderOptions ov_opts;
+                ov_opts.device_type = "GPU_FP32";
+                Ort::ThrowOnError(
+                    Ort::GetApi()
+                        .SessionOptionsAppendExecutionProvider_OpenVINO(
+                            opts, &ov_opts));
+                ep_set = true;
+            } catch (const Ort::Exception &ex) {
+                (void)ex;
+            }
+        }
+        session = new Ort::Session(get_ort_env(), path.c_str(), opts);
+        cached_path = path;
     }
-    return *mod_cpu;
+    return *session;
 }
 
 Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
@@ -99,20 +102,12 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
         const auto share =
             ament_index_cpp::get_package_share_directory("octa_ros");
         std::filesystem::path model_stdpath =
-            std::filesystem::path(share) / "config/curve_model.ts";
+            std::filesystem::path(share) / "config/curve_model.onnx";
         model_path = model_stdpath.string();
     }
 
-    torch::Device device = torch::kCPU;
-    if (torch::cuda::is_available()) {
-        device = torch::kCUDA;
-    }
-#if HAS_XPU
-    else if (torch::xpu::is_available()) {
-        device = torch::kXPU;
-    }
-#endif
-
+    const int orig_h = img_h;
+    const int orig_w = img_w;
     cv::Mat img_raw = inputImg;
     cv::Mat rgb_u8;
     cv::cvtColor(img_raw, rgb_u8, cv::COLOR_GRAY2RGB);
@@ -120,46 +115,130 @@ SegmentResult detect_lines(const cv::Mat &inputImg) {
     rgb_u8.convertTo(rgb_f32, CV_32F, 1.0 / 255.0);
     CV_Assert(rgb_f32.isContinuous());
 
-    auto img_tensor =
-        torch::from_blob(rgb_f32.data, {1, img_h, img_w, 3}, torch::kFloat32)
-            .permute({0, 3, 1, 2})
-            .contiguous(); // (1,3,512,500)
-
-    auto opts = torch::TensorOptions().dtype(torch::kFloat32);
-    auto mean =
-        torch::tensor({0.485F, 0.456F, 0.406F}, opts).view({1, 3, 1, 1});
-    auto stdev =
-        torch::tensor({0.229F, 0.224F, 0.225F}, opts).view({1, 3, 1, 1});
-    img_tensor = (img_tensor - mean) / stdev;
-    img_tensor = img_tensor.to(device);
-
-    auto &model = load_model(model_path, device);
-    model.eval();
-
-    torch::NoGradGuard no_grad;
-    c10::IValue out_iv = model.forward({img_tensor});
-
-    auto tup = out_iv.toTuple();
-
-    torch::Tensor presence_logits = tup->elements()[0].toTensor(); // (1,)
-    torch::Tensor curve_logits = tup->elements()[1].toTensor();    // (1,500)
-
-    auto p_curve = torch::sigmoid(presence_logits).item<float>();
-
-    std::vector<cv::Point> ret_coords;
-    if (p_curve >= 0.5F) {
-        torch::Tensor y_vec = curve_logits.squeeze(0).to(torch::kFloat32);
-        ret_coords.reserve(img_w);
-        auto y_cpu = y_vec.to(torch::kCPU).contiguous();
-        const float *y_ptr = y_cpu.data_ptr<float>();
-        for (int x_pt = 0; x_pt < img_w; ++x_pt) {
-            int y_clamped =
-                std::clamp((int)std::lround(y_ptr[x_pt]), 0, img_h - 1);
-            ret_coords.emplace_back(x_pt, y_clamped);
+    auto &session = load_session(model_path);
+    Ort::AllocatorWithDefaultOptions allocator;
+    auto input_name_alloc = session.GetInputNameAllocated(0, allocator);
+    std::string input_name = input_name_alloc.get();
+    auto input_type_info = session.GetInputTypeInfo(0);
+    auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> expected_shape = input_tensor_info.GetShape();
+    int run_h = img_h;
+    int run_w = img_w;
+    if (expected_shape.size() == 4) {
+        const int64_t exp_h = expected_shape[2];
+        const int64_t exp_w = expected_shape[3];
+        if (exp_h > 0 && exp_w > 0 && (exp_h != img_h || exp_w != img_w)) {
+            cv::Mat resized;
+            cv::resize(
+                rgb_f32, resized,
+                cv::Size(static_cast<int>(exp_w), static_cast<int>(exp_h)), 0,
+                0, cv::INTER_LINEAR);
+            rgb_f32 = resized;
+            run_h = static_cast<int>(exp_h);
+            run_w = static_cast<int>(exp_w);
         }
     }
 
-    cv::Mat overlay = img_raw;
+    const std::array<float, 3> mean{0.485F, 0.456F, 0.406F};
+    const std::array<float, 3> stdev{0.229F, 0.224F, 0.225F};
+    std::vector<float> input_data(static_cast<size_t>(1 * 3 * run_h * run_w));
+    size_t idx = 0;
+    for (int ch = 0; ch < 3; ++ch) {
+        for (int py = 0; py < run_h; ++py) {
+            const float *row = rgb_f32.ptr<float>(py);
+            for (int px = 0; px < run_w; ++px) {
+                const float val = row[px * 3 + ch];
+                input_data[idx++] = (val - mean[static_cast<size_t>(ch)]) /
+                                    stdev[static_cast<size_t>(ch)];
+            }
+        }
+    }
+
+    Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(
+        OrtAllocatorType::OrtArenaAllocator, OrtMemTypeDefault);
+    std::array<int64_t, 4> input_shape{1, 3, run_h, run_w};
+    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+        mem_info, input_data.data(), input_data.size(), input_shape.data(),
+        input_shape.size());
+    size_t num_outputs = session.GetOutputCount();
+    if (num_outputs < 2) {
+        throw std::runtime_error("onnx model did not have >=2 outputs");
+    }
+    std::vector<std::string> output_names(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+        auto out_name_alloc = session.GetOutputNameAllocated(i, allocator);
+        output_names[i] = out_name_alloc.get();
+    }
+    const std::array<const char *, 1> in_names{input_name.c_str()};
+    std::vector<const char *> out_names;
+    out_names.reserve(output_names.size());
+    for (const auto &name_str : output_names) {
+        out_names.push_back(name_str.c_str());
+    }
+
+    auto outputs =
+        session.Run(Ort::RunOptions{nullptr}, in_names.data(), &input_tensor, 1,
+                    out_names.data(), out_names.size());
+
+    if (outputs.size() < 2) {
+        throw std::runtime_error(
+            "ONNX inference returned insufficient outputs");
+    }
+
+    const Ort::Value &presence_val = outputs[0];
+    const auto *presence_ptr = presence_val.GetTensorData<float>();
+    auto presence_shape = presence_val.GetTensorTypeAndShapeInfo().GetShape();
+    size_t presence_n = 1;
+    for (auto dim : presence_shape) {
+        presence_n *= static_cast<size_t>(dim);
+    }
+    float presence_logit = (presence_n >= 1) ? presence_ptr[0] : 0.0F;
+    auto sigmoid = [](float xf) -> float {
+        return 1.0F / (1.0F + std::exp(-xf));
+    };
+    float p_curve = sigmoid(presence_logit);
+
+    const Ort::Value &curve_val = outputs[1];
+    const auto *curve_ptr = curve_val.GetTensorData<float>();
+    auto curve_shape = curve_val.GetTensorTypeAndShapeInfo().GetShape();
+    size_t curve_len = 1;
+    for (auto dim : curve_shape) {
+        curve_len *= static_cast<size_t>(dim);
+    }
+
+    std::vector<cv::Point> ret_coords;
+    if (p_curve >= 0.5F) {
+        ret_coords.reserve(orig_w);
+        const double scale_h =
+            static_cast<double>(orig_h) / static_cast<double>(run_h);
+        if (curve_len == static_cast<size_t>(run_w)) {
+            for (int x_pt = 0; x_pt < orig_w; ++x_pt) {
+                auto src_x = static_cast<size_t>(
+                    std::lround((static_cast<double>(x_pt) *
+                                 static_cast<double>(run_w - 1)) /
+                                static_cast<double>(orig_w - 1)));
+                src_x = std::min(src_x, static_cast<size_t>(run_w - 1));
+                int y_clamped = std::clamp(
+                    static_cast<int>(std::lround(curve_ptr[src_x] * scale_h)),
+                    0, orig_h - 1);
+                ret_coords.emplace_back(x_pt, y_clamped);
+            }
+        } else if (curve_len > 1) {
+            for (int x_pt = 0; x_pt < orig_w; ++x_pt) {
+                auto src_x = static_cast<size_t>(
+                    std::lround((static_cast<double>(x_pt) *
+                                 static_cast<double>(curve_len - 1)) /
+                                static_cast<double>(orig_w - 1)));
+                src_x = std::min(src_x, curve_len - 1);
+                int y_clamped = std::clamp(
+                    static_cast<int>(std::lround(curve_ptr[src_x] * scale_h)),
+                    0, orig_h - 1);
+                ret_coords.emplace_back(x_pt, y_clamped);
+            }
+        }
+    }
+
+    cv::Mat overlay = img_raw.clone();
     if (!ret_coords.empty()) {
         draw_line(overlay, ret_coords);
     }
@@ -221,7 +300,6 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                         point_cloud.image);
         }
         if (point_cloud.coordinates.empty()) {
-            // No curve detected; skip this frame gracefully
             continue;
         }
 

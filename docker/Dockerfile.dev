@@ -1,4 +1,0 @@
-FROM ghcr.io/rjbaw/octa_ros:latest
-
-USER ubuntu
-CMD ["bash"]
