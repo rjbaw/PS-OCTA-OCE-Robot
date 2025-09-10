@@ -1,6 +1,8 @@
 #include "process_img.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 
 static bool has_image_ext(const std::filesystem::path &path) {
     auto ext = path.extension().string();
@@ -52,7 +54,6 @@ int main(int argc, char **argv) {
                     std::cerr << "Skip (cannot open): " << file_path << "\n";
                     continue;
                 }
-                // Mirror tree under out_path
                 auto rel = std::filesystem::relative(file_path, in_root);
                 auto dst = out_path / rel;
                 octa_ros::img::SegmentResult res =
@@ -62,6 +63,31 @@ int main(int argc, char **argv) {
                     std::cerr << "Failed to write: " << dst << "\n";
                 } else {
                     std::cout << "Saved: " << dst << "\n";
+                }
+                if (!res.coordinates.empty()) {
+                    const int model_w = 500;
+                    std::vector<float> y_vals;
+                    y_vals.reserve(model_w);
+                    const int width = img.cols;
+                    for (int x_idx = 0; x_idx < model_w; ++x_idx) {
+                        auto src_x = static_cast<size_t>(
+                            std::lround((static_cast<double>(x_idx) *
+                                         static_cast<double>(width - 1)) /
+                                        static_cast<double>(model_w - 1)));
+                        if (src_x >= res.coordinates.size()) {
+                            src_x = res.coordinates.size() - 1;
+                        }
+                        y_vals.push_back(
+                            static_cast<float>(res.coordinates[src_x].y));
+                    }
+                    auto txt = dst;
+                    txt.replace_extension(".txt");
+                    std::ofstream ofs(txt);
+                    ofs.setf(std::ios::fixed);
+                    ofs << std::setprecision(1);
+                    for (const float value : y_vals) {
+                        ofs << value << '\n';
+                    }
                 }
                 ++idx_file;
             }
@@ -90,6 +116,29 @@ int main(int argc, char **argv) {
             return 1;
         }
         std::cout << "Saved result to \"" << dst << "\"\n";
+        if (!result.coordinates.empty()) {
+            const int model_w = 500;
+            std::vector<float> y_vals;
+            y_vals.reserve(model_w);
+            const int width = inputImage.cols;
+            for (int x_idx = 0; x_idx < model_w; ++x_idx) {
+                size_t src_x = static_cast<size_t>(std::lround(
+                    (static_cast<double>(x_idx) * static_cast<double>(width - 1)) /
+                    static_cast<double>(model_w - 1)));
+                if (src_x >= result.coordinates.size()) {
+                    src_x = result.coordinates.size() - 1;
+                }
+                y_vals.push_back(static_cast<float>(result.coordinates[src_x].y));
+            }
+            auto txt = dst;
+            txt.replace_extension(".txt");
+            std::ofstream ofs(txt);
+            ofs.setf(std::ios::fixed);
+            ofs << std::setprecision(1);
+            for (const float value : y_vals) {
+                ofs << value << '\n';
+            }
+        }
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "[test_detect] Exception: " << e.what() << "\n";

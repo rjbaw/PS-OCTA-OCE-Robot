@@ -5,6 +5,7 @@
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
+#include <iostream>
 #include <onnxruntime/onnxruntime_c_api.h>
 #include <onnxruntime/onnxruntime_cxx_api.h>
 #include <onnxruntime/provider_options.h>
@@ -28,6 +29,7 @@ static Ort::Session &load_session(const std::string &path) {
             GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
         bool ep_set = false;
+        const char *ep_name = "CPU";
         try {
             OrtCUDAProviderOptionsV2 *cuda_opts = nullptr;
             Ort::ThrowOnError(
@@ -37,6 +39,7 @@ static Ort::Session &load_session(const std::string &path) {
                     opts, cuda_opts));
             Ort::GetApi().ReleaseCUDAProviderOptions(cuda_opts);
             ep_set = true;
+            ep_name = "CUDA";
         } catch (const Ort::Exception &ex) {
             (void)ex;
         }
@@ -49,12 +52,19 @@ static Ort::Session &load_session(const std::string &path) {
                         .SessionOptionsAppendExecutionProvider_OpenVINO(
                             opts, &ov_opts));
                 ep_set = true;
+                ep_name = "OpenVINO(GPU_FP32)";
             } catch (const Ort::Exception &ex) {
                 (void)ex;
             }
         }
         session = new Ort::Session(get_ort_env(), path.c_str(), opts);
         cached_path = path;
+        static bool printed = false;
+        if (!printed) {
+            std::cerr << "[ORT] Using EP: " << ep_name << "\n";
+            printed = true;
+        }
+
     }
     return *session;
 }

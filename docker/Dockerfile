@@ -108,6 +108,7 @@ COPY launch.sh /workspace/app/launch.sh
 FROM base AS run
 
 USER ubuntu
+WORKDIR /workspace/app
 COPY --from=app-builder --chown=ubuntu:ubuntu /workspace/app /workspace/app
 RUN chmod +x /workspace/app/launch.sh
 USER ubuntu
