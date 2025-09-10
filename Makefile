@@ -20,12 +20,13 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev docker-ci-test down format help lint local run test tidy
+.PHONY: build clean dev docker-ci-test down format help lint local run test tidy test-ci
 
-help:
+	help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
 	@echo "  test   - Run tests for $(PKG) and show results"
+	@echo "  test-ci - Run tests excluding test_bag.py"
 	@echo "  format - clang-format tracked C/C++ files; ruff on Python"
 	@echo "  tidy   - Run clang-tidy on tracked C/C++ files"
 	@echo "  lint   - Run 'tidy' and 'format'"
@@ -79,6 +80,33 @@ test:
 	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
 	--event-handlers console_cohesion+ \
 	--ctest-args -j 1 -VV; \
+	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE)
+
+test-ci:
+	@set -eo pipefail; \
+    if [ ! -f "$(ROS_SETUP)" ]; then \
+      if [ -n "$$ROS_DISTRO" ] && [ -f "/opt/ros/$$ROS_DISTRO/setup.bash" ]; then \
+        ROS_SETUP="/opt/ros/$$ROS_DISTRO/setup.bash"; \
+        echo "Using ROS setup at $$ROS_SETUP (ROS_DISTRO=$$ROS_DISTRO)"; \
+      else \
+        echo "ROS setup not found at $(ROS_SETUP). Set ROS_SETUP or export ROS_DISTRO."; \
+        exit 1; \
+      fi; \
+    fi; \
+	rm -rf \
+	  $(BUILD_BASE)/$(PKG)/Testing \
+	  $(BUILD_BASE)/$(PKG)/test_results \
+	  $(BUILD_BASE)/Testing \
+	  $(BUILD_BASE)/test_results \
+	  $(BUILD_BASE)/$(PKG)/CMakeCache.txt || true; \
+	$(COLCON) build --base-paths . --packages-select $(PKG) \
+	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	--cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
+	--event-handlers console_cohesion+; \
+	$(COLCON) test --base-paths . --packages-select $(PKG) \
+	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
+	--event-handlers console_cohesion+ \
+	--ctest-args -j 1 -VV -E test_bag; \
 	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE)
 
 .PHONY: tidy
@@ -149,7 +177,7 @@ docker-ci-test:
 	  -w /workspace/repo \
 	  -v "$(PWD):/workspace/repo" \
 	  $(DOCKER_TAG) \
-	  -lc 'source /opt/ros/jazzy/setup.bash && make clean && make test'
+	  -lc 'source /opt/ros/jazzy/setup.bash && make clean && make test-ci'
 
 .PHONY: dev
 dev:

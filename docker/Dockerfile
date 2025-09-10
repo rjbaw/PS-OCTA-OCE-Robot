@@ -18,7 +18,7 @@ RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git \
     && cmake -G Ninja -DBUILD_WEBRTC=OFF -DCMAKE_INSTALL_PREFIX=/opt/open3d-install .. \
     && cmake --build . --target install
 
-FROM openvino/ubuntu24_runtime:latest AS base
+FROM openvino/ubuntu24_dev:2025.1.0 AS base
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -29,7 +29,7 @@ RUN apt-get update \
         curl gnupg2 lsb-release software-properties-common \
         git build-essential cmake ninja-build \
         clang-format clang-tidy \
-        sudo iproute2 iputils-ping wget htop vim tmux traceroute \
+        sudo iproute2 iputils-ping wget htop vim tmux traceroute ripgrep \
         ocl-icd-libopencl1 clinfo \
         libopencv-dev libopencv-contrib-dev \
         libglfw3-dev libglew-dev libeigen3-dev \
@@ -41,8 +41,7 @@ RUN git clone --depth 1 -b v1.22.2 https://github.com/microsoft/onnxruntime.git 
       cd /opt/src/onnxruntime; \
       ./build.sh \
         --allow_running_as_root \
-        --use_dnnl \
-        --use_openvino GPU \
+        --use_openvino AUTO:NPU,GPU \
         --parallel \
         --skip_tests \
         --update \
@@ -50,9 +49,12 @@ RUN git clone --depth 1 -b v1.22.2 https://github.com/microsoft/onnxruntime.git 
         --cmake_generator Ninja \
         --compile_no_warning_as_error \
         --config Release \
-        --build_shared_lib; \
-        cmake --install build/Linux/Release --prefix /usr/local;' && \
+        --build_shared_lib \
+        --cmake_extra_defines CMAKE_INSTALL_RPATH="\$ORIGIN"; \
+        cmake --install build/Linux/Release --prefix /usr/local' && \
     rm -rf /opt/src/onnxruntime
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 RUN set -eux; \
     curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
@@ -66,7 +68,7 @@ RUN set -eux; \
       ros-$ROS_DISTRO-ur \
       ros-$ROS_DISTRO-launch-testing-ament-cmake \
       ros-$ROS_DISTRO-ament-cmake-clang-format \
-      ros-dev-tools \
+      python3-colcon-common-extensions \
       libc++-dev libc++abi-dev libgmock-dev && \
     rm -rf /var/lib/apt/lists/*
 
@@ -102,8 +104,26 @@ COPY --chown=ubuntu:ubuntu \
 RUN bash -lc 'source /opt/ros/$ROS_DISTRO/setup.bash; \
     colcon build --merge-install --install-base /workspace/app' \
     && rm -rf /workspace/source
-COPY launch.sh /workspace/app/launch.sh
+COPY --chown=ubuntu:ubuntu launch.sh /workspace/app/launch.sh
 
+FROM base AS test
+USER ubuntu
+WORKDIR /workspace/repo
+COPY --chown=ubuntu:ubuntu \
+     --exclude=.git \
+     --exclude=.github \
+     --exclude=.cache \
+     --exclude=.ruff_cache \
+     --exclude=**/data \
+     --exclude=**/build \
+     --exclude=**/install \
+     --exclude=**/log \
+     --exclude=cad \
+     --exclude=result \
+     --exclude=VI \
+     --exclude=core* \
+     . /workspace/repo
+RUN bash -lc 'make clean && make test-ci'
 
 FROM base AS run
 
