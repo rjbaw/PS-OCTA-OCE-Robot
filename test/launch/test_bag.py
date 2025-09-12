@@ -223,7 +223,7 @@ class TestFocusAction(unittest.TestCase):
 
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         result_root = os.path.join(repo_root, "result")
-        deadline = time.time() + 15000.0
+        deadline = time.time() + 900.0
         found = False
         while time.time() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.1)

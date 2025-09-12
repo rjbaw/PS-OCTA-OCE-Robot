@@ -13,6 +13,8 @@
 | [Open3D](https://www.open3d.org) | **0.19** | libopen3d-dev |
 | [OpenCV](https://www.opencv.org) | **4.6.0** | libopencv-dev |
 | [Eigen](https://eigen.tuxfamily.org) | **3.4** | Included with ROS2 by default or libeigen3-dev  |
+| [Onnxruntime](https://onnxruntime.ai) | **1.22.2** | Built from source inside docker  |
+| [OpenVINO](https://openvino.ai) | **2025.3.0** | Optional for Intel GPU/NPU (Deployment PC has Intel GPU & NPU)  |
 | [Docker](https://www.docker.com) | **28.2.2** (optional) | Reproducible container build |
 
 ---

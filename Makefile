@@ -20,7 +20,7 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev docker-ci-test down format help lint local run test tidy test-ci
+.PHONY: build clean dev dev-cpu docker-ci-test down format help lint local run test tidy test-ci
 
 	help:
 	@echo "Make targets:"
@@ -33,6 +33,7 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 	@echo "  clean  - Remove build/install/log and compile_commands.json"
 	@echo "  run    - Start deploy container"
 	@echo "  dev    - Start dev container (mounts source, bash)"
+	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
 	@echo "  docker-ci-test - Run tests inside a container"
@@ -183,18 +184,23 @@ docker-ci-test:
 dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
-	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up -d
+
+.PHONY: dev-cpu
+dev-cpu:
+	@set -e; \
+	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
 
 .PHONY: run
 run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
-	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
-	ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
+        UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
 
 .PHONY: down
 down:
 	@set -e; \
 	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
-	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true
+	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
+	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true

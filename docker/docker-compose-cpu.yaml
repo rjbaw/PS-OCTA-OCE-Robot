@@ -16,11 +16,6 @@ services:
       - ${HOME}:/workspace/home/
       - ${PWD}:/workspace/app/
     user: "${UID}:${GID}"
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/accel:/dev/accel
-    group_add:
-      - 105
     ulimits:
       core: 0
     command: ["bash"]

@@ -15,8 +15,12 @@ services:
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       #- ${HOME}:/workspace/home/
       #- ${PWD}:/workspace/app/ # debugging
+    user: "${UID}:${GID}"
     devices:
       - /dev/dri:/dev/dri
+      - /dev/accel:/dev/accel
+    group_add:
+      - 105
     ulimits:
       core: 0
     restart: always

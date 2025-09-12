@@ -21,12 +21,20 @@ static Ort::Env &get_ort_env() {
 static Ort::Session &load_session(const std::string &path) {
     static Ort::Session *session = nullptr;
     static std::string cached_path;
+    auto &env = get_ort_env();
 
     if (session == nullptr || cached_path != path) {
         Ort::SessionOptions opts;
+        const OrtApi &api = Ort::GetApi();
+        OrtSessionOptions *raw = opts;
+        Ort::ThrowOnError(api.AddFreeDimensionOverrideByName(raw, "batch", 1));
         opts.SetIntraOpNumThreads(1);
         opts.SetGraphOptimizationLevel(
             GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+        for (auto &provider : Ort::GetAvailableProviders()) {
+            std::cerr << "[ORT] available EP: " << provider << "\n";
+        }
 
         bool ep_set = false;
         const char *ep_name = "CPU";
@@ -41,30 +49,29 @@ static Ort::Session &load_session(const std::string &path) {
             ep_set = true;
             ep_name = "CUDA";
         } catch (const Ort::Exception &ex) {
-            (void)ex;
+            std::cerr << "[ORT] " << ex.what() << "\n";
         }
         if (!ep_set) {
             try {
-                OrtOpenVINOProviderOptions ov_opts;
-                ov_opts.device_type = "GPU_FP32";
-                Ort::ThrowOnError(
-                    Ort::GetApi()
-                        .SessionOptionsAppendExecutionProvider_OpenVINO(
-                            opts, &ov_opts));
+                std::unordered_map<std::string, std::string> ov_opts;
+                ov_opts["device_type"] = "HETERO:GPU,NPU";
+                ov_opts["precision"] = "FP16";
+                opts.AppendExecutionProvider_OpenVINO_V2(ov_opts);
                 ep_set = true;
-                ep_name = "OpenVINO(GPU_FP32)";
+                ep_name = "OpenVINO";
             } catch (const Ort::Exception &ex) {
-                (void)ex;
+                std::cerr << "[ORT] OpenVINO EP append failed: " << ex.what()
+                          << "\n";
             }
         }
-        session = new Ort::Session(get_ort_env(), path.c_str(), opts);
+
+        session = new Ort::Session(env, path.c_str(), opts);
         cached_path = path;
         static bool printed = false;
         if (!printed) {
             std::cerr << "[ORT] Using EP: " << ep_name << "\n";
             printed = true;
         }
-
     }
     return *session;
 }

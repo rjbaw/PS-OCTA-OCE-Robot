@@ -18,7 +18,7 @@ RUN git clone -b v0.19.0 https://github.com/isl-org/Open3D.git \
     && cmake -G Ninja -DBUILD_WEBRTC=OFF -DCMAKE_INSTALL_PREFIX=/opt/open3d-install .. \
     && cmake --build . --target install
 
-FROM openvino/ubuntu24_dev:2025.1.0 AS base
+FROM openvino/ubuntu24_dev:2025.3.0 AS base
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -41,7 +41,7 @@ RUN git clone --depth 1 -b v1.22.2 https://github.com/microsoft/onnxruntime.git 
       cd /opt/src/onnxruntime; \
       ./build.sh \
         --allow_running_as_root \
-        --use_openvino AUTO:NPU,GPU \
+        --use_openvino HETERO:NPU,GPU \
         --parallel \
         --skip_tests \
         --update \

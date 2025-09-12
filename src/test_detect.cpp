@@ -122,13 +122,15 @@ int main(int argc, char **argv) {
             y_vals.reserve(model_w);
             const int width = inputImage.cols;
             for (int x_idx = 0; x_idx < model_w; ++x_idx) {
-                size_t src_x = static_cast<size_t>(std::lround(
-                    (static_cast<double>(x_idx) * static_cast<double>(width - 1)) /
-                    static_cast<double>(model_w - 1)));
+                auto src_x = static_cast<size_t>(
+                    std::lround((static_cast<double>(x_idx) *
+                                 static_cast<double>(width - 1)) /
+                                static_cast<double>(model_w - 1)));
                 if (src_x >= result.coordinates.size()) {
                     src_x = result.coordinates.size() - 1;
                 }
-                y_vals.push_back(static_cast<float>(result.coordinates[src_x].y));
+                y_vals.push_back(
+                    static_cast<float>(result.coordinates[src_x].y));
             }
             auto txt = dst;
             txt.replace_extension(".txt");
