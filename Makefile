@@ -20,7 +20,7 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev dev-cpu docker-ci-test down format help lint local run test tidy test-ci
+.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci
 
 	help:
 	@echo "Make targets:"
@@ -36,7 +36,6 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
-	@echo "  docker-ci-test - Run tests inside a container"
 
 build:
 	@set -eo pipefail; \
@@ -168,17 +167,6 @@ local:
 	@set -e; \
 	echo "Building local deployment image: $(DOCKER_TAG)"; \
 	docker buildx build --load -t $(DOCKER_TAG) -f $(DOCKERFILE) --target run .
-
-docker-ci-test:
-	@set -e; \
-	docker run --rm \
-	  --entrypoint /bin/bash \
-	  -u $(shell id -u):$(shell id -g) \
-	  -e HOME=/tmp \
-	  -w /workspace/repo \
-	  -v "$(PWD):/workspace/repo" \
-	  $(DOCKER_TAG) \
-	  -lc 'source /opt/ros/jazzy/setup.bash && make clean && make test-ci'
 
 .PHONY: dev
 dev:

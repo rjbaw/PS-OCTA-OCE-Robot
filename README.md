@@ -30,13 +30,16 @@
 ---
 
 ## Quick start
-
 > All dependencies—except LabVIEW—are already baked into the Docker image.
 
+Please install [Git LFS](https://git-lfs.com) or just grab the model from the releases and place them inside the config folder.
+
 ### Docker Image (recommended)
+
 ```bash
-# Export robot IP address or just use defaults
+# Export host/robot IP address or just use defaults
 export ROBOT_IP=${ROBOT_IP}
+export HOST_IP=${HOST_IP}
 
 # Hardware run
 make run
@@ -44,6 +47,13 @@ make run
 # Dev container
 make dev
 ```
+#### Using URSim
+
+```bash
+bash utils/start_ursim.sh
+ROBOT_IP=192.168.56.101 make run
+```
+
 
 ### Native build
 ```bash

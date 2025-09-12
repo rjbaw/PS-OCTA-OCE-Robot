@@ -36,7 +36,7 @@ done
 CHECK_INTERVAL="${CHECK_INTERVAL:-0.3}"
 PING_TIMEOUT="${PING_TIMEOUT:-0.3}"
 MAX_RETRIES="${MAX_RETRIES:-10}"
-HOST="${HOST:-192.168.0.2}"
+HOST_IP="${HOST_IP:-192.168.0.2}"
 RUN_STATE_TIMEOUT="${RUN_STATE_TIMEOUT:-0.25s}"
 
 TMUX_SESSION="ros_driver_session"
@@ -71,7 +71,7 @@ start_ros() {
 	else
 		tmux new-session -d -s "$TMUX_SESSION" \
 			"bash -ic 'source install/setup.bash; \
-             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST 2>&1 | tee /tmp/ros_launch.log'"
+             ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP 2>&1 | tee /tmp/ros_launch.log'"
 	fi
 
 	echo "[INFO] Tmux session '$TMUX_SESSION' created. You can attach with:"
@@ -96,7 +96,7 @@ if [[ $debug == "true" ]]; then
 	if [[ $sim == "true" ]]; then
 		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true
 	else
-		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST
+		ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
 	fi
 	stop_ros
 	exit 0

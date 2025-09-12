@@ -27,7 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl gnupg2 lsb-release software-properties-common \
-        git build-essential cmake ninja-build \
+        git git-lfs build-essential cmake ninja-build \
         clang-format clang-tidy \
         sudo iproute2 iputils-ping wget htop vim tmux traceroute ripgrep \
         ocl-icd-libopencl1 clinfo \
