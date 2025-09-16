@@ -1,3 +1,8 @@
+/**
+ * @file reconnect_node.cpp
+ * @author rjbaw
+ */
+
 #include "reconnect_node.hpp"
 
 using namespace std::chrono_literals;

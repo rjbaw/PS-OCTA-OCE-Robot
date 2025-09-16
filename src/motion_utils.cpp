@@ -1,5 +1,6 @@
 /**
  * @file motion_utils.cpp
+ * @author rjbaw
  */
 
 #include "motion_utils.hpp"

@@ -1,3 +1,8 @@
+/**
+ * @file process_img.cpp
+ * @author rjbaw
+ */
+
 #include "process_img.hpp"
 #include <cmath>
 #include <filesystem>

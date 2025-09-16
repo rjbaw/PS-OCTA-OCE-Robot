@@ -164,17 +164,6 @@ bash utils/ur_driver.sh
 bash utils/ur_moveit.sh
 ```
 
-## Citing
-
-```bibtex
-@software{ps-octa-oce-robot,
-  title        = {Polarization-Sensitive OCT Angiography and Optical Coherence Elastography Robot Platform},
-  year         = {2025},
-  publisher    = {GitHub},
-  howpublished = {\url{https://github.com/rjbaw/PS-OCTA-OCE-Robot}},
-}
-```
-
 ## Hardware
 ![setup](./assets/setup.jpeg)
 
@@ -200,6 +189,40 @@ bash utils/ur_moveit.sh
   <td width="50%"><img src="./assets/robot_slow_fast.png" alt="slow"/></td>
   </tr>
 </table>
+
+### Robot TCP - OCT Calibration
+
+#### Example
+In this example, the slow axis is the inverse of the robot's X-axis and the fast axist is the same as the robot's Y-axis.
+
+<table width="100%">
+  <tr>
+    <td align="center">OCT TCP (CR: Agathe Marmin)</td>
+    <td align="center">Robot TCP</td>
+  </tr>
+  <tr>
+  <td width="50%"><img src="./assets/oct.png" alt="oct"/></td>
+  <td width="50%"><img src="./assets/robot_slow_fast.png" alt="slow"/></td>
+  </tr>
+</table>
+
+To calibrate the robot's axis to align with the OCT axis, we need to subtract `0.00065`(0.65 mm) from x-axis and subtract `0.00016`(0.16 mm) from y-axis. We can do this in the urdf config located in `urdf/oct_setup.xacro` in the joint named `oct-tcp`.
+
+![urdf_tcp](./assets/urdf_tcp.png)
+
+After making the changes recompile (`make build` or `make local`) then restart the robot program. Robot TCP is now calibrated.
+
+
+## Citing
+
+```bibtex
+@software{ps-octa-oce-robot,
+  title        = {Polarization-Sensitive OCT Angiography and Optical Coherence Elastography Robot Platform},
+  year         = {2025},
+  publisher    = {GitHub},
+  howpublished = {\url{https://github.com/rjbaw/PS-OCTA-OCE-Robot}},
+}
+```
 
 ## Funding
 

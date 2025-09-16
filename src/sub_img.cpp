@@ -1,3 +1,8 @@
+/**
+ * @file sub_img.cpp
+ * @author rjbaw
+ */
+
 #include "octa_ros/msg/img.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include <filesystem>

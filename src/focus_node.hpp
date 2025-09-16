@@ -1,7 +1,8 @@
 /**
  * @file focus_node.hpp
  * @author rjbaw
- * @brief Node that focuses robot end effector to the normal of the target
+ * @brief Action server that aligns the end-effector normal to the target using
+ * OCT scans.
  */
 
 #ifndef FOCUS_NODE_HPP
@@ -34,14 +35,62 @@
 
 #include "utils.hpp"
 
+/**
+ * @brief Action server that focuses the robot end effector to the target
+ * normal.
+ *
+ * Subscribes to OCT frames, estimates the surface normal and z-offset, and
+ * executes small corrective motions until angular and height tolerances are
+ * met. Provides progress through an action interface and optionally triggers a
+ * 3D scan window.
+ *
+ * @par Parameters
+ * - plan_only (bool, default: false): skip execution (plan only).
+ * - offline_mode (bool, default: false): disable MoveIt and execution.
+ * - gating_interval_sec (double, default: 0.02 s): minimum time between stored
+ *   frames.
+ * - focus_step_timeout_sec (double, default: 5.0 s): timeout per correction.
+ * - scan3d_service_wait_ms (int, default: 200 ms): wait for Scan3d service.
+ * - scan3d_response_timeout_ms (int, default: 2000 ms): Scan3d RPC timeout.
+ * - image_width (int, default: 500 px): expected width of incoming frames.
+ * - image_height (int, default: 512 px): expected height of incoming frames.
+ * - image_topic (string, default: "/oct_image"): OCT topic to subscribe.
+ * - px_per_mm (double, default: 65.0 px/mm): pixel density used for dz.
+ * - tool_link (string, default: "tcp"): end-effector link name.
+ * - envelope_radius_m (double, default: 0.05 m): spherical envelope radius.
+ * - curve_model_path (string): override ONNX model path used by detection.
+ *
+ * @par Subscriptions
+ * - `octa_ros::msg::Img` on `image_topic` (QoS: best-effort).
+ *
+ * @par Services
+ * - Client: `octa_ros::srv::Scan3d` on `scan_3d` to toggle scanning.
+ *
+ * @par Action Server
+ * - Name: `focus_action`; Goal fields include angle and z tolerances (degrees,
+ *   mm) and z height target (mm).
+ *
+ * @note Units: angles are degrees in the action goal; internally converted to
+ * radians for planning. Heights are in millimeters in the goal and converted to
+ * meters for execution.
+ *
+ * @ingroup actions
+ */
 class FocusActionServer : public rclcpp::Node {
     using Focus = octa_ros::action::Focus;
     using GoalHandleFocus = rclcpp_action::ServerGoalHandle<Focus>;
     using Scan3d = octa_ros::srv::Scan3d;
 
   public:
+    /**
+     * @brief Construct the node; call init() to create interfaces.
+     */
     explicit FocusActionServer(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+
+    /**
+     * @brief Create publishers/subscribers, action server and service clients.
+     */
     void init();
 
   private:
@@ -109,20 +158,51 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp::Time start;
 
+    /**
+     * @brief Fast check if the image is near-blank.
+     * @param img Grayscale image.
+     * @param pixel_thres Pixel threshold to consider as black.
+     * @param ratio Fraction of pixels below threshold to qualify as black.
+     */
     bool is_black(const cv::Mat &img, uint8_t pixel_thres = 5,
                   double ratio = 0.98);
+
+    /**
+     * @brief Push a new frame into the lock-free ring buffer.
+     */
     void push_frame(const cv::Mat &frame);
+
+    /**
+     * @brief Pop the newest frame not yet processed.
+     * @return True if a new frame was returned.
+     */
     bool pop_new(cv::Mat &frame);
 
+    /**
+     * @brief Get the latest buffered image (copy).
+     */
     cv::Mat get_img();
 
+    /**
+     * @brief OCT image subscription callback.
+     */
     void image_callback(octa_ros::msg::Img::SharedPtr msg);
 
+    /**
+     * @brief Toggle 3D scan acquisition via service.
+     * @param activate Whether to start (true) or stop (false) scanning.
+     */
     bool call_scan3d(bool activate);
 
+    /**
+     * @brief Check whether roll/pitch are within the requested tolerance.
+     */
     bool tol_measure(const double &roll, const double &pitch,
                      const double &angle_tolerance);
 
+    /**
+     * @brief Action callbacks for goal management and execution.
+     */
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
                 std::shared_ptr<const Focus::Goal> goal);

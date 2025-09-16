@@ -1,3 +1,28 @@
+/**
+ * @file reconnect_node.hpp
+ * @author rjbaw
+ * @brief Periodically checks UR dashboard status and performs auto-recovery.
+ *
+ * Polls UR dashboard services and issues recovery commands (connect, power on,
+ * restart safety, release brakes, resend external control program) until the
+ * robot is ready.
+ *
+ * @par Timer
+ * - Poll period: 5 s.
+ *
+ * @par Services (clients)
+ * - `/dashboard_client/get_robot_mode` (GetRobotMode)
+ * - `/dashboard_client/get_safety_mode` (GetSafetyMode)
+ * - `/dashboard_client/program_running` (IsProgramRunning)
+ * - `/dashboard_client/connect` (Trigger)
+ * - `/dashboard_client/power_on` (Trigger)
+ * - `/dashboard_client/brake_release` (Trigger)
+ * - `/dashboard_client/restart_safety` (Trigger)
+ * - `/io_and_status_controller/resend_robot_program` (Trigger)
+ *
+ * @ingroup reconnect
+ */
+
 #ifndef RECONNECT_NODE_HPP
 #define RECONNECT_NODE_HPP
 
@@ -56,10 +81,19 @@ using namespace std::chrono_literals;
 
 class ReconnectClient : public rclcpp::Node {
   public:
+    /** @brief Construct the node and start the periodic polling timer. */
     ReconnectClient();
 
   private:
+    /** @brief Poll dashboard state and perform reconnection steps if needed. */
     void timerCallback();
+
+    /**
+     * @brief Call a standard Trigger service and log result.
+     * @param client Trigger client instance.
+     * @param service_name Name used for logging.
+     * @return true on success response, false otherwise.
+     */
     bool callTriggerService(
         const rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr &client,
         const std::string &service_name);

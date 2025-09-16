@@ -1,5 +1,6 @@
 /**
  * @file scene_utils.cpp
+ * @author rjbaw
  */
 
 #include "scene_utils.hpp"

@@ -1,3 +1,8 @@
+/**
+ * @file test_detect.cpp
+ * @author rjbaw
+ */
+
 #include "process_img.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <filesystem>

@@ -1,5 +1,62 @@
 /**
  * @file coordinator_node.hpp
+ * @author rjbaw
+ * @brief Main coordinator node orchestrating actions, pub/sub, and services.
+ *
+ * Coordinates high-level user actions across motion (MoveIt), OCT/OCE
+ * acquisition, and LabVIEW I/O. Maintains a pub/sub loop for the GUI, drives
+ * the action clients for motion primitives, and exposes a Scan3d service for
+ * acquisition windows.
+ *
+ * @par Parameters
+ * - topic_robot_data (string, default: "robot_data"): publish topic for
+ *   `octa_ros::msg::Robotdata`.
+ * - topic_labview_data (string, default: "labview_data"): subscribe topic for
+ *   `octa_ros::msg::Labviewdata`.
+ * - topic_cancel (string, default: "cancel_current_action"): subscribe topic
+ *   for cancel requests (`std_msgs::msg::Bool`).
+ * - srv_scan3d (string, default: "scan_3d"): service name for `Scan3d`.
+ * - srv_capture_background (string, default: "capture_background"): service
+ *   name to capture OCT background (`std_srvs/Trigger`).
+ * - action_focus_name (string, default: "focus_action"): Focus action server.
+ * - action_movez_name (string, default: "move_z_angle_action"): MoveZAngle
+ *   action server.
+ * - action_freedrive_name (string, default: "freedrive_action"): Freedrive
+ *   action server.
+ * - action_reset_name (string, default: "reset_action"): Reset action server.
+ * - pub_period_ms (int, default: 5 ms): publisher timer period.
+ * - main_loop_period_ms (int, default: 5 ms): state machine tick period.
+ * - action_server_wait_ms (int, default: 200 ms): wait for action servers.
+ * - config_apply_ms (int, default: 50 ms): debounce time before applying mode
+ *   changes.
+ * - scan_trigger_timeout_sec (double, default: 2.0 s): timeout for scan
+ *   triggers.
+ * - capture_service_wait_ms (int, default: 200 ms): wait for background
+ *   capture service to be available.
+ * - capture_response_timeout_ms (int, default: 1000 ms): service call timeout.
+ * - scan3d_window_ms (int, default: 50 ms): duration of scan window.
+ * - service_poll_interval_ms (int, default: 1 ms): poll interval for services.
+ *
+ * @par Publishers
+ * - `octa_ros::msg::Robotdata` on `topic_robot_data` (QoS: reliable).
+ *
+ * @par Subscribers
+ * - `octa_ros::msg::Labviewdata` on `topic_labview_data` (QoS: reliable).
+ * - `std_msgs::msg::Bool` on `topic_cancel` (QoS: reliable) – cancels current
+ *   action.
+ *
+ * @par Services (clients/servers)
+ * - Server: `Scan3d` on `srv_scan3d` (QoS: reliable).
+ * - Client: `std_srvs/Trigger` on `srv_capture_background`.
+ *
+ * @par Action Clients
+ * - Focus, MoveZAngle, Freedrive, Reset (names via parameters above).
+ *
+ * @note Units: lengths are meters unless noted; angles are degrees in GUI
+ * messages but radians internally for planning; times are ms or seconds as
+ * specified in parameter names.
+ *
+ * @ingroup coordinator
  */
 
 #ifndef COORDINATOR_NODE_HPP
@@ -28,22 +85,35 @@
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 
+/**
+ * @brief High-level user intent states handled by the coordinator.
+ */
 enum class UserAction : uint8_t {
-    None,
-    Freedrive,
-    Reset,
-    MoveZangle,
-    Focus,
-    Scan,
+    None,       ///< Idle / no action selected.
+    Freedrive,  ///< Robot freedrive mode.
+    Reset,      ///< Return to default position.
+    MoveZangle, ///< Execute Z/yaw repositioning.
+    Focus,      ///< Run focus alignment routine.
+    Scan,       ///< LabVIEW acquisition trigger.
 };
 
+/**
+ * @brief System operating modes.
+ */
 enum class Mode : uint8_t {
-    ROBOT,
-    OCT,
-    OCTA,
-    OCE,
+    ROBOT, ///< LabVIEW Robot mode.
+    OCT,   ///< LabVIEW OCT mode.
+    OCTA,  ///< LabVIEW OCT mode.
+    OCE,   ///< LabVIEW OCE mode.
 };
 
+/**
+ * @brief Central node coordinating user actions, motion, and OCT/OCE tasks.
+ *
+ * Provides action clients to specialized servers (freedrive, reset, focus,
+ * move_z_angle), exposes a Scan3d service, and maintains a high-rate pub/sub
+ * loop to exchange robot and LabVIEW state.
+ */
 class CoordinatorNode : public rclcpp::Node {
   public:
     using FocusAction = octa_ros::action::Focus;
@@ -58,9 +128,12 @@ class CoordinatorNode : public rclcpp::Node {
     using FreedriveGoalHandle = rclcpp_action::ClientGoalHandle<Freedrive>;
     using ResetGoalHandle = rclcpp_action::ClientGoalHandle<Reset>;
 
+    /** @brief Construct the node; call init() to create interfaces. */
     explicit CoordinatorNode(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
+    /** @brief Create publishers, subscribers, timers, and action/service
+     * clients. */
     void init();
 
   private:
@@ -189,16 +262,27 @@ class CoordinatorNode : public rclcpp::Node {
         }
     }
 
+    /** @brief Handle LabVIEW data subscription messages. */
     void subscriber_callback(octa_ros::msg::Labviewdata::SharedPtr msg);
+    /** @brief Handle external cancel request. */
     void cancel_callback(std_msgs::msg::Bool::SharedPtr msg);
+    /** @brief Publish Robotdata at a fixed rate. */
     void publisher_callback();
+    /** @brief Core state machine tick; sends goals based on current state. */
     void main_loop();
+
+    /** @brief Send a focus action goal if not already active. */
     void send_focus_goal();
+    /** @brief Send a MoveZAngle goal with the requested yaw increment. */
     void send_move_z_angle_goal(double yaw);
+    /** @brief Send a Freedrive goal to enable/disable manual guidance. */
     void send_freedrive_goal(bool enable);
+    /** @brief Send a Reset goal to return to a safe posture. */
     void send_reset_goal();
+    /** @brief Scan3d service handler. */
     void scan3d_callback(std::shared_ptr<Scan3d::Request> request,
                          std::shared_ptr<Scan3d::Response> response);
+    /** @brief Call OCT background capture service; returns true if success. */
     bool call_capture_background();
 };
 

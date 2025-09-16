@@ -1,3 +1,8 @@
+/**
+ * @file joint_state_publisher.cpp
+ * @author rjbaw
+ */
+
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/int32.hpp>
