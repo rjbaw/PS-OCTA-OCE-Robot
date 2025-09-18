@@ -38,4 +38,3 @@
  * @defgroup utils Utilities
  * Common math and logging helpers.
  */
-

@@ -193,7 +193,7 @@ bash utils/ur_moveit.sh
 ### Robot TCP - OCT Calibration
 
 #### Example
-In this example, the slow axis is the inverse of the robot's X-axis and the fast axist is the same as the robot's Y-axis.
+In this example, the slow axis is the inverse of the robot's X-axis and the fast axis is the same as the robot's Y-axis.
 
 <table width="100%">
   <tr>

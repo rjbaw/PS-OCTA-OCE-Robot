@@ -13,8 +13,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
-      #- ${HOME}:/workspace/home/
-      #- ${PWD}:/workspace/app/ # debugging
+      - ${PWD}/result:/workspace/app/result
     user: "${UID}:${GID}"
     devices:
       - /dev/dri:/dev/dri

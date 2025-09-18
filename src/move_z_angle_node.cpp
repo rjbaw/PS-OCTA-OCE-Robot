@@ -127,7 +127,9 @@ void MoveZAngleActionServer::execute(
 
     planning_component_->setStartStateToCurrentState();
     const std::string tool_link =
-        this->declare_parameter<std::string>("tool_link", "tcp");
+        this->has_parameter("tool_link")
+            ? this->get_parameter("tool_link").as_string()
+            : this->declare_parameter<std::string>("tool_link", "tcp");
     moveit::core::RobotStatePtr current_state = moveit_cpp_->getCurrentState();
     Eigen::Isometry3d current_pose =
         current_state->getGlobalLinkTransform(tool_link);
@@ -155,7 +157,9 @@ void MoveZAngleActionServer::execute(
                                            ->getPlanningScene()
                                            ->getPlanningFrame();
     const double envelope_radius =
-        this->declare_parameter<double>("envelope_radius_m", 0.05);
+        this->has_parameter("envelope_radius_m")
+            ? this->get_parameter("envelope_radius_m").as_double()
+            : this->declare_parameter<double>("envelope_radius_m", 0.05);
     moveit_msgs::msg::Constraints envelope = octa_ros::motion::make_envelope(
         start_tcp, planning_frame, tool_link, envelope_radius, M_PI);
     planning_component_->setPathConstraints(envelope);
@@ -171,8 +175,12 @@ void MoveZAngleActionServer::execute(
         return;
     }
 
-    auto pipelines = this->declare_parameter<std::vector<std::string>>(
-        "planning_pipelines", std::vector<std::string>{"pilz_ptp", "pilz_lin"});
+    std::vector<std::string> pipelines =
+        this->has_parameter("planning_pipelines")
+            ? this->get_parameter("planning_pipelines").as_string_array()
+            : this->declare_parameter<std::vector<std::string>>(
+                  "planning_pipelines",
+                  std::vector<std::string>{"pilz_ptp", "pilz_lin"});
     auto req =
         moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
             shared_from_this(), pipelines);

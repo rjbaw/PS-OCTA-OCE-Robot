@@ -134,7 +134,9 @@ void ResetActionServer::execute(
 
         moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
         const std::string tool_link =
-            this->declare_parameter<std::string>("tool_link", "tcp");
+            this->has_parameter("tool_link")
+                ? this->get_parameter("tool_link").as_string()
+                : this->declare_parameter<std::string>("tool_link", "tcp");
         Eigen::Isometry3d start_tcp =
             cur_state->getGlobalLinkTransform(tool_link);
         const std::string planning_frame =
@@ -142,7 +144,9 @@ void ResetActionServer::execute(
                 ->getPlanningScene()
                 ->getPlanningFrame();
         const double envelope_radius =
-            this->declare_parameter<double>("envelope_radius_m", 0.05);
+            this->has_parameter("envelope_radius_m")
+                ? this->get_parameter("envelope_radius_m").as_double()
+                : this->declare_parameter<double>("envelope_radius_m", 0.05);
         auto envelope = octa_ros::motion::make_envelope(
             start_tcp, planning_frame, tool_link, envelope_radius, M_PI / 3.0);
 
