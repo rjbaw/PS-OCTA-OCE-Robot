@@ -175,12 +175,7 @@ void MoveZAngleActionServer::execute(
         return;
     }
 
-    std::vector<std::string> pipelines =
-        this->has_parameter("planning_pipelines")
-            ? this->get_parameter("planning_pipelines").as_string_array()
-            : this->declare_parameter<std::vector<std::string>>(
-                  "planning_pipelines",
-                  std::vector<std::string>{"pilz_ptp", "pilz_lin"});
+    const std::vector<std::string> pipelines = {"pilz_ptp", "pilz_lin"};
     auto req =
         moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
             shared_from_this(), pipelines);
