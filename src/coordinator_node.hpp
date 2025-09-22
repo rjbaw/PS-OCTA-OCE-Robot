@@ -16,8 +16,6 @@
  * - topic_cancel (string, default: "cancel_current_action"): subscribe topic
  *   for cancel requests (`std_msgs::msg::Bool`).
  * - srv_scan3d (string, default: "scan_3d"): service name for `Scan3d`.
- * - srv_capture_background (string, default: "capture_background"): service
- *   name to capture OCT background (`std_srvs/Trigger`).
  * - action_focus_name (string, default: "focus_action"): Focus action server.
  * - action_movez_name (string, default: "move_z_angle_action"): MoveZAngle
  *   action server.
@@ -31,9 +29,6 @@
  *   changes.
  * - scan_trigger_timeout_sec (double, default: 2.0 s): timeout for scan
  *   triggers.
- * - capture_service_wait_ms (int, default: 200 ms): wait for background
- *   capture service to be available.
- * - capture_response_timeout_ms (int, default: 1000 ms): service call timeout.
  * - scan3d_window_ms (int, default: 50 ms): duration of scan window.
  * - service_poll_interval_ms (int, default: 1 ms): poll interval for services.
  *
@@ -47,7 +42,6 @@
  *
  * @par Services (clients/servers)
  * - Server: `Scan3d` on `srv_scan3d` (QoS: reliable).
- * - Client: `std_srvs/Trigger` on `srv_capture_background`.
  *
  * @par Action Clients
  * - Focus, MoveZAngle, Freedrive, Reset (names via parameters above).
@@ -144,8 +138,6 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp_action::Client<Reset>::SharedPtr reset_action_client_;
 
     // Services
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
-        service_capture_background_;
     rclcpp::Service<Scan3d>::SharedPtr scan_3d_srv_;
 
     // MoveIt
@@ -165,10 +157,8 @@ class CoordinatorNode : public rclcpp::Node {
     int64_t pub_period_ms_ = 5;
     int64_t main_loop_period_ms_ = 5;
     int64_t action_server_wait_ms_ = 200;
-    int64_t config_apply_ms_ = 50;
+    int64_t config_apply_ms_ = 60;
     double scan_trigger_timeout_sec_ = 2.0;
-    int64_t capture_service_wait_ms_ = 200;
-    int64_t capture_response_timeout_ms_ = 1000;
     int64_t scan3d_window_ms_ = 50;
     int64_t service_poll_interval_ms_ = 1;
 

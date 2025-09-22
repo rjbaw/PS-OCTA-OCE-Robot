@@ -20,7 +20,16 @@ services:
       - /dev/accel:/dev/accel
     group_add:
       - 105
+    cap_add:
+      - SYS_NICE
+      - SYS_RESOURCE
+    # cpu_rt_period / cpu_rt_runtime require host RT scheduler support
+    # cpu_rt_period: 1000000
+    # cpu_rt_runtime: 950000
     ulimits:
+      rtprio: 99
+      nice: -20
+      memlock: -1
       core: 0
     restart: always
     network_mode: host
