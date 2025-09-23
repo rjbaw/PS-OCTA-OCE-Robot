@@ -95,7 +95,7 @@ class FocusActionServer : public rclcpp::Node {
 
   private:
     bool early_terminate_ = false;
-    bool skip_angle_tolerance_ = true;
+    bool skip_angle_tolerance_ = false;
     const int interval_ = 6;
 
     rclcpp_action::Server<Focus>::SharedPtr action_server_;
