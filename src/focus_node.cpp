@@ -11,6 +11,7 @@
 #include <format>
 #include <open3d/Open3D.h>
 #include <rclcpp/executors.hpp>
+#include <rclcpp/executors/multi_threaded_executor.hpp>
 #include <rclcpp/utilities.hpp>
 
 using namespace std::chrono_literals;
@@ -265,7 +266,7 @@ int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<FocusActionServer>();
     node->init();
-    rclcpp::executors::SingleThreadedExecutor exec;
+    rclcpp::executors::MultiThreadedExecutor exec;
     exec.add_node(node);
     exec.spin();
     rclcpp::shutdown();
@@ -461,7 +462,7 @@ void FocusActionServer::execute(
                 return;
             }
         }
-        rclcpp::sleep_for(300ms);
+        std::this_thread::sleep_for(300ms);
         std::vector<cv::Mat> img_array;
         for (int i = 0; i < interval_; i++) {
             start = now();
