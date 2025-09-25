@@ -8,8 +8,8 @@
 | Component | Tested Version | Notes |
 |-----------|---------------|-------|
 | [ROS 2](https://docs.ros.org/en/jazzy/index.html) | **Jazzy** | Native install or inside the provided Docker image |
-| [LabVIEW](https://www.ni.com/en/shop/labview.html) | **2024 Q1** (64-bit) | Required for acquisition & real-time display |
-| [RTI DDS Toolkit](https://www.rti.com/products/tools/dds-toolkit-labview) | **3.2.0.114** | Install into LabVIEW before first run |
+| [LabVIEW](https://www.ni.com/en/shop/labview.html) | **2024 Q3** (64-bit) | Required for acquisition & real-time display |
+| [RTI DDS Toolkit](https://www.rti.com/products/tools/dds-toolkit-labview) | **4.0.0.114** | Install into LabVIEW before first run |
 | [Open3D](https://www.open3d.org) | **0.19** | libopen3d-dev |
 | [OpenCV](https://www.opencv.org) | **4.6.0** | libopencv-dev |
 | [Eigen](https://eigen.tuxfamily.org) | **3.4** | Included with ROS2 by default or libeigen3-dev  |
@@ -206,7 +206,7 @@ In this example, the slow axis is the inverse of the robot's X-axis and the fast
   </tr>
 </table>
 
-To calibrate the robot's axis to align with the OCT axis, we need to subtract `0.00065`(0.65 mm) from x-axis and subtract `0.00016`(0.16 mm) from y-axis. We can do this in the urdf config located in `urdf/oct_setup.xacro` in the joint named `oct-tcp`.
+To calibrate the robot's axis to align with the OCT axis, we need to subtract `0.00065`(0.65 mm) from x-axis and subtract `0.00016`(0.16 mm) from y-axis. We can do this in the urdf config located in `urdf/oct_tooling.xacro` in the joint named `oct-tcp`.
 
 ![urdf_tcp](./assets/urdf_tcp.png)
 

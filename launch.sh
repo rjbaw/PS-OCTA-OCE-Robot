@@ -57,7 +57,11 @@ tmux_session_alive() {
 stop_ros() {
 	echo "[INFO] Stopping left over ROS processes (tmux session '$TMUX_SESSION')..."
 	pkill -f octa_ros
-	rm -f core*
+	pkill -f ur_robot_driver || true
+	pkill -f dashboard_client || true
+	pkill -f controller_stopper_node || true
+	pkill -f urscript_interface || true
+	rm -f /tmp/launch_params_* core*
 	tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 }
 

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:include filename="$(find octa_ros)/urdf/end_effector.xacro"/>
+
+  <xacro:macro name="octa_ros_tooling" params="tf_prefix">
+    <link name="${tf_prefix}oct"/>
+
+    <link name="${tf_prefix}tcp">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <mass value="0.0" />
+        <inertia
+          ixx="0" ixy="0" ixz="0"
+          iyy="0" iyz="0"
+          izz="0" />
+      </inertial>
+    </link>
+
+    <joint name="${tf_prefix}tool0-oct" type="fixed">
+      <origin xyz="0.0104474865 0.00835817192 0.132806" rpy="0 0 ${-3*pi/4.0}"/>
+      <parent link="${tf_prefix}tool0"/>
+      <child link="${tf_prefix}oct"/>
+    </joint>
+
+    <joint name="${tf_prefix}oct-tcp" type="fixed">
+      <origin xyz="0.0005989 -0.0011181 0.0" rpy="0 0 0"/>
+      <parent link="${tf_prefix}oct"/>
+      <child link="${tf_prefix}tcp"/>
+    </joint>
+
+    <xacro:end_effector prefix="" parent="${tf_prefix}tcp">
+      <origin xyz="0.02 -0.05 -0.175" rpy="0 0 ${pi}"/>
+    </xacro:end_effector>
+  </xacro:macro>
+</robot>

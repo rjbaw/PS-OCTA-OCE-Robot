@@ -2,32 +2,36 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:macro name="end_effector" params="prefix parent *origin">
-    
-    <!-- Joint connecting to parent link -->
+
     <joint name="${prefix}end_effector_joint" type="fixed">
       <parent link="${parent}"/>
       <child link="${prefix}end_effector_link"/>
       <xacro:insert_block name="origin"/>
     </joint>
 
-    <!-- End effector link -->
     <link name="${prefix}end_effector_link">
       <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
         <geometry>
-          <sphere radius="0.06"/>
+          <mesh filename="package://octa_ros/urdf/end_effector.stl" />
         </geometry>
-	<material name="green">
-          <color rgba="0 0 1 1"/>
+        <material name="oct_end_effector">
+          <color rgba="0.0 0.3 0.8 1.0"/>
         </material>
       </visual>
       <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
         <geometry>
-          <sphere radius="0.05"/>
+          <mesh filename="package://octa_ros/urdf/end_effector.stl" />
         </geometry>
       </collision>
       <inertial>
-        <mass value="0.1"/>
-        <inertia ixx="0.000016667" ixy="0" ixz="0" iyy="0.000016667" iyz="0" izz="0.000016667"/>
+        <origin xyz="0.00632 -0.04819 0.08954" rpy="0 0 0" />
+        <mass value="0.4376"/>
+        <inertia
+          ixx="0.000563" ixy="0.0000074" ixz="0.000074" 
+          iyy="0.000636" iyz="-0.000059" 
+          izz="0.000322"/>
       </inertial>
     </link>
 

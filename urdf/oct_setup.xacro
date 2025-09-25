@@ -1,22 +1,21 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
-  <!-- robot name parameter -->
-  <xacro:arg name="name" default="ur"/>
+  <!--
+    Built on top of ur_robot_driver/urdf/ur.urdf.xacro and only adds the OCT/TCP
+    assembly provided by octa_ros_tooling.
+  -->
 
+  <!-- Upstream UR definitions -->
   <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
-  <!-- ros2 control include -->
   <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro" />
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
 
-  <!-- end_effector include -->
-  <xacro:include filename="$(find octa_ros)/urdf/end_effector.xacro" />
-  <!-- <xacro:include filename="$(find ur_robot_driver)/urdf/ur.urdf.xacro" /> -->
+  <!-- OCT-specific attachments -->
+  <xacro:include filename="$(find octa_ros)/urdf/oct_tooling.xacro" />
 
-  <!-- possible 'ur_type' values: ur3, ur3e, ur5, ur5e, ur10, ur10e, ur16e, ur20 -->
-  <!-- the default value should raise an error in case this was called without defining the type -->
+  <!-- Pass-through UR driver arguments -->
+  <xacro:arg name="name" default="ur"/>
   <xacro:arg name="ur_type" default="urXe"/>
-
-  <!-- parameters -->
   <xacro:arg name="tf_prefix" default="" />
   <xacro:arg name="joint_limit_params" default="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"/>
   <xacro:arg name="kinematics_params" default="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
@@ -26,7 +25,6 @@
   <xacro:arg name="safety_limits" default="false"/>
   <xacro:arg name="safety_pos_margin" default="0.15"/>
   <xacro:arg name="safety_k_position" default="20"/>
-  <!-- ros2_control related parameters -->
   <xacro:arg name="headless_mode" default="false" />
   <xacro:arg name="robot_ip" default="0.0.0.0" />
   <xacro:arg name="script_filename" default=""/>
@@ -37,7 +35,6 @@
   <xacro:arg name="reverse_port" default="50001"/>
   <xacro:arg name="script_sender_port" default="50002"/>
   <xacro:arg name="trajectory_port" default="50003"/>
-  <!--   tool communication related parameters-->
   <xacro:arg name="use_tool_communication" default="false" />
   <xacro:arg name="tool_voltage" default="0" />
   <xacro:arg name="tool_parity" default="0" />
@@ -47,19 +44,14 @@
   <xacro:arg name="tool_tx_idle_chars" default="3.5" />
   <xacro:arg name="tool_device_name" default="/tmp/ttyUR" />
   <xacro:arg name="tool_tcp_port" default="54321" />
-
-  <!-- Simulation parameters -->
   <xacro:arg name="use_mock_hardware" default="false" />
   <xacro:arg name="mock_sensor_commands" default="false" />
   <xacro:arg name="simulation_controllers" default="" />
-
-  <!-- initial position for simulations (Mock Hardware, Gazebo, Ignition) -->
   <xacro:arg name="initial_positions_file" default="$(find ur_description)/config/initial_positions.yaml"/>
 
-  <!-- convert to property to use substitution in function -->
+  <!-- Derived properties reused below -->
   <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
 
-  <!-- create link fixed to the "world" -->
   <link name="world" />
 
   <xacro:ur_robot
@@ -72,12 +64,10 @@
       visual_parameters_file="$(arg visual_params)"
       safety_limits="$(arg safety_limits)"
       safety_pos_margin="$(arg safety_pos_margin)"
-      safety_k_position="$(arg safety_k_position)"
-      >
-    <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
+      safety_k_position="$(arg safety_k_position)">
+    <origin xyz="0 0 0" rpy="0 0 0" />
   </xacro:ur_robot>
 
-  <!-- ros2 control instance -->
   <xacro:ur_ros2_control
       name="$(arg name)"
       tf_prefix="$(arg tf_prefix)"
@@ -104,39 +94,7 @@
       script_command_port="$(arg script_command_port)"
       reverse_port="$(arg reverse_port)"
       script_sender_port="$(arg script_sender_port)"
-      trajectory_port="$(arg trajectory_port)"
-      />
+      trajectory_port="$(arg trajectory_port)"/>
 
-  <link name="$(arg tf_prefix)oct"/>
-
-  <link name="$(arg tf_prefix)tcp">
-    <inertial>
-      <origin xyz="0 0 0.051" rpy="0 0 0" />
-      <mass value="2.0" />
-      <inertia
-          ixx="0.0005" ixy="0" ixz="0"
-          iyy="0.0005" iyz="0"
-          izz="0.0005"
-          />
-    </inertial>
-  </link>
-
-  <joint name="$(arg tf_prefix)tool0-oct" type="fixed">
-    <origin xyz="0.0104474865 0.00835817192 0.132806" rpy="0 0 ${-3*pi/4.0}"/>
-    <parent link="$(arg tf_prefix)tool0"/>
-    <child link="$(arg tf_prefix)oct"/>
-  </joint>
-
-  <joint name="$(arg tf_prefix)oct-tcp" type="fixed">
-    <origin xyz="0.0005989 -0.0011181 0.0" rpy="0 0 0"/>
-    <parent link="$(arg tf_prefix)oct"/>
-    <child link="$(arg tf_prefix)tcp"/>
-  </joint>
-
-  <xacro:end_effector prefix="" parent="$(arg tf_prefix)tcp">
-    <origin xyz="0.0 0.0 -0.08" rpy="0 0 0"/>
-  </xacro:end_effector>
-
+  <xacro:octa_ros_tooling tf_prefix="$(arg tf_prefix)" />
 </robot>
-
-
