@@ -66,6 +66,7 @@ RUN set -eux; \
       ros-$ROS_DISTRO-ros-base \
       ros-$ROS_DISTRO-ros2-control ros-$ROS_DISTRO-ros2-controllers \
       ros-$ROS_DISTRO-ur \
+      ros-$ROS_DISTRO-trac-ik-kinematics-plugin \
       ros-$ROS_DISTRO-launch-testing-ament-cmake \
       ros-$ROS_DISTRO-ament-cmake-clang-format \
       python3-colcon-common-extensions \

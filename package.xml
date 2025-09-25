@@ -8,14 +8,16 @@
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  
+
   <depend>rclcpp</depend>
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>moveit_ros_planning_interface</depend>
-  <depend>moveit_ros_planning</depend>
   <depend>geometry_msgs</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_msgs</depend>
+  <depend>shape_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_eigen</depend>
   <depend>tf2_geometry_msgs</depend>
@@ -40,8 +42,11 @@
   <build_depend>ament_cmake</build_depend>
   <exec_depend>ament_cmake</exec_depend>
 
+  <exec_depend>trac_ik_kinematics_plugin</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
