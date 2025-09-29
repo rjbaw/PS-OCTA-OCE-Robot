@@ -244,9 +244,6 @@ void ResetActionServer::execute(
             }
         }
         publisher_->publish(message);
-        for (int i = 0; i < 30 && !goal_handle->is_canceling(); ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
     }
 
     if (goal_handle->is_canceling()) {

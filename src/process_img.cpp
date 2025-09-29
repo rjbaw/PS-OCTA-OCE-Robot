@@ -40,9 +40,8 @@ static Ort::Session &load_session(const std::string &path,
         const OrtApi &api = Ort::GetApi();
         OrtSessionOptions *raw = opts;
         if (batch_override > 0) {
-            Ort::ThrowOnError(
-                api.AddFreeDimensionOverrideByName(raw, "batch",
-                                                   batch_override));
+            Ort::ThrowOnError(api.AddFreeDimensionOverrideByName(
+                raw, "batch", batch_override));
         }
         opts.SetIntraOpNumThreads(1);
         opts.SetGraphOptimizationLevel(
