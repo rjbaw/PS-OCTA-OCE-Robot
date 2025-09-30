@@ -21,6 +21,5 @@ joint_limits:
     has_acceleration_limits: true
     max_acceleration: 5.0
   wrist_3_joint:
-    has_position_limits: false
     has_acceleration_limits: true
     max_acceleration: 5.0

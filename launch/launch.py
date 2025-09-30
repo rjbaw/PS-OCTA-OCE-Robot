@@ -609,10 +609,9 @@ def generate_launch_description():
             "joint_limit_params_file",
             default_value=PathJoinSubstitution(
                 [
-                    FindPackageShare("ur_description"),
+                    FindPackageShare("octa_ros"),
                     "config",
-                    ur_type,
-                    "joint_limits.yaml",
+                    "ur_joint_limits.yaml",
                 ]
             ),
             description="Config file containing the joint limits (e.g. velocities, positions) of the robot.",

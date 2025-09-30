@@ -6,6 +6,7 @@ sudo apt-get install -y ros-${ROS_DISTRO}-ros2-control
 sudo apt-get install -y libglew-dev libglfw3-dev
 sudo apt-get install -y ros-${ROS_DISTRO}-ur 
 sudo apt-get install -y ros-${ROS_DISTRO}-ament-cmake-clang-format
+sudo apt-get install -y ros-$ROS_DISTRO-trac-ik-kinematics-plugin
 
 colcon mixin add default https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml
 colcon mixin update default
