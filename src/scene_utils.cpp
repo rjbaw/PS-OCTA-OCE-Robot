@@ -65,7 +65,7 @@ moveit_msgs::msg::CollisionObject make_monitor(const std::string &frame_id) {
     geometry_msgs::msg::Pose pose;
     pose.orientation.w = 1.0;
     pose.position.x = -0.2;
-    pose.position.y = std::numbers::log10e;
+    pose.position.y = 0.7;
     pose.position.z = 0.215;
 
     obj.primitives.push_back(primitive);

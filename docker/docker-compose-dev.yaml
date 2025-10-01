@@ -8,7 +8,6 @@ services:
       QT_GRAPHICSSYSTEM: native
       QT_X11_NO_MITSHIM: '1'
       XAUTHORITY: /workspace/.Xauthority
-      ROBOT_IP: ${ROBOT_IP:-192.168.56.101}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro

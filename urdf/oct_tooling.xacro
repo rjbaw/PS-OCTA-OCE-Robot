@@ -29,7 +29,7 @@
     </joint>
 
     <xacro:end_effector prefix="" parent="${tf_prefix}tcp">
-      <origin xyz="0.02 -0.05 -0.175" rpy="0 0 ${pi}"/>
+      <origin xyz="-0.04 -0.01 -0.175" rpy="0 0 ${pi/2.0}"/>
     </xacro:end_effector>
   </xacro:macro>
 </robot>
