@@ -138,7 +138,11 @@ d     Debug
 
 ![sample](./assets/sample.gif)
 
-[](https://github.com/user-attachments/assets/f6faee66-33a7-49da-ba42-7a2a0e900b7e)
+[](https://github.com/user-attachments/assets/73df870e-d026-4eda-939c-03648ecc0e0d)
+
+[](https://github.com/user-attachments/assets/411babd6-09d0-4099-885c-6c4ca57ff564)
+
+[](https://github.com/user-attachments/assets/fba01416-4875-4cd9-9928-0afa79f6a66c)
 
 ### Controlling from LabVIEW
 
