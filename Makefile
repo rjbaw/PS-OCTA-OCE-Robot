@@ -20,9 +20,9 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci
+.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci attach logs status shell restart prune-logs
 
-	help:
+help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
 	@echo "  test   - Run tests for $(PKG) and show results"
@@ -36,6 +36,12 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
+	@echo "  attach - Attach to tmux session inside container"
+	@echo "  logs   - Show last 300 lines (crash tail or live tmux)"
+	@echo "  status - Show container, tmux, and robot reachability"
+	@echo "  shell  - Open an interactive shell in the container"
+	@echo "  restart - Restart container (down then run)"
+	@echo "  prune-logs - Delete logs older than PRUNE_LOGS_DAYS (default 7)"
 
 build:
 	@set -eo pipefail; \
@@ -184,7 +190,7 @@ dev-cpu:
 run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
-        UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
 
 .PHONY: down
 down:
@@ -192,3 +198,58 @@ down:
 	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
 	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
 	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true
+
+attach:
+	@set -e; \
+	docker exec -it ps-oce-robot bash -lc "tmux attach -t ros_driver_session || (echo 'tmux session not found; available sessions:'; tmux ls || true)"
+
+logs:
+	@set -euo pipefail; \
+	CRASH=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); \
+	if [ -n "$$CRASH" ]; then \
+	  echo "Last crash log: $$CRASH"; \
+	  sed -e 's/^/[ROS] /' "$$CRASH"; \
+	else \
+	  echo "No crash log found; attempting live tmux capture..."; \
+	  docker exec ps-oce-robot bash -lc "tmux capture-pane -t ros_driver_session -p -S -300" 2>/dev/null || echo "No live tmux log available."; \
+	fi
+
+status:
+	@set -e; \
+	echo "Container status:"; \
+	docker ps -a --filter name=ps-oce-robot --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'; \
+	echo; \
+	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	if [ -n "$(ROBOT_IP)" ]; then \
+	  if ping -c 1 -W 1 $(ROBOT_IP) >/dev/null 2>&1; then echo "Robot: reachable"; else echo "Robot: unreachable"; fi; \
+	else echo "Robot: (ROBOT_IP not set)"; fi; \
+	echo; \
+	if docker ps --filter name=ps-oce-robot --format '{{.Names}}' | grep -qx ps-oce-robot; then \
+	  echo "Inside container:"; \
+	  docker exec ps-oce-robot bash -lc 'if tmux has-session -t ros_driver_session 2>/dev/null; then echo "tmux: ros_driver_session present"; dead=$$(tmux display-message -p -t ros_driver_session "#{pane_dead}" 2>/dev/null); echo "tmux pane_dead=$$dead"; else echo "tmux: no session"; fi; last=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); if [ -n "$$last" ]; then echo "Last crash log: $$last"; tail -n 5 "$$last" | sed -e "s/^/[ROS] /"; fi'; \
+	else \
+	  echo "Container not running; skipping tmux status."; \
+	fi
+
+.PHONY: shell
+shell:
+	@set -e; \
+	if docker ps --filter name=ps-oce-robot --format '{{.Names}}' | grep -qx ps-oce-robot; then \
+	  docker exec -it ps-oce-robot bash; \
+	else \
+	  echo "Container 'ps-oce-robot' is not running. Start it with 'make run'."; exit 1; \
+	fi
+
+.PHONY: restart
+restart:
+	@set -e; \
+	$(MAKE) down; \
+	$(MAKE) run
+
+.PHONY: prune-logs
+PRUNE_LOGS_DAYS ?= 7
+prune-logs:
+	@set -e; \
+	mkdir -p logs; \
+	find logs -mindepth 1 -mtime +$(PRUNE_LOGS_DAYS) -exec rm -rf {} + 2>/dev/null || true; \
+	echo "Pruned logs older than $(PRUNE_LOGS_DAYS) days from ./logs"

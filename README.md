@@ -20,12 +20,14 @@
 ---
 
 ## Table of Contents
-1. [Quick start](#quick-start)  
-2. [Design](#design)  
-3. [Usage examples](#usage-examples)  
-4. [Hardware](#hardware)
-5. [Citing](#citing) 
-6. [Funding](#funding)  
+1. [Quick start](#quick-start)
+2. [Operations (Make)](#operations-make)
+3. [Troubleshooting](#troubleshooting)
+4. [Design](#design)
+5. [Usage examples](#usage-examples)
+6. [Hardware](#hardware)
+7. [Citing](#citing)
+8. [Funding](#funding)
 
 ---
 
@@ -47,6 +49,77 @@ make run
 # Dev container
 make dev
 ```
+
+### Operations (Make)
+Run `make help` anytime to see available commands.
+
+```bash
+# Start/stop the container
+make run
+make down
+
+# Use a specific robot IP for this run
+ROBOT_IP=192.168.0.10 make run
+
+# Show status (container, tmux session, robot reachability)
+make status
+
+# Show logs
+# - if a crash log exists: print last 300 lines
+# - otherwise: capture last 300 lines live from tmux
+make logs
+
+# Attach to the ROS tmux session inside the container
+make attach
+
+# Open a shell in the container
+make shell
+
+# Restart the container
+make restart
+
+# Prune logs older than 7 days (override with PRUNE_LOGS_DAYS=14)
+make prune-logs
+```
+
+## Troubleshooting
+
+- Container not running
+  - `make run`
+  - `make status` shows container state; `make restart` if needed.
+
+- Cannot attach to tmux
+  - `make attach`
+  - If it says “no session”, check `make status` and ensure the container is running and ROS has been started by the monitor.
+
+- No logs printed
+  - `make logs` prints the last 300 lines. If there’s no crash log yet, it captures live tmux output.
+  - RCUTILS logs are under `./logs/<timestamped_dir>` when enabled; prune with `make prune-logs`.
+
+- Robot unreachable
+  - Verify IP: `echo $ROBOT_IP` then `ping -c1 $ROBOT_IP`.
+  - Start with a larger timeout: `PING_TIMEOUT=1 CHECK_INTERVAL=1 ROBOT_IP=... make run`.
+  - Avoid ARP flushing; it’s disabled by design to prevent flapping.
+
+- LabVIEW run_state not detected
+  - Increase wait: `RUN_STATE_TIMEOUT=1s make run`.
+  - Validate publisher is active in LabVIEW.
+
+- X11 display issues (RViz, GUIs)
+  - On host: `xhost +local:` (temporary) and ensure `DISPLAY`/`.Xauthority` are correct.
+
+- Logs growing too large
+  - Auto-prune keeps entries older than 7 days cleaned at startup.
+  - Manual cleanup: `make prune-logs` or set `PRUNE_LOGS_DAYS=3 make prune-logs`.
+
+Environment knobs
+- `ROBOT_IP`, `HOST_IP` — network endpoints
+- `PING_TIMEOUT`, `CHECK_INTERVAL` — connectivity checks (seconds)
+- `RUN_STATE_TIMEOUT` — wait for `/run_state` sample (e.g., `1s`)
+- `LOG_DIR` — logs directory (default `./logs`)
+- `PRUNE_LOGS_DAYS` — days before deletion (default 7)
+- `RCUTILS_LOGGING_DIRECTORY` — enable ROS logs under `LOG_DIR`
+
 #### Using URSim
 
 ```bash
