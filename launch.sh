@@ -2,8 +2,9 @@
 trap stop_ros EXIT
 
 source /opt/ros/jazzy/setup.bash
-source install/setup.bash || true
-source /workspace/app/setup.bash || true
+[ -f install/setup.bash ] && source install/setup.bash
+[ -f /workspace/app/setup.bash ] && source /workspace/app/setup.bash
+[ -f out/install/setup.bash ] && source out/install/setup.bash
 
 help() {
 	echo "Launch octa/oce ROS program"
@@ -44,7 +45,6 @@ prune_logs
 
 CHECK_INTERVAL="${CHECK_INTERVAL:-0.3}"
 PING_TIMEOUT="${PING_TIMEOUT:-3}"
-MAX_RETRIES="${MAX_RETRIES:-10}"
 HOST_IP="${HOST_IP:-192.168.0.2}"
 RUN_STATE_TIMEOUT="${RUN_STATE_TIMEOUT:-0.25s}"
 
@@ -80,14 +80,14 @@ start_ros() {
 		tmux new-session -d -s "$TMUX_SESSION" \
 			"bash -lc 'set -e; export RCUTILS_LOGGING_DIRECTORY=\"$LOG_DIR\"; \
               [ -f /opt/ros/jazzy/setup.bash ] && source /opt/ros/jazzy/setup.bash; \
-              [ -f /workspace/app/install/setup.bash ] && source /workspace/app/install/setup.bash; \
+              [ -f /workspace/app/setup.bash ] && source /workspace/app/setup.bash; \
               cd /workspace/app 2>/dev/null || true; \
               ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true'"
 	else
 		tmux new-session -d -s "$TMUX_SESSION" \
 			"bash -lc 'set -e; export RCUTILS_LOGGING_DIRECTORY=\"$LOG_DIR\"; \
               [ -f /opt/ros/jazzy/setup.bash ] && source /opt/ros/jazzy/setup.bash; \
-              [ -f /workspace/app/install/setup.bash ] && source /workspace/app/install/setup.bash; \
+              [ -f /workspace/app/setup.bash ] && source /workspace/app/setup.bash; \
               cd /workspace/app 2>/dev/null || true; \
               ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP'"
 	fi
@@ -137,32 +137,25 @@ echo "[INFO] Logs dir: $LOG_DIR"
 echo "[INFO] Checking connectivity to $ROBOT_IP every $CHECK_INTERVAL seconds."
 echo "[INFO] Press Ctrl+C to stop this monitor script."
 ros_running=false
-fails=0
 echo "[INFO] ROS is waiting for Robot to be online...."
 while true; do
 	if ping -c 1 -W "$PING_TIMEOUT" "$ROBOT_IP" &>/dev/null; then
-		fails=0
-		if $init_start; then
-			echo "[INFO] init_start=true"
-			echo "[INFO] Robot is online. Starting ROS..."
-			start_ros
-			ros_running=true
-			init_start=false
-		fi
 		new_state=$(check_labview_topic)
-		if [[ "$new_state" == "true" ]]; then
-			if ! $ros_running; then
-				echo "[INFO] run_state=true"
-				echo "[INFO] Robot is online. Starting ROS..."
-				start_ros
-				ros_running=true
-			fi
-		elif [[ "$new_state" == "false" ]]; then
+		if [[ "$new_state" == "false" ]]; then
 			if $ros_running; then
 				echo "[INFO] run_state=false"
 				echo "[INFO] LabView deactivation. Stopping ROS..."
 				stop_ros
 				ros_running=false
+			fi
+		else
+			if ! $ros_running; then
+				if $init_start; then echo "[INFO] init_start=true"; fi
+				echo "[INFO] run_state=${new_state:-<none>}"
+				echo "[INFO] Robot is online. Starting ROS..."
+				start_ros
+				ros_running=true
+				init_start=false
 			fi
 		fi
 
@@ -175,16 +168,11 @@ while true; do
 		fi
 
 	else
-		((fails += 1))
 		if $ros_running; then
 			echo "[INFO] $ROBOT_IP is offline. Stopping ROS..."
 			stop_ros
 			ros_running=false
 			echo "[INFO] ROS is waiting for Robot to be online...."
-		fi
-		if ((fails >= MAX_RETRIES)); then
-			# ip neigh flush to "$ROBOT_IP" nud failed stale reachable 2>/dev/null
-			fails=0
 		fi
 	fi
 	sleep "$CHECK_INTERVAL"
