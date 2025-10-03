@@ -316,6 +316,10 @@ install(
           freedrive_node
   DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS
+  utils/driver_manager.py
+  DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY config launch urdf srdf bags DESTINATION share/${PROJECT_NAME})
 
 ament_package()

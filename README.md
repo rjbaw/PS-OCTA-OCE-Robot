@@ -61,16 +61,13 @@ make down
 # Use a specific robot IP for this run
 ROBOT_IP=192.168.0.10 make run
 
-# Show status (container, tmux session, robot reachability)
+# Show status (container, session, robot reachability)
 make status
 
 # Show logs
 # - if a crash log exists: print last 300 lines
-# - otherwise: capture last 300 lines live from tmux
+# - otherwise: tail RCUTILS logs
 make logs
-
-# Attach to the ROS tmux session inside the container
-make attach
 
 # Open a shell in the container
 make shell
@@ -88,13 +85,9 @@ make prune-logs
   - `make run`
   - `make status` shows container state; `make restart` if needed.
 
-- Cannot attach to tmux
-  - `make attach`
-  - If it says “no session”, check `make status` and ensure the container is running and ROS has been started by the monitor.
-
 - No logs printed
-  - `make logs` prints the last 300 lines. If there’s no crash log yet, it captures live tmux output.
-  - RCUTILS logs are under `./logs/<timestamped_dir>` when enabled; prune with `make prune-logs`.
+  - `make logs` prints the last 300 lines. If there’s no crash log yet, it tails RCUTILS logs.
+  - RCUTILS logs are under `./logs/<timestamped_dir>`; prune with `make prune-logs`.
 
 - Robot unreachable
   - Verify IP: `echo $ROBOT_IP` then `ping -c1 $ROBOT_IP`.
@@ -113,12 +106,12 @@ make prune-logs
   - Manual cleanup: `make prune-logs` or set `PRUNE_LOGS_DAYS=3 make prune-logs`.
 
 Environment knobs
-- `ROBOT_IP`, `HOST_IP` — network endpoints
-- `PING_TIMEOUT`, `CHECK_INTERVAL` — connectivity checks (seconds)
-- `RUN_STATE_TIMEOUT` — wait for `/run_state` sample (e.g., `1s`)
+- `ROBOT_IP`, `HOST_IP` — network endpoints (HOST_IP auto-detected from `ip route get $ROBOT_IP` if unset)
+- `UR_TYPE` — robot type for launch (default `ur3e`)
+- `PING_TIMEOUT` — manager reachability timeout (seconds, default `3`)
 - `LOG_DIR` — logs directory (default `./logs`)
-- `PRUNE_LOGS_DAYS` — days before deletion (default 7)
-- `RCUTILS_LOGGING_DIRECTORY` — enable ROS logs under `LOG_DIR`
+- `PRUNE_LOGS_DAYS` — days before deletion (default `7`)
+- `RCUTILS_LOGGING_DIRECTORY` — when set, forces ROS logs under `LOG_DIR`
 
 #### Using URSim
 
@@ -140,13 +133,27 @@ source install/setup.bash
 #### Launch helper
 ```bash
 ./launch.sh -h
-Launch octa/oce ROS program
+Launch OCTA/OCE ROS program
 
-Syntax: [-s|-d|-h]
-options:
-h     Print this Help.
-s     Simulation
-d     Debug
+Usage: ./launch.sh [-h|-d|-s]
+
+Environment variables:
+  ROBOT_IP           Robot IP (default 192.168.0.10)
+  HOST_IP            Host IP for reverse connection (auto-detected if unset)
+  LOG_DIR            Logs directory (default ./logs)
+  PRUNE_LOGS_DAYS    Days before log pruning (default 7)
+  PING_TIMEOUT       Ping timeout seconds for reachability (default 3)
+
+Behavior:
+  - Starts the driver manager which launches/stops the ROS driver based on:
+      IP offline       -> stop
+      IP online + LV=false -> stop
+      IP online + LV=true or no message -> start
+  - RCUTILS logs are written under LOG_DIR.
+
+Options:
+  -d  Debug: run launch.py directly (bypass manager)
+  -s  Simulation: if ROBOT_IP is unset, default to 192.168.56.101
 ```
 
 ## Design

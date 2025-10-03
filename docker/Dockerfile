@@ -119,6 +119,7 @@ COPY --chown=ubuntu:ubuntu \
      --exclude=**/build \
      --exclude=**/install \
      --exclude=**/log \
+     --exclude=**/logs \
      --exclude=cad \
      --exclude=result \
      --exclude=VI \

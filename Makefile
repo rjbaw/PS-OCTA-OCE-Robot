@@ -20,9 +20,9 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci attach logs status shell restart prune-logs
+.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci logs status shell restart prune-logs
 
-help:
+	help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
 	@echo "  test   - Run tests for $(PKG) and show results"
@@ -36,9 +36,8 @@ help:
 	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
-	@echo "  attach - Attach to tmux session inside container"
-	@echo "  logs   - Show last 300 lines (crash tail or live tmux)"
-	@echo "  status - Show container, tmux, and robot reachability"
+	@echo "  logs   - Show last 300 lines (crash tail or RCUTILS logs)"
+	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
 	@echo "  prune-logs - Delete logs older than PRUNE_LOGS_DAYS (default 7)"
@@ -178,18 +177,21 @@ local:
 dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	mkdir -p logs result; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up -d
 
 .PHONY: dev-cpu
 dev-cpu:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	mkdir -p logs result; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
 
 .PHONY: run
 run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
+	mkdir -p logs result; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
 
 .PHONY: down
@@ -199,20 +201,22 @@ down:
 	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
 	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true
 
-attach:
-	@set -e; \
-	docker exec -it ps-oce-robot bash -lc "tmux attach -t ros_driver_session || (echo 'tmux session not found; available sessions:'; tmux ls || true)"
-
 logs:
 	@set -euo pipefail; \
 	CRASH=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); \
 	if [ -n "$$CRASH" ]; then \
 	  echo "Last crash log: $$CRASH"; \
 	  sed -e 's/^/[ROS] /' "$$CRASH"; \
-	else \
-	  echo "No crash log found; attempting live tmux capture..."; \
-	  docker exec ps-oce-robot bash -lc "tmux capture-pane -t ros_driver_session -p -S -300" 2>/dev/null || echo "No live tmux log available."; \
-	fi
+	  exit 0; \
+	fi; \
+	LATEST_DIR=$$(find logs -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-); \
+	if [ -n "$$LATEST_DIR" ]; then \
+	  echo "RCUTILS logs in: $$LATEST_DIR"; \
+	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r tail -n 300; \
+	  exit 0; \
+	fi; \
+	echo "No host logs found; checking in-container logs..."; \
+	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r tail -n 300; else echo "No container logs available."; fi' || true
 
 status:
 	@set -e; \
@@ -226,9 +230,9 @@ status:
 	echo; \
 	if docker ps --filter name=ps-oce-robot --format '{{.Names}}' | grep -qx ps-oce-robot; then \
 	  echo "Inside container:"; \
-	  docker exec ps-oce-robot bash -lc 'if tmux has-session -t ros_driver_session 2>/dev/null; then echo "tmux: ros_driver_session present"; dead=$$(tmux display-message -p -t ros_driver_session "#{pane_dead}" 2>/dev/null); echo "tmux pane_dead=$$dead"; else echo "tmux: no session"; fi; last=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); if [ -n "$$last" ]; then echo "Last crash log: $$last"; tail -n 5 "$$last" | sed -e "s/^/[ROS] /"; fi'; \
+	  docker exec ps-oce-robot bash -lc 'if pgrep -f "driver_manager.py" >/dev/null; then echo manager: running; else echo manager: not running; fi; if pgrep -f "ros2 launch octa_ros launch.py" >/dev/null; then echo driver: running; else echo driver: not running; fi; echo -n "Log dir: "; echo $${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; last=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); if [ -n "$$last" ]; then echo "Last crash log: $$last"; tail -n 5 "$$last" | sed -e "s/^/[ROS] /"; fi'; \
 	else \
-	  echo "Container not running; skipping tmux status."; \
+	  echo "Container not running; skipping inner status."; \
 	fi
 
 .PHONY: shell
