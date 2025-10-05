@@ -85,25 +85,9 @@ make prune-logs
   - `make run`
   - `make status` shows container state; `make restart` if needed.
 
-- No logs printed
-  - `make logs` prints the last 300 lines. If there’s no crash log yet, it tails RCUTILS logs.
-  - RCUTILS logs are under `./logs/<timestamped_dir>`; prune with `make prune-logs`.
-
 - Robot unreachable
   - Verify IP: `echo $ROBOT_IP` then `ping -c1 $ROBOT_IP`.
   - Start with a larger timeout: `PING_TIMEOUT=1 CHECK_INTERVAL=1 ROBOT_IP=... make run`.
-  - Avoid ARP flushing; it’s disabled by design to prevent flapping.
-
-- LabVIEW run_state not detected
-  - Increase wait: `RUN_STATE_TIMEOUT=1s make run`.
-  - Validate publisher is active in LabVIEW.
-
-- X11 display issues (RViz, GUIs)
-  - On host: `xhost +local:` (temporary) and ensure `DISPLAY`/`.Xauthority` are correct.
-
-- Logs growing too large
-  - Auto-prune keeps entries older than 7 days cleaned at startup.
-  - Manual cleanup: `make prune-logs` or set `PRUNE_LOGS_DAYS=3 make prune-logs`.
 
 Environment knobs
 - `ROBOT_IP`, `HOST_IP` — network endpoints (HOST_IP auto-detected from `ip route get $ROBOT_IP` if unset)

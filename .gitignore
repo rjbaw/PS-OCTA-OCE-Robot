@@ -30,6 +30,7 @@ detected_image*
 raw_image*
 experimental.py
 result/
+logs/
 core.*
 *.swp
 *~

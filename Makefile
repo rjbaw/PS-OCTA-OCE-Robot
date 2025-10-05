@@ -22,7 +22,7 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
 .PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci logs status shell restart prune-logs
 
-	help:
+help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
 	@echo "  test   - Run tests for $(PKG) and show results"
@@ -36,11 +36,10 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
-	@echo "  logs   - Show last 300 lines (crash tail or RCUTILS logs)"
+	@echo "  logs   - Prune old logs, then show last 300 lines"
 	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
-	@echo "  prune-logs - Delete logs older than PRUNE_LOGS_DAYS (default 7)"
 
 build:
 	@set -eo pipefail; \
@@ -203,6 +202,7 @@ down:
 
 logs:
 	@set -euo pipefail; \
+	PRUNE_LOGS_DAYS=$(PRUNE_LOGS_DAYS) $(MAKE) -s prune-logs; \
 	CRASH=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); \
 	if [ -n "$$CRASH" ]; then \
 	  echo "Last crash log: $$CRASH"; \

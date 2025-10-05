@@ -6,13 +6,11 @@ import socket
 import subprocess
 import threading
 import time
-from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
-from ament_index_python.packages import get_package_share_directory
 
 def _ping(host: str, timeout_s: float = 1.0) -> bool:
     try:
@@ -47,7 +45,14 @@ def _detect_host_ip(robot_ip: str) -> str:
 
 
 class DriverManager(Node):
-    def __init__(self, robot_ip: str, host_ip: str, ur_type: str, headless: bool, ping_timeout: float):
+    def __init__(
+        self,
+        robot_ip: str,
+        host_ip: str,
+        ur_type: str,
+        headless: bool,
+        ping_timeout: float,
+    ):
         super().__init__("driver_manager")
         self.robot_ip = robot_ip
         self.host_ip = host_ip or _detect_host_ip(robot_ip)
@@ -55,7 +60,7 @@ class DriverManager(Node):
         self.headless = headless
         self.ping_timeout = ping_timeout
 
-        self.state_run_false = False  
+        self.state_run_false = False
         self.state_last_msg_time = 0.0
 
         self.sub = self.create_subscription(Bool, "/run_state", self._on_run_state, 1)
@@ -84,7 +89,9 @@ class DriverManager(Node):
                 f"reverse_ip:={self.host_ip}",
             ]
             env = os.environ.copy()
-            log_dir = env.get("RCUTILS_LOGGING_DIRECTORY", os.path.join(os.getcwd(), "logs"))
+            log_dir = env.get(
+                "RCUTILS_LOGGING_DIRECTORY", os.path.join(os.getcwd(), "logs")
+            )
             os.makedirs(log_dir, exist_ok=True)
             env["RCUTILS_LOGGING_DIRECTORY"] = log_dir
             env["ROS_LOG_DIR"] = log_dir
@@ -122,7 +129,7 @@ class DriverManager(Node):
 
     def _on_run_state(self, msg: Bool):
         self.state_last_msg_time = time.monotonic()
-        self.state_run_false = (msg.data is False)
+        self.state_run_false = msg.data is False
 
     def _tick(self):
         online = _ping(self.robot_ip, self.ping_timeout)
@@ -138,15 +145,21 @@ class DriverManager(Node):
 
 def main():
     parser = argparse.ArgumentParser(description="ROS 2 Driver Manager")
-    parser.add_argument("--robot-ip", default=os.environ.get("ROBOT_IP", "192.168.0.10"))
+    parser.add_argument(
+        "--robot-ip", default=os.environ.get("ROBOT_IP", "192.168.0.10")
+    )
     parser.add_argument("--host-ip", default=os.environ.get("HOST_IP", ""))
     parser.add_argument("--ur-type", default=os.environ.get("UR_TYPE", "ur3e"))
     parser.add_argument("--headless", action="store_true", default=True)
-    parser.add_argument("--ping-timeout", type=float, default=float(os.environ.get("PING_TIMEOUT", 3)))
+    parser.add_argument(
+        "--ping-timeout", type=float, default=float(os.environ.get("PING_TIMEOUT", 3))
+    )
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=ros_args)
-    node = DriverManager(args.robot_ip, args.host_ip, args.ur_type, args.headless, args.ping_timeout)
+    node = DriverManager(
+        args.robot_ip, args.host_ip, args.ur_type, args.headless, args.ping_timeout
+    )
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
