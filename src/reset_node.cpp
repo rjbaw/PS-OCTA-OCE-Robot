@@ -36,6 +36,12 @@ void ResetActionServer::init() {
     if (!this->has_parameter("offline_mode")) {
         this->declare_parameter<bool>("offline_mode", false);
     }
+    if (!this->has_parameter("urscript_robot_vel")) {
+        this->declare_parameter<double>("urscript_robot_vel", 0.5);
+    }
+    if (!this->has_parameter("urscript_robot_acc")) {
+        this->declare_parameter<double>("urscript_robot_acc", 0.5);
+    }
     bool plan_only = this->get_parameter("plan_only").as_bool();
     bool offline_mode = this->get_parameter("offline_mode").as_bool();
     if (!(plan_only || offline_mode)) {
@@ -153,7 +159,7 @@ void ResetActionServer::execute(
         planning_component_->setGoal(goal_state);
         auto req =
             moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
-                shared_from_this(), {"ompl_rrtc"});
+                shared_from_this(), {"pilz_ptp", "pilz_lin"});
         auto choose_shortest =
             [](const std::vector<planning_interface::MotionPlanResponse>
                    &solutions) {
@@ -214,8 +220,10 @@ void ResetActionServer::execute(
 
     if (failed_) {
         RCLCPP_INFO(get_logger(), "URScript fall back");
-        float robot_vel = 0.5;
-        float robot_acc = 0.5;
+        float robot_vel = static_cast<float>(
+            this->get_parameter("urscript_robot_vel").as_double());
+        float robot_acc = static_cast<float>(
+            this->get_parameter("urscript_robot_acc").as_double());
         double joint0 = to_radian(0.0);
         double joint1 = to_radian(-60.0);
         double joint2 = to_radian(90.0);

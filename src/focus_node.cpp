@@ -462,7 +462,7 @@ void FocusActionServer::execute(
                 return;
             }
         }
-        std::this_thread::sleep_for(300ms);
+        std::this_thread::sleep_for(350ms);
         std::vector<cv::Mat> img_array;
         for (int i = 0; i < interval_; i++) {
             start = now();

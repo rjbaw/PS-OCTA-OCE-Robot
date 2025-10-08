@@ -6,14 +6,13 @@
  * Actions are toggled using rising edge to prevent multiple triggers.
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <format>
-#include <future>
 #include <mutex>
-#include <numbers>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -685,6 +684,9 @@ void CoordinatorNode::send_focus_goal() {
     goal_msg.z_tolerance = z_tolerance_;
     goal_msg.z_height = z_height_;
 
+    apply_speed_scale_to_node("/focus_node", robot_vel_.load(),
+                              robot_acc_.load());
+
     auto options = rclcpp_action::Client<FocusAction>::SendGoalOptions();
 
     options.feedback_callback =
@@ -744,6 +746,9 @@ void CoordinatorNode::send_move_z_angle_goal(double yaw) {
     goal_msg.radius = radius_.load();
     goal_msg.angle = angle_.load();
 
+    apply_speed_scale_to_node("/move_z_angle_node", robot_vel_.load(),
+                              robot_acc_.load());
+
     auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
 
     options.feedback_callback =
@@ -799,6 +804,42 @@ void CoordinatorNode::send_move_z_angle_goal(double yaw) {
         };
 
     move_z_angle_action_client_->async_send_goal(goal_msg, options);
+}
+
+void CoordinatorNode::apply_speed_scale_to_node(const std::string &node_name,
+                                                double vel_scale,
+                                                double acc_scale) {
+    vel_scale = std::clamp(vel_scale, 0.0, 1.0);
+    acc_scale = std::clamp(acc_scale, 0.0, 1.0);
+    try {
+        auto client = std::make_shared<rclcpp::SyncParametersClient>(
+            shared_from_this(), node_name);
+        if (!client->wait_for_service(std::chrono::milliseconds(250))) {
+            RCLCPP_WARN_THROTTLE(
+                get_logger(), *get_clock(), 5000,
+                "Param service not available on %s; skip speed scaling",
+                node_name.c_str());
+            return;
+        }
+        std::vector<rclcpp::Parameter> params;
+        params.emplace_back(
+            "pilz_ptp.plan_request_params.max_velocity_scaling_factor",
+            vel_scale);
+        params.emplace_back(
+            "pilz_ptp.plan_request_params.max_acceleration_scaling_factor",
+            acc_scale);
+        params.emplace_back(
+            "pilz_lin.plan_request_params.max_velocity_scaling_factor",
+            vel_scale);
+        params.emplace_back(
+            "pilz_lin.plan_request_params.max_acceleration_scaling_factor",
+            acc_scale);
+        (void)client->set_parameters(params);
+    } catch (const std::exception &e) {
+        RCLCPP_WARN(get_logger(),
+                    "Failed to set speed scaling parameters on %s: %s",
+                    node_name.c_str(), e.what());
+    }
 }
 
 void CoordinatorNode::send_freedrive_goal(bool enable) {

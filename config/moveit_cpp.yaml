@@ -16,34 +16,34 @@ plan_request_params:
   planner_id: PTP
   max_velocity_scaling_factor: 1.0
   max_acceleration_scaling_factor: 1.0
-  planning_time: 0.5
+  planning_time: 5.0
   planning_attempts: 2
 
 pilz_ptp:
   plan_request_params:
     planning_pipeline: pilz_industrial_motion_planner
     planner_id: PTP
-    max_velocity_scaling_factor: 0.25
-    max_acceleration_scaling_factor: 0.25
-    planning_time: 0.5
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 1.0
     planning_attempts: 1
 
 pilz_lin:
   plan_request_params:
     planning_pipeline: pilz_industrial_motion_planner
     planner_id: LIN
-    max_velocity_scaling_factor: 0.20
-    max_acceleration_scaling_factor: 0.20
-    planning_time: 0.5
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 1.0
     planning_attempts: 1
 
 ompl_rrtc:
   plan_request_params:
     planning_pipeline: ompl
     planner_id: RRTConnectkConfigDefault
-    max_velocity_scaling_factor: 0.25
-    max_acceleration_scaling_factor: 0.25
-    planning_time: 0.5
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
+    planning_time: 1.0
     planning_attempts: 1
 
 stomp_joint:
@@ -51,8 +51,8 @@ stomp_joint:
     planning_pipeline: stomp
     planning_time: 1.0
     planning_attempts: 1
-    max_velocity_scaling_factor: 0.25
-    max_acceleration_scaling_factor: 0.25
+    max_velocity_scaling_factor: 1.0
+    max_acceleration_scaling_factor: 1.0
   stomp_moveit:
     optimization:
       num_timesteps: 30
@@ -64,12 +64,12 @@ pilz_industrial_motion_planner:
   planner_configs:
     PTP:
       type: PTP
-      velocity_scaling: 0.25
-      acceleration_scaling: 0.25
+      velocity_scaling: 1.0
+      acceleration_scaling: 1.0
     LIN:
       type: LIN
-      velocity_scaling: 0.20
-      acceleration_scaling: 0.20
+      velocity_scaling: 1.0
+      acceleration_scaling: 1.0
 
 ompl:
   planning_plugins: ["ompl_interface/OMPLPlanner"]
@@ -82,4 +82,3 @@ ompl:
     - default_planning_response_adapters/AddTimeOptimalParameterization
     - default_planning_response_adapters/ValidateSolution
     - default_planning_response_adapters/DisplayMotionPath
-  #start_state_max_bounds_error: 0.1
