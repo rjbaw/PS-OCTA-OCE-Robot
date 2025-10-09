@@ -572,42 +572,47 @@ void CoordinatorNode::main_loop() {
     switch (current_action_) {
     case UserAction::Freedrive:
         if (freedrive_) {
-            if (previous_action_ != current_action_) {
-                send_freedrive_goal(true);
+            if (!goal_still_active(active_freedrive_goal_handle_) &&
+                previous_action_ != UserAction::Freedrive) {
                 circle_state_ = 1;
                 angle_ = 0.0;
                 msg_ = "[Action] Freedrive Mode ON\n";
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 previous_action_ = UserAction::Freedrive;
+                send_freedrive_goal(true);
             }
         } else {
-            send_freedrive_goal(false);
-            msg_ = "[Action] Freedrive Mode OFF\n";
-            RCLCPP_INFO(get_logger(), msg_.c_str());
+            if (goal_still_active(active_freedrive_goal_handle_) ||
+                previous_action_ == UserAction::Freedrive) {
+                msg_ = "[Action] Freedrive Mode OFF\n";
+                RCLCPP_INFO(get_logger(), msg_.c_str());
+                send_freedrive_goal(false);
+            }
             current_action_ = UserAction::None;
             previous_action_ = UserAction::None;
         }
         break;
     case UserAction::Reset:
-        if (previous_action_ != current_action_) {
+        if (!goal_still_active(active_reset_goal_handle_) &&
+            previous_action_ != UserAction::Reset) {
             angle_ = 0.0;
             circle_state_ = 1;
             msg_ = "[Action] Reset to default position. It may take "
-                   "some time "
-                   "please wait.\n";
+                   "some time please wait.\n";
             RCLCPP_INFO(get_logger(), msg_.c_str());
-            send_reset_goal();
             previous_action_ = UserAction::Reset;
+            send_reset_goal();
         }
         break;
     case UserAction::Focus:
         if (autofocus_.load() && !end_state_.load()) {
-            if (previous_action_ != current_action_) {
+            if (!goal_still_active(active_focus_goal_handle_) &&
+                previous_action_ != UserAction::Focus) {
                 success_ = false;
-                send_focus_goal();
                 msg_ = "[Action] Focusing\n";
                 RCLCPP_INFO(get_logger(), msg_.c_str());
                 previous_action_ = UserAction::Focus;
+                send_focus_goal();
             }
         } else {
             if (!success_.load()) {
@@ -621,7 +626,8 @@ void CoordinatorNode::main_loop() {
         }
         break;
     case UserAction::MoveZangle:
-        if (previous_action_ != current_action_) {
+        if (!goal_still_active(active_move_z_goal_handle_) &&
+            previous_action_ != UserAction::MoveZangle) {
             angle_increment_ = (num_pt_.load() == 0)
                                    ? 0.0
                                    : (angle_limit_.load() /
@@ -637,21 +643,21 @@ void CoordinatorNode::main_loop() {
                 msg_ = std::format("[Action] Home: {}\n", yaw_);
             }
             RCLCPP_INFO(get_logger(), msg_.c_str());
+            previous_action_ = UserAction::MoveZangle;
             send_move_z_angle_goal(yaw_);
             if (std::abs(angle_.load()) < 1e-6) {
                 circle_state_ = 1;
             }
             current_action_ = UserAction::None;
-            previous_action_ = UserAction::MoveZangle;
         }
         break;
     case UserAction::Scan:
-        if (previous_action_ != current_action_) {
+      if (previous_action_ != UserAction::Scan) {
             msg_ += std::format("  [Action] Scanning\n");
             RCLCPP_INFO(get_logger(), msg_.c_str());
+            previous_action_ = UserAction::Scan;
             scan_trigger_ = true;
             scan_trigger_store_ = scan_trigger_read_.load();
-            previous_action_ = UserAction::Scan;
             scan_start = now();
         } else {
             if (scan_trigger_read_.load() != scan_trigger_store_) {
@@ -812,7 +818,7 @@ void CoordinatorNode::apply_speed_scale_to_node(const std::string &node_name,
     vel_scale = std::clamp(vel_scale, 0.0, 1.0);
     acc_scale = std::clamp(acc_scale, 0.0, 1.0);
     try {
-        auto client = std::make_shared<rclcpp::SyncParametersClient>(
+        auto client = std::make_shared<rclcpp::AsyncParametersClient>(
             shared_from_this(), node_name);
         if (!client->wait_for_service(std::chrono::milliseconds(250))) {
             RCLCPP_WARN_THROTTLE(
@@ -834,7 +840,8 @@ void CoordinatorNode::apply_speed_scale_to_node(const std::string &node_name,
         params.emplace_back(
             "pilz_lin.plan_request_params.max_acceleration_scaling_factor",
             acc_scale);
-        (void)client->set_parameters(params);
+        auto fut = client->set_parameters(params);
+        (void)fut.wait_for(std::chrono::milliseconds(250));
     } catch (const std::exception &e) {
         RCLCPP_WARN(get_logger(),
                     "Failed to set speed scaling parameters on %s: %s",
