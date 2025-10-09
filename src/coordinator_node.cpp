@@ -338,10 +338,28 @@ void CoordinatorNode::subscriber_callback(
     scan_trigger_read_ = msg->scan_trigger;
     scan_3d_read_ = msg->scan_3d;
     z_height_ = msg->z_height;
-    if (octa_mode_.load() && full_scan_read_) {
-        full_scan_read_ = true;
-    } else {
-        full_scan_read_ = msg->full_scan;
+    {
+        if (msg->full_scan) {
+            full_scan_read_ = true;
+            full_scan_false_timer_active_ = false;
+        } else {
+            if (!full_scan_read_.load()) {
+                full_scan_false_timer_active_ = false;
+            } else {
+                if (!full_scan_false_timer_active_) {
+                    full_scan_false_since_ = std::chrono::steady_clock::now();
+                    full_scan_false_timer_active_ = true;
+                }
+                const auto elapsed =
+                    std::chrono::steady_clock::now() - full_scan_false_since_;
+                if (elapsed >= kFullScanOffDelay) {
+                    full_scan_read_ = false;
+                    full_scan_false_timer_active_ = false;
+                } else {
+                    full_scan_read_ = true;
+                }
+            }
+        }
     }
     robot_mode_read_ = msg->robot_mode;
     oct_mode_read_ = msg->oct_mode;
@@ -652,7 +670,7 @@ void CoordinatorNode::main_loop() {
         }
         break;
     case UserAction::Scan:
-      if (previous_action_ != UserAction::Scan) {
+        if (previous_action_ != UserAction::Scan) {
             msg_ += std::format("  [Action] Scanning\n");
             RCLCPP_INFO(get_logger(), msg_.c_str());
             previous_action_ = UserAction::Scan;
