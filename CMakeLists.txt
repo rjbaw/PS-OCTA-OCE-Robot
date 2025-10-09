@@ -25,6 +25,7 @@ if(ENABLE_CLANG_TIDY)
   if(CLANG_TIDY_EXE)
     set(_OCTA_CLANG_TIDY_CMD "${CLANG_TIDY_EXE}")
     list(APPEND _OCTA_CLANG_TIDY_CMD "-quiet")
+    list(APPEND _OCTA_CLANG_TIDY_CMD "--config-file=${CMAKE_SOURCE_DIR}/.clang-tidy")
     list(APPEND _OCTA_CLANG_TIDY_CMD "-extra-arg-before=-std=c++${CMAKE_CXX_STANDARD}")
 
     find_program(_SYS_GXX NAMES ${CMAKE_CXX_COMPILER} g++ c++)

@@ -127,6 +127,7 @@ tidy:
 	echo "Running clang-tidy (parallel: $(TIDY_JOBS)) on: $$(echo $$files | wc -w) files"; \
 	printf '%s\n' $$files | xargs -r -n1 -P $(TIDY_JOBS) clang-tidy \
 	  -p . \
+	  --config-file=$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)/.clang-tidy \
 	  --quiet \
 	  --format-style=file \
 	  -header-filter="^$(shell git rev-parse --show-toplevel 2>/dev/null || pwd)/src/" \
