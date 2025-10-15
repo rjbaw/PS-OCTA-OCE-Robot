@@ -47,6 +47,31 @@ jobs:
           cache-from: type=gha,scope=octa_ros
           sbom: false
           provenance: false
+      - name: Compute image tags
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+        id: compute-tags
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          REPO="ghcr.io/${{ github.repository_owner }}/octa_ros"
+          TAGS="${REPO}:latest"
+          TAGS+=$'\n'"${REPO}:sha-${{ github.sha }}"
+          if [[ "${REF_TYPE}" == "tag" ]]; then
+            TAGS+=$'\n'"${REPO}:${REF_NAME}"
+            if [[ "${REF_NAME}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              MAJOR="v${BASH_REMATCH[1]}"
+              MINOR="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+              TAGS+=$'\n'"${REPO}:${MAJOR}"
+              TAGS+=$'\n'"${REPO}:${MINOR}"
+            fi
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - name: Build and push run image
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         uses: docker/build-push-action@v6
@@ -56,9 +81,7 @@ jobs:
           target: run
           platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/octa_ros:latest
-            ghcr.io/${{ github.repository_owner }}/octa_ros:sha-${{ github.sha }}
+          tags: ${{ steps.compute-tags.outputs.tags }}
           cache-from: type=gha,scope=octa_ros
           sbom: false
           provenance: false

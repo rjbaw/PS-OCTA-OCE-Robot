@@ -162,7 +162,7 @@ class CoordinatorNode : public rclcpp::Node {
     double scan_trigger_timeout_sec_ = 2.0;
     int64_t scan3d_window_ms_ = 50;
     int64_t service_poll_interval_ms_ = 1;
-    static constexpr std::chrono::milliseconds kFullScanOffDelay{3000};
+    static constexpr std::chrono::milliseconds kFullScanOffDelay{100};
 
     // Parameter callback
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
