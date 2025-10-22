@@ -339,26 +339,19 @@ void CoordinatorNode::subscriber_callback(
     scan_3d_read_ = msg->scan_3d;
     z_height_ = msg->z_height;
     {
-        if (msg->full_scan) {
-            full_scan_read_ = true;
-            full_scan_false_timer_active_ = false;
-        } else {
-            if (!full_scan_read_.load()) {
-                full_scan_false_timer_active_ = false;
-            } else {
-                if (!full_scan_false_timer_active_) {
-                    full_scan_false_since_ = std::chrono::steady_clock::now();
-                    full_scan_false_timer_active_ = true;
-                }
-                const auto elapsed =
-                    std::chrono::steady_clock::now() - full_scan_false_since_;
-                if (elapsed >= kFullScanOffDelay) {
-                    full_scan_read_ = false;
-                    full_scan_false_timer_active_ = false;
-                } else {
-                    full_scan_read_ = true;
-                }
+        if (msg->full_scan != full_scan_read_.load()) {
+            if (!full_scan_delay_timer_active_) {
+                full_scan_delay_since_ = std::chrono::steady_clock::now();
+                full_scan_delay_timer_active_ = true;
             }
+            const auto elapsed =
+                std::chrono::steady_clock::now() - full_scan_delay_since_;
+            if (elapsed >= kFullScanSwitchDelay) {
+                full_scan_read_ = msg->full_scan;
+                full_scan_delay_timer_active_ = false;
+            }
+        } else {
+            full_scan_delay_timer_active_ = false;
         }
     }
     robot_mode_read_ = msg->robot_mode;
