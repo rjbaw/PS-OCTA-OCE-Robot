@@ -147,8 +147,10 @@ void MoveZAngleActionServer::execute(
     target_q = target_q * apply_q;
     target_q.normalize();
     target_pose.pose.orientation = tf2::toMsg(target_q);
-    target_pose.pose.position.x += radius_ * std::cos(to_radian(angle_));
-    target_pose.pose.position.y += radius_ * std::sin(to_radian(angle_));
+    target_pose.pose.position.x +=
+        -radius_ * std::cos(to_radian(angle_)) * 0.001;
+    target_pose.pose.position.y +=
+        radius_ * std::sin(to_radian(angle_)) * 0.001;
     print_target(get_logger(), target_pose.pose);
 
     moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
