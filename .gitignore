@@ -21,6 +21,7 @@ data/
 build/
 log/
 install/
+tmp/
 
 # Emacs
 *~
@@ -34,3 +35,5 @@ logs/
 core.*
 *.swp
 *~
+compile_commands.json
+.dockerignore

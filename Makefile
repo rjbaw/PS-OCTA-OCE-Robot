@@ -9,6 +9,14 @@ TEST_CMAKE_ARGS ?= -DENABLE_CLANG_TIDY=ON
 BUILD_BASE ?= build
 INSTALL_BASE ?= install
 LOG_BASE ?= log
+CUDA ?= 0
+CPU ?= 0
+
+ifeq ($(strip $(CUDA)),$(strip $(CPU)))
+  ifeq ($(strip $(CUDA)),1)
+    $(error Set only one of CUDA=1 or CPU=1)
+  endif
+endif
 
 COLCON = source "$(ROS_SETUP)" && colcon
 
@@ -40,6 +48,10 @@ help:
 	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
+	@echo
+	@echo "Options:"
+	@echo "  CUDA=1  - Use CUDA compose variant"
+	@echo "  CPU=1   - Use CPU compose variant"
 
 build:
 	@set -eo pipefail; \
@@ -166,7 +178,19 @@ clean:
 	@rm -rf build install log compile_commands.json
 
 DOCKER_TAG ?= ghcr.io/rjbaw/octa_ros:latest
-DOCKERFILE ?= docker/Dockerfile
+DOCKERFILE ?= docker/Dockerfile.cuda
+DEV_COMPOSE := docker/docker-compose-dev.yaml
+RUN_COMPOSE := docker/docker-compose.yaml
+
+ifeq ($(CUDA),1)
+  DEV_COMPOSE := docker/docker-compose-dev-cuda.yaml
+  RUN_COMPOSE := docker/docker-compose-cuda.yaml
+endif
+
+ifeq ($(CPU),1)
+  DEV_COMPOSE := docker/docker-compose-dev-cpu.yaml
+  RUN_COMPOSE := docker/docker-compose-cpu.yaml
+endif
 
 local:
 	@set -e; \
@@ -178,7 +202,7 @@ dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-dev.yaml up -d
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(DEV_COMPOSE) up -d
 
 .PHONY: dev-cpu
 dev-cpu:
@@ -192,14 +216,16 @@ run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose.yaml up -d
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d
 
 .PHONY: down
 down:
 	@set -e; \
 	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
 	docker compose -f docker/docker-compose-dev.yaml down --remove-orphans || true; \
-	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true
+	docker compose -f docker/docker-compose-dev-cuda.yaml down --remove-orphans || true; \
+	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true; \
+	if [ -f docker/docker-compose-cuda.yaml ]; then docker compose -f docker/docker-compose-cuda.yaml down --remove-orphans || true; fi
 
 logs:
 	@set -euo pipefail; \

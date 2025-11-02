@@ -1,0 +1,41 @@
+services:
+  ros2:
+    container_name: ps-oce-robot
+    image: ghcr.io/rjbaw/octa_ros:latest
+    shm_size: '512m'
+    environment:
+      DISPLAY: ${DISPLAY}
+      QT_GRAPHICSSYSTEM: native
+      QT_X11_NO_MITSHIM: '1'
+      XAUTHORITY: /workspace/.Xauthority
+      RCUTILS_LOGGING_DIRECTORY: /workspace/app/logs
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
+      - ${HOME}:/workspace/home/
+      - ${PWD}:/workspace/app/
+    user: "${UID}:${GID}"
+    group_add:
+      - 105
+    cap_add:
+      - SYS_NICE
+      - SYS_RESOURCE
+    ulimits:
+      rtprio: 99
+      nice: -20
+      memlock: -1
+      core: 0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ["bash"]
+    stdin_open: true
+    restart: always
+    network_mode: host
+    privileged: true
+    tty: true
