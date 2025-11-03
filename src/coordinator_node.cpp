@@ -656,7 +656,7 @@ void CoordinatorNode::main_loop() {
             RCLCPP_INFO(get_logger(), msg_.c_str());
             previous_action_ = UserAction::MoveZangle;
             send_move_z_angle_goal(yaw_);
-            if (std::abs(angle_.load()) < 1e-6) {
+            if (std::abs(angle_.load()) < 1e-10) {
                 circle_state_ = 1;
             }
             current_action_ = UserAction::None;
