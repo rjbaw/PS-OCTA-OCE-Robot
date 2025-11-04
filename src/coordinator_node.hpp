@@ -17,8 +17,7 @@
  *   for cancel requests (`std_msgs::msg::Bool`).
  * - srv_scan3d (string, default: "scan_3d"): service name for `Scan3d`.
  * - action_focus_name (string, default: "focus_action"): Focus action server.
- * - action_movez_name (string, default: "move_z_angle_action"): MoveZAngle
- *   action server.
+ * - action_move_name (string, default: "move_action"): Move action server.
  * - action_freedrive_name (string, default: "freedrive_action"): Freedrive
  *   action server.
  * - action_reset_name (string, default: "reset_action"): Reset action server.
@@ -44,7 +43,7 @@
  * - Server: `Scan3d` on `srv_scan3d` (QoS: reliable).
  *
  * @par Action Clients
- * - Focus, MoveZAngle, Freedrive, Reset (names via parameters above).
+ * - Focus, Move, Freedrive, Reset (names via parameters above).
  *
  * @note Units: lengths are meters unless noted; angles are degrees in GUI
  * messages but radians internally for planning; times are ms or seconds as
@@ -69,7 +68,7 @@
 #include <action_msgs/msg/goal_status.hpp>
 #include <octa_ros/action/focus.hpp>
 #include <octa_ros/action/freedrive.hpp>
-#include <octa_ros/action/move_z_angle.hpp>
+#include <octa_ros/action/move.hpp>
 #include <octa_ros/action/reset.hpp>
 #include <octa_ros/msg/labviewdata.hpp>
 #include <octa_ros/msg/robotdata.hpp>
@@ -84,12 +83,12 @@
  * @brief High-level user intent states handled by the coordinator.
  */
 enum class UserAction : uint8_t {
-    None,       ///< Idle / no action selected.
-    Freedrive,  ///< Robot freedrive mode.
-    Reset,      ///< Return to default position.
-    MoveZangle, ///< Execute Z/yaw repositioning.
-    Focus,      ///< Run focus alignment routine.
-    Scan,       ///< LabVIEW acquisition trigger.
+    None,      ///< Idle / no action selected.
+    Freedrive, ///< Robot freedrive mode.
+    Reset,     ///< Return to default position.
+    Move,      ///< Execute repositioning.
+    Focus,     ///< Run focus alignment routine.
+    Scan,      ///< LabVIEW acquisition trigger.
 };
 
 /**
@@ -106,20 +105,20 @@ enum class Mode : uint8_t {
  * @brief Central node coordinating user actions, motion, and OCT/OCE tasks.
  *
  * Provides action clients to specialized servers (freedrive, reset, focus,
- * move_z_angle), exposes a Scan3d service, and maintains a high-rate pub/sub
- * loop to exchange robot and LabVIEW state.
+ * move), exposes a Scan3d service, and maintains a high-rate pub/sub loop to
+ * exchange robot and LabVIEW state.
  */
 class CoordinatorNode : public rclcpp::Node {
   public:
     using FocusAction = octa_ros::action::Focus;
-    using MoveZAngle = octa_ros::action::MoveZAngle;
+    using Move = octa_ros::action::Move;
     using Freedrive = octa_ros::action::Freedrive;
     using Reset = octa_ros::action::Reset;
 
     using Scan3d = octa_ros::srv::Scan3d;
 
     using FocusGoalHandle = rclcpp_action::ClientGoalHandle<FocusAction>;
-    using MoveZGoalHandle = rclcpp_action::ClientGoalHandle<MoveZAngle>;
+    using MoveGoalHandle = rclcpp_action::ClientGoalHandle<Move>;
     using FreedriveGoalHandle = rclcpp_action::ClientGoalHandle<Freedrive>;
     using ResetGoalHandle = rclcpp_action::ClientGoalHandle<Reset>;
 
@@ -134,7 +133,7 @@ class CoordinatorNode : public rclcpp::Node {
   private:
     // Action clients
     rclcpp_action::Client<FocusAction>::SharedPtr focus_action_client_;
-    rclcpp_action::Client<MoveZAngle>::SharedPtr move_z_angle_action_client_;
+    rclcpp_action::Client<Move>::SharedPtr move_action_client_;
     rclcpp_action::Client<Freedrive>::SharedPtr freedrive_action_client_;
     rclcpp_action::Client<Reset>::SharedPtr reset_action_client_;
 
@@ -175,7 +174,7 @@ class CoordinatorNode : public rclcpp::Node {
 
     // Active goals
     FocusGoalHandle::SharedPtr active_focus_goal_handle_;
-    MoveZGoalHandle::SharedPtr active_move_z_goal_handle_;
+    MoveGoalHandle::SharedPtr active_move_handle_;
     FreedriveGoalHandle::SharedPtr active_freedrive_goal_handle_;
     ResetGoalHandle::SharedPtr active_reset_goal_handle_;
 
@@ -221,12 +220,15 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<double> angle_tolerance_ = 0.0;
     std::atomic<double> radius_ = 0.0;
     std::atomic<double> angle_limit_ = 0.0;
+    std::atomic<double> offset_x_ = 0.0;
+    std::atomic<double> offset_y_ = 0.0;
     std::atomic<bool> autofocus_ = false;
     std::atomic<bool> freedrive_ = false;
     std::atomic<bool> previous_ = false;
     std::atomic<bool> next_ = false;
     std::atomic<bool> home_ = false;
     std::atomic<bool> reset_ = false;
+    std::atomic<bool> apply_offset_ = false;
     std::atomic<bool> scan_trigger_read_ = false;
     std::atomic<bool> scan_3d_read_ = false;
     std::atomic<bool> full_scan_ = false;
@@ -267,8 +269,8 @@ class CoordinatorNode : public rclcpp::Node {
 
     /** @brief Send a focus action goal if not already active. */
     void send_focus_goal();
-    /** @brief Send a MoveZAngle goal with the requested yaw increment. */
-    void send_move_z_angle_goal(double yaw);
+    /** @brief Send a Move goal. */
+    void send_move_goal(double yaw);
     /** @brief Send a Freedrive goal to enable/disable manual guidance. */
     void send_freedrive_goal(bool enable);
     /** @brief Send a Reset goal to return to a safe posture. */

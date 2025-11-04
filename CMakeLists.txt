@@ -109,7 +109,7 @@ set(msg_files "msg/Labviewint.msg" "msg/Img.msg" "msg/Robotdata.msg"
 set(srv_files srv/Scan3d.srv)
 
 set(action_files
-    action/Focus.action action/Freedrive.action action/MoveZAngle.action
+    action/Focus.action action/Freedrive.action action/Move.action
     action/Reset.action action/FullScan.action)
 
 set(ROSIDL_DEPS builtin_interfaces action_msgs unique_identifier_msgs)
@@ -181,9 +181,9 @@ target_link_libraries(
   Eigen3::Eigen)
 
 add_executable(
-  move_z_angle_node src/move_z_angle_node.cpp src/utils.cpp)
+  move_node src/move_node.cpp src/utils.cpp)
 ament_target_dependencies(
-  move_z_angle_node
+  move_node
   rclcpp
   rclcpp_action
   action_msgs
@@ -193,7 +193,7 @@ ament_target_dependencies(
   tf2_ros
   std_msgs)
 target_link_libraries(
-  move_z_angle_node "${cpp_typesupport_target}"
+  move_node "${cpp_typesupport_target}"
   "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}" octa_motion_utils)
 
 add_executable(reset_node src/reset_node.cpp src/utils.cpp)
@@ -261,7 +261,7 @@ target_link_libraries(run_state_listener "${cpp_typesupport_target}")
 
 target_compile_definitions(joint_state_publisher PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(focus_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
-target_compile_definitions(move_z_angle_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
+target_compile_definitions(move_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(reset_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(freedrive_node PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(reconnect_client PRIVATE OCTA_COORDINATOR_NO_MAIN)
@@ -289,7 +289,7 @@ if(_OCTA_CLANG_TIDY_CMD)
       joint_state_publisher
       coordinator_node
       focus_node
-      move_z_angle_node
+      move_node
       reset_node
       freedrive_node
       reconnect_client
@@ -312,7 +312,7 @@ install(
           reconnect_client
           coordinator_node
           focus_node
-          move_z_angle_node
+          move_node
           reset_node
           freedrive_node
   DESTINATION lib/${PROJECT_NAME})

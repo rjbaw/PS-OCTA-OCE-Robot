@@ -1,5 +1,5 @@
 /**
- * @file move_z_angle_node.hpp
+ * @file move_node.hpp
  * @author rjbaw
  * @brief Action server to move along Z and correct yaw angle.
  *
@@ -15,8 +15,9 @@
  *   planning pipelines to try; the shortest plan is chosen.
  *
  * @par Action Server
- * - Name: `move_z_angle_action`; Goal: `target_angle` (deg), `radius` (m),
- *   `angle` (deg path angle for XY offset).
+ * - Name: `move_action`; Goal: `offset_x` (mm), `offset_y` (mm),
+ *   `target_angle` (deg), `apply_offset` (bool), `angle` (deg path angle),
+ *   `radius` (mm).
  *
  * @note Units: angles are degrees in the action goal; internally converted to
  * radians. Distances are meters.
@@ -24,8 +25,8 @@
  * @ingroup actions
  */
 
-#ifndef MOVE_Z_ANGLE_NODE_HPP
-#define MOVE_Z_ANGLE_NODE_HPP
+#ifndef MOVE_NODE_HPP
+#define MOVE_NODE_HPP
 
 #include <Eigen/Geometry>
 #include <memory>
@@ -45,7 +46,7 @@
 #include <moveit_msgs/msg/orientation_constraint.hpp>
 #include <moveit_msgs/msg/position_constraint.hpp>
 
-#include <octa_ros/action/move_z_angle.hpp>
+#include <octa_ros/action/move.hpp>
 
 #include "motion_utils.hpp"
 #include "utils.hpp"
@@ -56,15 +57,15 @@
  * Uses MoveIt to plan and execute a constrained motion, typically to reposition
  * the end-effector at a given radius and yaw angle while respecting limits.
  */
-class MoveZAngleActionServer : public rclcpp::Node {
-    using MoveZAngle = octa_ros::action::MoveZAngle;
-    using GoalHandleMoveZAngle = rclcpp_action::ServerGoalHandle<MoveZAngle>;
+class MoveActionServer : public rclcpp::Node {
+    using Move = octa_ros::action::Move;
+    using GoalHandleMove = rclcpp_action::ServerGoalHandle<Move>;
 
   public:
     /**
      * @brief Construct the node; call init() to create interfaces.
      */
-    explicit MoveZAngleActionServer(
+    explicit MoveActionServer(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
     /**
@@ -73,8 +74,8 @@ class MoveZAngleActionServer : public rclcpp::Node {
     void init();
 
   private:
-    rclcpp_action::Server<MoveZAngle>::SharedPtr action_server_;
-    std::shared_ptr<GoalHandleMoveZAngle> active_goal_handle_;
+    rclcpp_action::Server<Move>::SharedPtr action_server_;
+    std::shared_ptr<GoalHandleMove> active_goal_handle_;
 
     moveit_cpp::MoveItCppPtr moveit_cpp_;
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
@@ -87,14 +88,14 @@ class MoveZAngleActionServer : public rclcpp::Node {
     /** @brief Action callbacks for goal lifecycle and execution. */
     rclcpp_action::GoalResponse
     handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
-                std::shared_ptr<const MoveZAngle::Goal> goal);
+                std::shared_ptr<const Move::Goal> goal);
 
     rclcpp_action::CancelResponse
-    handle_cancel(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    handle_cancel(std::shared_ptr<GoalHandleMove> goal_handle);
 
-    void handle_accepted(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    void handle_accepted(std::shared_ptr<GoalHandleMove> goal_handle);
 
-    void execute(std::shared_ptr<GoalHandleMoveZAngle> goal_handle);
+    void execute(std::shared_ptr<GoalHandleMove> goal_handle);
 };
 
-#endif // MOVE_Z_ANGLE_NODE_HPP
+#endif // MOVE_NODE_HPP

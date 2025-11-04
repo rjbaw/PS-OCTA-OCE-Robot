@@ -9,7 +9,7 @@ import launch_testing
 try:
     import rclpy
     from rclpy.action import ActionClient
-    from octa_ros.action import Freedrive, Reset, MoveZAngle, Focus
+    from octa_ros.action import Freedrive, Reset, Move, Focus
 
     RCLPY_AVAILABLE = True
 except Exception:
@@ -37,8 +37,8 @@ def generate_test_description():
     ld.add_action(
         Node(
             package="octa_ros",
-            executable="move_z_angle_node",
-            name="move_z_angle_node",
+            executable="move_node",
+            name="move_node",
             parameters=[{"plan_only": True, "offline_mode": True}],
         )
     )
@@ -104,12 +104,15 @@ class TestActionGoals(unittest.TestCase):
         res = self._send_goal(Reset, "reset_action", Reset.Goal(reset=True))
         self.assertIsNotNone(res)
 
-    def test_move_z_angle(self):
-        goal = MoveZAngle.Goal()
+    def test_move(self):
+        goal = Move.Goal()
+        goal.offset_x = 0.0
+        goal.offset_y = 0.0
+        goal.apply_offset = False
         goal.target_angle = 5.0
         goal.radius = 0.0
         goal.angle = 0.0
-        res = self._send_goal(MoveZAngle, "move_z_angle_action", goal)
+        res = self._send_goal(Move, "move_action", goal)
         self.assertIsNotNone(res)
 
     def test_focus(self):

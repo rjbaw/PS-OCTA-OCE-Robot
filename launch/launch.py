@@ -461,10 +461,10 @@ def launch_setup():
         ],
     )
 
-    move_z_angle_node = Node(
+    move_node = Node(
         package="octa_ros",
-        executable="move_z_angle_node",
-        name="move_z_angle_node",
+        executable="move_node",
+        name="move_node",
         output="screen",
         parameters=common_parameters
         + [
@@ -485,7 +485,7 @@ def launch_setup():
                 freedrive_node,
                 focus_node,
                 reset_node,
-                move_z_angle_node,
+                move_node,
             ],
         )
     )
@@ -523,8 +523,8 @@ def launch_setup():
         OnProcessExit(target_action=reset_node, on_exit=[Shutdown()]),
         condition=IfCondition(shutdown_on_exit),
     )
-    move_z_angle_exit_handler = RegisterEventHandler(
-        OnProcessExit(target_action=move_z_angle_node, on_exit=[Shutdown()]),
+    move_exit_handler = RegisterEventHandler(
+        OnProcessExit(target_action=move_node, on_exit=[Shutdown()]),
         condition=IfCondition(shutdown_on_exit),
     )
 
@@ -548,7 +548,7 @@ def launch_setup():
             freedrive_exit_handler,
             focus_exit_handler,
             reset_exit_handler,
-            move_z_angle_exit_handler,
+            move_exit_handler,
         ]
         + [reconnect_client_action]
     )

@@ -1,7 +1,10 @@
 # MoveZAngle.action
 
 # Goal
+float64 offset_x
+float64 offset_y
 float64 target_angle
+bool apply_offset
 float64 angle
 float64 radius
 ---
@@ -10,4 +13,3 @@ string status
 ---
 # Feedback
 string debug_msgs
-float64 current_z_angle

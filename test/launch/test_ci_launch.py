@@ -22,7 +22,7 @@ class TestCILaunch(unittest.TestCase):
                 ),
                 Node(
                     package="octa_ros",
-                    executable="move_z_angle_node",
+                    executable="move_node",
                     parameters=[{"plan_only": True, "offline_mode": True}],
                 ),
                 Node(

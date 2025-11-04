@@ -19,3 +19,6 @@ bool robot_mode
 bool oct_mode
 bool octa_mode
 bool oce_mode
+float64 offset_x
+float64 offset_y
+bool apply_offset

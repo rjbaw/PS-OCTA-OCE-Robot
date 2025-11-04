@@ -36,49 +36,49 @@ const std::vector<Step> full_scan_recipe = {
     {UserAction::Scan, Mode::OCTA, 0},
     {UserAction::Scan, Mode::OCE, 0},
     // first 60 deg
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     // intermediate OCT scans
     {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     // second 60 deg
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     // intermediate OCT scans
     {UserAction::Focus, Mode::ROBOT, 0},
     {UserAction::Scan, Mode::OCT, 0},
     {UserAction::Scan, Mode::OCE, 0},
     // third 60 deg
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::MoveZangle, Mode::OCE, +10},
+    {UserAction::Move, Mode::OCE, +10},
     {UserAction::Scan, Mode::OCE, 0},
     // final OCT scans
     {UserAction::Scan, Mode::OCT, 0},
@@ -113,8 +113,8 @@ void CoordinatorNode::init() {
         declare_str("srv_scan3d", "scan_3d", "Scan3d service name");
     const std::string action_focus_name =
         declare_str("action_focus_name", "focus_action", "Focus action name");
-    const std::string action_movez_name = declare_str(
-        "action_movez_name", "move_z_angle_action", "MoveZAngle action name");
+    const std::string action_move_name =
+        declare_str("action_move_name", "move_action", "Move action name");
     const std::string action_freedrive_name = declare_str(
         "action_freedrive_name", "freedrive_action", "Freedrive action name");
     const std::string action_reset_name =
@@ -224,8 +224,8 @@ void CoordinatorNode::init() {
 
     focus_action_client_ =
         rclcpp_action::create_client<FocusAction>(this, action_focus_name);
-    move_z_angle_action_client_ =
-        rclcpp_action::create_client<MoveZAngle>(this, action_movez_name);
+    move_action_client_ =
+        rclcpp_action::create_client<Move>(this, action_move_name);
     freedrive_action_client_ =
         rclcpp_action::create_client<Freedrive>(this, action_freedrive_name);
     reset_action_client_ =
@@ -235,10 +235,9 @@ void CoordinatorNode::init() {
             std::chrono::milliseconds(action_server_wait_ms_))) {
         RCLCPP_WARN(get_logger(), "Focus action server not available yet.");
     }
-    if (!move_z_angle_action_client_->wait_for_action_server(
+    if (!move_action_client_->wait_for_action_server(
             std::chrono::milliseconds(action_server_wait_ms_))) {
-        RCLCPP_WARN(get_logger(),
-                    "MoveZAngle action server not available yet.");
+        RCLCPP_WARN(get_logger(), "Move action server not available yet.");
     }
     if (!freedrive_action_client_->wait_for_action_server(
             std::chrono::milliseconds(action_server_wait_ms_))) {
@@ -338,6 +337,9 @@ void CoordinatorNode::subscriber_callback(
     scan_trigger_read_ = msg->scan_trigger;
     scan_3d_read_ = msg->scan_3d;
     z_height_ = msg->z_height;
+    offset_x_ = msg->offset_x;
+    offset_y_ = msg->offset_y;
+    apply_offset_ = msg->apply_offset;
     {
         if (msg->full_scan != full_scan_read_.load()) {
             if (!full_scan_delay_timer_active_) {
@@ -485,11 +487,10 @@ void CoordinatorNode::main_loop() {
             RCLCPP_INFO(this->get_logger(), msg_.c_str());
             focus_action_client_->async_cancel_goal(active_focus_goal_handle_);
         }
-        if (goal_still_active(active_move_z_goal_handle_)) {
-            msg_ = "Canceling Move Z-angle action\n";
+        if (goal_still_active(active_move_handle_)) {
+            msg_ = "Canceling Move action\n";
             RCLCPP_INFO(this->get_logger(), msg_.c_str());
-            move_z_angle_action_client_->async_cancel_goal(
-                active_move_z_goal_handle_);
+            move_action_client_->async_cancel_goal(active_move_handle_);
         }
         if (goal_still_active(active_freedrive_goal_handle_)) {
             msg_ = "Canceling Free-drive\n";
@@ -547,8 +548,8 @@ void CoordinatorNode::main_loop() {
         }
         if (step.action == UserAction::Focus) {
             action_mode = "Focus Action";
-        } else if (step.action == UserAction::MoveZangle) {
-            action_mode = "MoveZangle Action";
+        } else if (step.action == UserAction::Move) {
+            action_mode = "Move Action";
         } else if (step.action == UserAction::Scan) {
             action_mode = "Scanning Action";
         }
@@ -575,8 +576,8 @@ void CoordinatorNode::main_loop() {
             current_action_ = UserAction::Reset;
         } else if (autofocus_) {
             current_action_ = UserAction::Focus;
-        } else if (next_ || previous_ || home_) {
-            current_action_ = UserAction::MoveZangle;
+        } else if (next_ || previous_ || home_ || apply_offset_) {
+            current_action_ = UserAction::Move;
         }
     }
 
@@ -636,29 +637,34 @@ void CoordinatorNode::main_loop() {
             }
         }
         break;
-    case UserAction::MoveZangle:
-        if (!goal_still_active(active_move_z_goal_handle_) &&
-            previous_action_ != UserAction::MoveZangle) {
-            angle_increment_ = (num_pt_.load() == 0)
-                                   ? 0.0
-                                   : (angle_limit_.load() /
-                                      static_cast<double>(num_pt_.load()));
-            if (next_) {
-                yaw_ = angle_increment_;
-                msg_ = std::format("[Action] Next: {}\n", yaw_);
-            } else if (previous_) {
-                yaw_ = -angle_increment_;
-                msg_ = std::format("[Action] Previous: {}\n", yaw_);
-            } else if (home_) {
-                yaw_ = -angle_;
-                msg_ = std::format("[Action] Home: {}\n", yaw_);
+    case UserAction::Move:
+        if (!goal_still_active(active_move_handle_) &&
+            previous_action_ != UserAction::Move) {
+            if (apply_offset_.load()) {
+                msg_ = std::format("[Action] Translate to (x,y): ({},{})\n",
+                                   offset_x_.load(), offset_y_.load());
+            } else {
+                angle_increment_ = (num_pt_.load() == 0)
+                                       ? 0.0
+                                       : (angle_limit_.load() /
+                                          static_cast<double>(num_pt_.load()));
+                if (next_) {
+                    yaw_ = angle_increment_;
+                    msg_ = std::format("[Action] Next: {}\n", yaw_);
+                } else if (previous_) {
+                    yaw_ = -angle_increment_;
+                    msg_ = std::format("[Action] Previous: {}\n", yaw_);
+                } else if (home_) {
+                    yaw_ = -angle_;
+                    msg_ = std::format("[Action] Home: {}\n", yaw_);
+                }
+                if (std::abs(angle_.load()) < 1e-10) {
+                    circle_state_ = 1;
+                }
             }
             RCLCPP_INFO(get_logger(), msg_.c_str());
-            previous_action_ = UserAction::MoveZangle;
-            send_move_z_angle_goal(yaw_);
-            if (std::abs(angle_.load()) < 1e-10) {
-                circle_state_ = 1;
-            }
+            previous_action_ = UserAction::Move;
+            send_move_goal(yaw_);
             current_action_ = UserAction::None;
         }
         break;
@@ -757,28 +763,28 @@ void CoordinatorNode::send_focus_goal() {
     focus_action_client_->async_send_goal(goal_msg, options);
 }
 
-void CoordinatorNode::send_move_z_angle_goal(double yaw) {
-    MoveZAngle::Goal goal_msg;
+void CoordinatorNode::send_move_goal(double yaw) {
+    Move::Goal goal_msg;
+    goal_msg.offset_x = offset_x_.load();
+    goal_msg.offset_y = offset_y_.load();
     goal_msg.target_angle = yaw;
+    goal_msg.apply_offset = apply_offset_.load();
     goal_msg.radius = radius_.load();
     goal_msg.angle = angle_.load();
 
-    apply_speed_scale_to_node("/move_z_angle_node", robot_vel_.load(),
+    apply_speed_scale_to_node("/move_node", robot_vel_.load(),
                               robot_acc_.load());
 
-    auto options = rclcpp_action::Client<MoveZAngle>::SendGoalOptions();
+    auto options = rclcpp_action::Client<Move>::SendGoalOptions();
 
     options.feedback_callback =
-        [this](MoveZGoalHandle::SharedPtr,
-               const std::shared_ptr<const MoveZAngle::Feedback> feedback) {
+        [this](MoveGoalHandle::SharedPtr,
+               const std::shared_ptr<const Move::Feedback> feedback) {
             msg_ += feedback->debug_msgs;
-            RCLCPP_INFO(this->get_logger(),
-                        "MoveZAngle feedback => target_angle_z=%.2f",
-                        feedback->current_z_angle);
         };
 
     options.result_callback =
-        [this, yaw](const MoveZGoalHandle::WrappedResult &result) {
+        [this, yaw](const MoveGoalHandle::WrappedResult &result) {
             current_action_ = UserAction::None;
             previous_action_ = UserAction::None;
             msg_ += result.result->status;
@@ -790,37 +796,37 @@ void CoordinatorNode::send_move_z_angle_goal(double yaw) {
                     circle_state_--;
                 }
                 angle_.fetch_add(yaw);
-                RCLCPP_INFO(this->get_logger(), "MoveZAngle SUCCEEDED");
+                RCLCPP_INFO(this->get_logger(), "Move SUCCEEDED");
                 if (full_scan_read_) {
                     pc_.fetch_add(1);
                 }
                 break;
             case rclcpp_action::ResultCode::ABORTED:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle ABORTED");
+                RCLCPP_WARN(this->get_logger(), "Move ABORTED");
                 break;
             case rclcpp_action::ResultCode::CANCELED:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle CANCELED");
+                RCLCPP_WARN(this->get_logger(), "Move CANCELED");
                 break;
             default:
-                RCLCPP_WARN(this->get_logger(), "MoveZAngle UNKNOWN code");
+                RCLCPP_WARN(this->get_logger(), "Move UNKNOWN code");
                 break;
             }
-            active_move_z_goal_handle_.reset();
+            active_move_handle_.reset();
         };
 
     options.goal_response_callback =
-        [this](MoveZGoalHandle::SharedPtr goal_handle) {
-            active_move_z_goal_handle_ = goal_handle;
-            if (!active_move_z_goal_handle_) {
+        [this](MoveGoalHandle::SharedPtr goal_handle) {
+            active_move_handle_ = goal_handle;
+            if (!active_move_handle_) {
                 RCLCPP_ERROR(this->get_logger(),
-                             "Move Z Angle goal was rejected by server");
+                             "Move goal was rejected by server");
             } else {
                 RCLCPP_INFO(this->get_logger(),
-                            "Move Z Angle goal accepted; waiting for result");
+                            "Move goal accepted; waiting for result");
             }
         };
 
-    move_z_angle_action_client_->async_send_goal(goal_msg, options);
+    move_action_client_->async_send_goal(goal_msg, options);
 }
 
 void CoordinatorNode::apply_speed_scale_to_node(const std::string &node_name,

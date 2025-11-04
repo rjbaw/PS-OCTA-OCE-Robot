@@ -29,8 +29,8 @@ def generate_launch_description():
         ),
         Node(
             package="octa_ros",
-            executable="move_z_angle_node",
-            name="move_z_angle_node",
+            executable="move_node",
+            name="move_node",
             output="screen",
             parameters=common_parameters
             + [

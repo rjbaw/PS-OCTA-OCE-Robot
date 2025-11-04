@@ -1,18 +1,17 @@
 /**
- * @file move_z_angle_node.cpp
+ * @file move_node.cpp
  * @author rjbaw
- * @brief Node that move the Z-axis of the TCP
+ * @brief Movement node
  */
 
-#include "move_z_angle_node.hpp"
+#include "move_node.hpp"
 
-MoveZAngleActionServer::MoveZAngleActionServer(
-    const rclcpp::NodeOptions &options)
-    : Node("move_z_angle_action_server",
+MoveActionServer::MoveActionServer(const rclcpp::NodeOptions &options)
+    : Node("move_action_server",
            rclcpp::NodeOptions(options)
                .automatically_declare_parameters_from_overrides(true)) {}
 
-void MoveZAngleActionServer::init() {
+void MoveActionServer::init() {
     if (!this->has_parameter("plan_only")) {
         this->declare_parameter<bool>("plan_only", false);
     }
@@ -38,64 +37,67 @@ void MoveZAngleActionServer::init() {
                     "Plan-only/Offline mode: skipping MoveIt initialization");
     }
 
-    action_server_ = rclcpp_action::create_server<MoveZAngle>(
-        this, "move_z_angle_action",
+    action_server_ = rclcpp_action::create_server<Move>(
+        this, "move_action",
         [this](const rclcpp_action::GoalUUID &uuid,
-               std::shared_ptr<const MoveZAngle::Goal> goal) {
+               std::shared_ptr<const Move::Goal> goal) {
             return this->handle_goal(uuid, goal);
         },
-        [this](const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+        [this](const std::shared_ptr<GoalHandleMove> goal_handle) {
             return this->handle_cancel(goal_handle);
         },
-        [this](const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+        [this](const std::shared_ptr<GoalHandleMove> goal_handle) {
             this->handle_accepted(goal_handle);
         });
-    RCLCPP_INFO(get_logger(),
-                "MoveZAngleActionServer using MoveItCpp is ready.");
+    RCLCPP_INFO(get_logger(), "MoveActionServer using MoveItCpp is ready.");
 }
 
-rclcpp_action::GoalResponse MoveZAngleActionServer::handle_goal(
+rclcpp_action::GoalResponse MoveActionServer::handle_goal(
     [[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
-    std::shared_ptr<const MoveZAngle::Goal> goal) {
+    std::shared_ptr<const Move::Goal> goal) {
     if (active_goal_handle_ && active_goal_handle_->is_active()) {
         return rclcpp_action::GoalResponse::REJECT;
     }
     RCLCPP_INFO(this->get_logger(),
-                "Received Move Z Angle goal with target_angle = %.2f",
+                "Received Move goal with target_angle = %.2f",
                 goal->target_angle);
     radius_ = goal->radius;
     angle_ = goal->angle;
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-rclcpp_action::CancelResponse MoveZAngleActionServer::handle_cancel(
-    const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+rclcpp_action::CancelResponse MoveActionServer::handle_cancel(
+    const std::shared_ptr<GoalHandleMove> goal_handle) {
     if (!goal_handle->is_active()) {
-        RCLCPP_INFO(get_logger(), "Move Z angle goal no longer active");
+        RCLCPP_INFO(get_logger(), "Move goal no longer active");
         return rclcpp_action::CancelResponse::REJECT;
     }
-    RCLCPP_INFO(this->get_logger(),
-                "Cancel request received for Move Z Angle.");
+    RCLCPP_INFO(this->get_logger(), "Cancel request received for Move.");
     tem_->stopExecution(true);
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
-void MoveZAngleActionServer::handle_accepted(
-    const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
+void MoveActionServer::handle_accepted(
+    const std::shared_ptr<GoalHandleMove> goal_handle) {
     if (active_goal_handle_ && active_goal_handle_->is_active()) {
-        active_goal_handle_->abort(std::make_shared<MoveZAngle::Result>());
+        active_goal_handle_->abort(std::make_shared<Move::Result>());
     }
     active_goal_handle_ = goal_handle;
     std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
 }
 
-void MoveZAngleActionServer::execute(
-    const std::shared_ptr<GoalHandleMoveZAngle> goal_handle) {
-    RCLCPP_INFO(get_logger(), "Starting Move Z Angle execution...");
-    auto feedback = std::make_shared<MoveZAngle::Feedback>();
-    auto result = std::make_shared<MoveZAngle::Result>();
+void MoveActionServer::execute(
+    const std::shared_ptr<GoalHandleMove> goal_handle) {
+    RCLCPP_INFO(get_logger(), "Starting Move execution...");
+    auto feedback = std::make_shared<Move::Feedback>();
+    auto result = std::make_shared<Move::Result>();
 
+    double offset_x = goal_handle->get_goal()->offset_x;
+    double offset_y = goal_handle->get_goal()->offset_y;
     double target_angle = goal_handle->get_goal()->target_angle;
+    bool apply_offset = goal_handle->get_goal()->apply_offset;
+    RCLCPP_INFO(get_logger(), "Offset X: %.2f mm", offset_x);
+    RCLCPP_INFO(get_logger(), "Offset Y: %.2f mm", offset_y);
     RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle);
 
     bool plan_only = false;
@@ -109,17 +111,15 @@ void MoveZAngleActionServer::execute(
     if (plan_only || offline_mode) {
         feedback->debug_msgs =
             "Plan-only/Offline mode: skipping planning and execution.\n";
-        feedback->current_z_angle = target_angle;
         goal_handle->publish_feedback(feedback);
-        result->status = "Move Z Angle completed (plan-only/offline)\n";
+        result->status = "Move completed (plan-only/offline)\n";
         goal_handle->succeed(result);
         return;
     }
 
     if (goal_handle->is_canceling()) {
-        feedback->debug_msgs = "MoveZAngle was canceled before starting.\n";
-        feedback->current_z_angle = 0.0;
-        result->status = "Move Z Angle Canceled\n";
+        feedback->debug_msgs = "Move was canceled before starting.\n";
+        result->status = "Move Canceled\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->canceled(result);
         return;
@@ -139,29 +139,35 @@ void MoveZAngleActionServer::execute(
                                       ->getPlanningFrame();
     target_pose.pose = tf2::toMsg(current_pose);
 
-    tf2::Quaternion target_q;
-    tf2::Quaternion apply_q;
-    tf2::fromMsg(target_pose.pose.orientation, target_q);
-    apply_q.setRPY(0, 0, to_radian(target_angle));
-    apply_q.normalize();
-    target_q = target_q * apply_q;
-    target_q.normalize();
-    target_pose.pose.orientation = tf2::toMsg(target_q);
-    if (std::abs(angle_) < 1e-10) {
-        target_pose.pose.position.x +=
-            -radius_ * std::cos(to_radian(angle_)) * 0.001;
-        target_pose.pose.position.y +=
-            radius_ * std::sin(to_radian(angle_)) * 0.001;
+    if (apply_offset) {
+        target_pose.pose.position.x += offset_x * 0.001;
+        target_pose.pose.position.y += offset_y * 0.001;
     } else {
-        target_pose.pose.position.x +=
-            -(-radius_ * std::cos(to_radian(angle_ - target_angle)) +
-              radius_ * std::cos(to_radian(angle_))) *
-            0.001;
-        target_pose.pose.position.y +=
-            (-radius_ * std::sin(to_radian(angle_ - target_angle)) +
-             radius_ * std::sin(to_radian(angle_))) *
-            0.001;
+        tf2::Quaternion target_q;
+        tf2::Quaternion apply_q;
+        tf2::fromMsg(target_pose.pose.orientation, target_q);
+        apply_q.setRPY(0, 0, to_radian(target_angle));
+        apply_q.normalize();
+        target_q = target_q * apply_q;
+        target_q.normalize();
+        target_pose.pose.orientation = tf2::toMsg(target_q);
+        if (std::abs(angle_) < 1e-10) {
+            target_pose.pose.position.x +=
+                -radius_ * std::cos(to_radian(angle_)) * 0.001;
+            target_pose.pose.position.y +=
+                radius_ * std::sin(to_radian(angle_)) * 0.001;
+        } else {
+            target_pose.pose.position.x +=
+                -(-radius_ * std::cos(to_radian(angle_ - target_angle)) +
+                  radius_ * std::cos(to_radian(angle_))) *
+                0.001;
+            target_pose.pose.position.y +=
+                (-radius_ * std::sin(to_radian(angle_ - target_angle)) +
+                 radius_ * std::sin(to_radian(angle_))) *
+                0.001;
+        }
     }
+
     print_target(get_logger(), target_pose.pose);
 
     moveit::core::RobotStatePtr cur_state = moveit_cpp_->getCurrentState();
@@ -180,9 +186,8 @@ void MoveZAngleActionServer::execute(
     planning_component_->setGoal(target_pose, tool_link);
 
     if (goal_handle->is_canceling()) {
-        feedback->debug_msgs = "Move Z Angle was canceled before planning.\n";
-        feedback->current_z_angle = 0.0;
-        result->status = "Move Z Angle Canceled\n";
+        feedback->debug_msgs = "Move was canceled before planning.\n";
+        result->status = "Move Canceled\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->canceled(result);
         return;
@@ -212,21 +217,18 @@ void MoveZAngleActionServer::execute(
         moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
         RCLCPP_WARN(get_logger(), "Planning failed!");
         feedback->debug_msgs = "Planning failed!\n";
-        feedback->current_z_angle = 0.0;
-        result->status = "Move Z angle failed!\n";
+        result->status = "Move failed!\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->abort(result);
         return;
     }
 
     feedback->debug_msgs = "Planning succeeded; starting execution.\n";
-    feedback->current_z_angle = 0.0;
     goal_handle->publish_feedback(feedback);
 
     if (goal_handle->is_canceling()) {
         feedback->debug_msgs = "Canceled before execution.\n";
-        feedback->current_z_angle = 0.0;
-        result->status = "Move Z Angle Canceled\n";
+        result->status = "Move Canceled\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->canceled(result);
         return;
@@ -242,7 +244,6 @@ void MoveZAngleActionServer::execute(
     if (!execute_success) {
         RCLCPP_ERROR(get_logger(), "Execution failed!");
         feedback->debug_msgs = "Execution failed!\n";
-        feedback->current_z_angle = 0.0;
         result->status = "Move Z angle failed\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->abort(result);
@@ -251,24 +252,22 @@ void MoveZAngleActionServer::execute(
 
     if (goal_handle->is_canceling()) {
         feedback->debug_msgs = "Canceled after execution.\n";
-        feedback->current_z_angle = 0.0;
-        result->status = "Move Z Angle Canceled\n";
+        result->status = "Move Canceled\n";
         goal_handle->publish_feedback(feedback);
         goal_handle->canceled(result);
         return;
     }
 
-    feedback->debug_msgs = "Move Z Angle completed successfully!\n";
-    feedback->current_z_angle = angle_;
-    result->status = "Move Z Angle completed\n";
+    feedback->debug_msgs = "Move completed successfully!\n";
+    result->status = "Move completed\n";
     goal_handle->publish_feedback(feedback);
     goal_handle->succeed(result);
-    RCLCPP_INFO(get_logger(), "Move Z Angle done.");
+    RCLCPP_INFO(get_logger(), "Move done.");
 }
 
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<MoveZAngleActionServer>();
+    auto node = std::make_shared<MoveActionServer>();
     node->init();
     rclcpp::spin(node);
     rclcpp::shutdown();
