@@ -330,16 +330,32 @@ void CoordinatorNode::subscriber_callback(
     num_pt_ = msg->num_pt;
     autofocus_ = msg->autofocus;
     freedrive_ = msg->freedrive;
-    previous_ = msg->previous;
-    next_ = msg->next;
-    home_ = msg->home;
     reset_ = msg->reset;
     scan_trigger_read_ = msg->scan_trigger;
     scan_3d_read_ = msg->scan_3d;
     z_height_ = msg->z_height;
     offset_x_ = msg->offset_x;
     offset_y_ = msg->offset_y;
-    apply_offset_ = msg->apply_offset;
+    if (msg->previous == old_sub_msg_.previous) {
+        previous_ = false;
+    } else {
+        previous_ = msg->previous;
+    }
+    if (msg->next == old_sub_msg_.next) {
+        next_ = false;
+    } else {
+        next_ = msg->next;
+    }
+    if (msg->home == old_sub_msg_.home) {
+        home_ = false;
+    } else {
+        home_ = msg->home;
+    }
+    if (msg->apply_offset == old_sub_msg_.apply_offset) {
+        apply_offset_ = false;
+    } else {
+        apply_offset_ = msg->apply_offset;
+    }
     {
         if (msg->full_scan != full_scan_read_.load()) {
             if (!full_scan_delay_timer_active_) {
@@ -378,6 +394,12 @@ void CoordinatorNode::subscriber_callback(
             log_if_changed(msg->angle_limit, old_sub_msg_.angle_limit,
                            "angle_limit", sub_log);
             log_if_changed(msg->num_pt, old_sub_msg_.num_pt, "num_pt", sub_log);
+            log_if_changed(msg->offset_x, old_sub_msg_.offset_x, "offset_x",
+                           sub_log);
+            log_if_changed(msg->offset_y, old_sub_msg_.offset_y, "offset_y",
+                           sub_log);
+            log_if_changed(msg->apply_offset, old_sub_msg_.apply_offset,
+                           "apply_offset", sub_log);
             log_if_changed(msg->autofocus, old_sub_msg_.autofocus, "autofocus",
                            sub_log);
             log_if_changed(msg->freedrive, old_sub_msg_.freedrive, "freedrive",
@@ -664,8 +686,8 @@ void CoordinatorNode::main_loop() {
             }
             RCLCPP_INFO(get_logger(), msg_.c_str());
             previous_action_ = UserAction::Move;
-            send_move_goal(yaw_);
             current_action_ = UserAction::None;
+            send_move_goal(yaw_);
         }
         break;
     case UserAction::Scan:
@@ -765,10 +787,12 @@ void CoordinatorNode::send_focus_goal() {
 
 void CoordinatorNode::send_move_goal(double yaw) {
     Move::Goal goal_msg;
+    bool apply = apply_offset_.load();
+
     goal_msg.offset_x = offset_x_.load();
     goal_msg.offset_y = offset_y_.load();
     goal_msg.target_angle = yaw;
-    goal_msg.apply_offset = apply_offset_.load();
+    goal_msg.apply_offset = apply;
     goal_msg.radius = radius_.load();
     goal_msg.angle = angle_.load();
 
@@ -784,21 +808,23 @@ void CoordinatorNode::send_move_goal(double yaw) {
         };
 
     options.result_callback =
-        [this, yaw](const MoveGoalHandle::WrappedResult &result) {
+        [this, yaw, apply](const MoveGoalHandle::WrappedResult &result) {
             current_action_ = UserAction::None;
             previous_action_ = UserAction::None;
             msg_ += result.result->status;
             switch (result.code) {
             case rclcpp_action::ResultCode::SUCCEEDED:
-                if (yaw > 0.0) {
-                    circle_state_++;
-                } else {
-                    circle_state_--;
-                }
-                angle_.fetch_add(yaw);
-                RCLCPP_INFO(this->get_logger(), "Move SUCCEEDED");
-                if (full_scan_read_) {
-                    pc_.fetch_add(1);
+                if (!apply) {
+                    if (yaw > 0.0) {
+                        circle_state_++;
+                    } else {
+                        circle_state_--;
+                    }
+                    angle_.fetch_add(yaw);
+                    RCLCPP_INFO(this->get_logger(), "Move SUCCEEDED");
+                    if (full_scan_read_) {
+                        pc_.fetch_add(1);
+                    }
                 }
                 break;
             case rclcpp_action::ResultCode::ABORTED:

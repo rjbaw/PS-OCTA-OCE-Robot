@@ -12,3 +12,4 @@
 *.xcontrol binary
 *.rtm binary
 config/curve_model.onnx filter=lfs diff=lfs merge=lfs -text
+bags/ filter=lfs diff=lfs merge=lfs -text

@@ -56,6 +56,11 @@
  *
  * Uses MoveIt to plan and execute a constrained motion, typically to reposition
  * the end-effector at a given radius and yaw angle while respecting limits.
+ *
+ * When `apply_offset` is false, the node captures the current TCP position as
+ * the circle centre whenever `angle == 0` (degrees) and computes XY targets as
+ * an absolute offset from that stored centre using the specified `radius` and
+ * the cumulative path angle.
  */
 class MoveActionServer : public rclcpp::Node {
     using Move = octa_ros::action::Move;
@@ -84,6 +89,9 @@ class MoveActionServer : public rclcpp::Node {
 
     double radius_ = 0.0;
     double angle_ = 0.0;
+
+    Eigen::Vector3d centre_xyz_{0.0, 0.0, 0.0};
+    bool centre_set_ = false;
 
     /** @brief Action callbacks for goal lifecycle and execution. */
     rclcpp_action::GoalResponse
