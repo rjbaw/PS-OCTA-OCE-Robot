@@ -1,6 +1,7 @@
 # Libraries
 *.lvlibp
 *.llb
+*.venv*
 
 # Shared objects (inc. Windows DLLs)
 *.dll
@@ -15,7 +16,14 @@
 *.aliases
 *.lvlps
 .cache/
-__pycache__/
+**/__pycache__/
+dist/
+*.egg-info/
+
+**/.ipynb_checkpoints
+**/.ipynb_checkpoints/**
+
+*.swp
 
 data/
 build/

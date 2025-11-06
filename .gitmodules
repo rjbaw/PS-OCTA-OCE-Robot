@@ -1,0 +1,3 @@
+[submodule "dinoct"]
+	path = dinoct
+	url = git@github.com:rjbaw/dinoct.git

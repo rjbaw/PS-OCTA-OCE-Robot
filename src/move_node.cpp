@@ -143,6 +143,23 @@ void MoveActionServer::execute(
         target_pose.pose.position.x += offset_x * 0.001;
         target_pose.pose.position.y += offset_y * 0.001;
     } else {
+        if ((goal_handle->get_goal()->centre_set) || !centre_set_) {
+            centre_xyz_ = current_pose.translation();
+            centre_set_ = true;
+            RCLCPP_INFO(get_logger(),
+                        "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
+                        centre_xyz_.x(), centre_xyz_.y(), centre_xyz_.z());
+        } else {
+            const double path_angle_deg = angle_ + target_angle;
+            const double dx =
+                -radius_ * std::cos(to_radian(path_angle_deg)) * 0.001;
+            const double dy = radius_ * std::sin(to_radian(path_angle_deg)) * 0.001;
+
+            target_pose.pose.position.x = centre_xyz_.x() + dx;
+            target_pose.pose.position.y = centre_xyz_.y() + dy;
+            target_pose.pose.position.z = centre_xyz_.z();
+        }
+
         tf2::Quaternion target_q;
         tf2::Quaternion apply_q;
         tf2::fromMsg(target_pose.pose.orientation, target_q);
@@ -151,31 +168,6 @@ void MoveActionServer::execute(
         target_q = target_q * apply_q;
         target_q.normalize();
         target_pose.pose.orientation = tf2::toMsg(target_q);
-
-        if (std::abs(angle_) < 1e-10) {
-            centre_xyz_ = current_pose.translation();
-            centre_set_ = true;
-            RCLCPP_INFO(get_logger(),
-                        "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
-                        centre_xyz_.x(), centre_xyz_.y(), centre_xyz_.z());
-        }
-
-        const double path_angle_deg = angle_ + target_angle;
-        if (!centre_set_) {
-            centre_xyz_ = current_pose.translation();
-            centre_set_ = true;
-            RCLCPP_WARN(get_logger(),
-                        "Centre not set; initializing from current pose (%.4f, "
-                        "%.4f, %.4f)m",
-                        centre_xyz_.x(), centre_xyz_.y(), centre_xyz_.z());
-        }
-        const double dx =
-            -radius_ * std::cos(to_radian(path_angle_deg)) * 0.001;
-        const double dy = radius_ * std::sin(to_radian(path_angle_deg)) * 0.001;
-
-        target_pose.pose.position.x = centre_xyz_.x() + dx;
-        target_pose.pose.position.y = centre_xyz_.y() + dy;
-        target_pose.pose.position.z = centre_xyz_.z();
     }
 
     print_target(get_logger(), target_pose.pose);

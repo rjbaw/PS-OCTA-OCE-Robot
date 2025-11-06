@@ -795,6 +795,7 @@ void CoordinatorNode::send_move_goal(double yaw) {
     goal_msg.apply_offset = apply;
     goal_msg.radius = radius_.load();
     goal_msg.angle = angle_.load();
+    goal_msg.centre_set = home_.load();
 
     apply_speed_scale_to_node("/move_node", robot_vel_.load(),
                               robot_acc_.load());
