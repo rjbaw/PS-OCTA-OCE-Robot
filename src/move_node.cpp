@@ -145,6 +145,8 @@ void MoveActionServer::execute(
     } else {
         if ((goal_handle->get_goal()->centre_set) || !centre_set_) {
             centre_xyz_ = current_pose.translation();
+            const double scanning_radius = 8.6 / 2.0;
+            centre_xyz_.y() -= (scanning_radius - radius_) * 0.001;
             centre_set_ = true;
             RCLCPP_INFO(get_logger(),
                         "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
@@ -153,7 +155,8 @@ void MoveActionServer::execute(
             const double path_angle_deg = angle_ + target_angle;
             const double dx =
                 -radius_ * std::cos(to_radian(path_angle_deg)) * 0.001;
-            const double dy = radius_ * std::sin(to_radian(path_angle_deg)) * 0.001;
+            const double dy =
+                radius_ * std::sin(to_radian(path_angle_deg)) * 0.001;
 
             target_pose.pose.position.x = centre_xyz_.x() + dx;
             target_pose.pose.position.y = centre_xyz_.y() + dy;
@@ -200,21 +203,60 @@ void MoveActionServer::execute(
         moveit_cpp::PlanningComponent::MultiPipelinePlanRequestParameters(
             shared_from_this(), pipelines);
 
-    auto choose_shortest =
-        [](const std::vector<planning_interface::MotionPlanResponse>
-               &solutions) {
-            return *std::min_element(
-                solutions.begin(), solutions.end(),
-                [](const auto &lhs, const auto &rhs) {
-                    if (lhs && rhs) {
-                        return robot_trajectory::pathLength(*lhs.trajectory) <
-                               robot_trajectory::pathLength(*rhs.trajectory);
-                    }
-                    return static_cast<bool>(lhs);
-                });
-        };
+    const bool ccw = (to_radian(target_angle) > 0.0);
+    auto enforce_direction =
+        [tool_link,
+         ccw](const std::vector<planning_interface::MotionPlanResponse>
+                  &solutions) -> planning_interface::MotionPlanResponse {
+        planning_interface::MotionPlanResponse best_sol;
+        double best_traj_len = std::numeric_limits<double>::infinity();
+
+        for (const auto &sol : solutions) {
+            if (!sol || !sol.trajectory) {
+                continue;
+            }
+            const auto &traj = *sol.trajectory;
+            if (traj.getWayPointCount() < 2) {
+                continue;
+            }
+
+            const Eigen::Matrix3d wp0 =
+                traj.getWayPoint(0).getGlobalLinkTransform(tool_link).linear();
+            const Eigen::Matrix3d wp1 =
+                traj.getWayPoint(1).getGlobalLinkTransform(tool_link).linear();
+
+            const Eigen::Matrix3d Rrel = wp0.transpose() * wp1;
+            const Eigen::AngleAxisd angle_axis(Rrel);
+            const double yaw = angle_axis.angle() * angle_axis.axis().z();
+
+            if (ccw ? (yaw < 0.0) : (yaw > 0.0)) {
+                continue;
+            }
+
+            const double traj_len =
+                robot_trajectory::pathLength(*sol.trajectory);
+            if (traj_len < best_traj_len) {
+                best_traj_len = traj_len;
+                best_sol = sol;
+            }
+        }
+
+        if (best_sol) {
+            return best_sol;
+        }
+
+        return *std::min_element(
+            solutions.begin(), solutions.end(),
+            [](const auto &lhs, const auto &rhs) {
+                if (lhs && rhs) {
+                    return robot_trajectory::pathLength(*lhs.trajectory) <
+                           robot_trajectory::pathLength(*rhs.trajectory);
+                }
+                return static_cast<bool>(lhs);
+            });
+    };
     planning_interface::MotionPlanResponse plan_solution =
-        planning_component_->plan(req, choose_shortest);
+        planning_component_->plan(req, enforce_direction);
     if (plan_solution.error_code.val !=
         moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
         RCLCPP_WARN(get_logger(), "Planning failed!");

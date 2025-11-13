@@ -216,7 +216,8 @@ run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d
+	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d; \
+        docker compose -f $(RUN_COMPOSE) logs -f
 
 .PHONY: down
 down:
