@@ -39,10 +39,12 @@
 
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
 #include <moveit/moveit_cpp/planning_component.hpp>
-#include <moveit_msgs/msg/move_it_error_codes.hpp>
 
+#include <moveit/kinematic_constraints/utils.hpp>
 #include <moveit/robot_state/conversions.hpp>
+
 #include <moveit_msgs/msg/constraints.hpp>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
 #include <moveit_msgs/msg/orientation_constraint.hpp>
 #include <moveit_msgs/msg/position_constraint.hpp>
 

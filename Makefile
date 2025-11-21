@@ -28,7 +28,7 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci logs status shell restart prune-logs
+.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci logs status shell restart prune-logs pull
 
 help:
 	@echo "Make targets:"
@@ -48,6 +48,7 @@ help:
 	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
+	@echo "  pull   - Pull fresh image from repo"
 	@echo
 	@echo "Options:"
 	@echo "  CUDA=1  - Use CUDA compose variant"
@@ -125,7 +126,6 @@ test-ci:
 	--ctest-args -j 1 -VV -E test_bag; \
 	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE)
 
-.PHONY: tidy
 tidy:
 	@set -euo pipefail; \
 	if ! command -v clang-tidy >/dev/null; then echo "clang-tidy not found"; exit 1; fi; \
@@ -197,21 +197,22 @@ local:
 	echo "Building local deployment image: $(DOCKER_TAG)"; \
 	docker buildx build --load -t $(DOCKER_TAG) -f $(DOCKERFILE) --target run .
 
-.PHONY: dev
 dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(DEV_COMPOSE) up -d
 
-.PHONY: dev-cpu
 dev-cpu:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
 
-.PHONY: run
+pull:
+	@set -e; \
+	docker compose -f docker/docker-compose.yaml pull
+
 run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
@@ -219,7 +220,6 @@ run:
 	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d; \
         docker compose -f $(RUN_COMPOSE) logs -f
 
-.PHONY: down
 down:
 	@set -e; \
 	docker compose -f docker/docker-compose.yaml down --remove-orphans || true; \
@@ -263,7 +263,6 @@ status:
 	  echo "Container not running; skipping inner status."; \
 	fi
 
-.PHONY: shell
 shell:
 	@set -e; \
 	if docker ps --filter name=ps-oce-robot --format '{{.Names}}' | grep -qx ps-oce-robot; then \
@@ -272,13 +271,11 @@ shell:
 	  echo "Container 'ps-oce-robot' is not running. Start it with 'make run'."; exit 1; \
 	fi
 
-.PHONY: restart
 restart:
 	@set -e; \
 	$(MAKE) down; \
 	$(MAKE) run
 
-.PHONY: prune-logs
 PRUNE_LOGS_DAYS ?= 7
 prune-logs:
 	@set -e; \
