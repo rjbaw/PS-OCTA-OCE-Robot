@@ -5,6 +5,9 @@ source /opt/ros/jazzy/setup.bash || true
 source install/setup.bash 2>/dev/null || true
 source /workspace/app/setup.bash 2>/dev/null || true
 
+pkill -f 'ros2|octa_ros|coordinator_nod|focus_node|move_node|reset_node|freedrive_node|joint_state_pub|reconnect_clien|controller_manager|move_group|ros2_control_node|dashboard_client|urscript_interface|robot_state_publisher|rviz2' 2>/dev/null || true
+sleep 0.5
+
 help() {
 	cat <<EOF
 Launch OCTA/OCE ROS manager

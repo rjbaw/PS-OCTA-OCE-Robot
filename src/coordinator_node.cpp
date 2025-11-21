@@ -24,66 +24,6 @@ using namespace std::chrono_literals;
 #include "moveit_msgs/msg/collision_object.hpp"
 #include "scene_utils.hpp"
 
-struct Step {
-    UserAction action;
-    Mode mode;
-    double arg;
-};
-
-const std::vector<Step> full_scan_recipe = {
-    {UserAction::Focus, Mode::ROBOT, 0},
-    // initial OCTA
-    {UserAction::Scan, Mode::OCTA, 0},
-    {UserAction::Scan, Mode::OCE, 0},
-    // first 60 deg
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    // intermediate OCT scans
-    {UserAction::Focus, Mode::ROBOT, 0},
-    {UserAction::Scan, Mode::OCT, 0},
-    {UserAction::Scan, Mode::OCE, 0},
-    // second 60 deg
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    // intermediate OCT scans
-    {UserAction::Focus, Mode::ROBOT, 0},
-    {UserAction::Scan, Mode::OCT, 0},
-    {UserAction::Scan, Mode::OCE, 0},
-    // third 60 deg
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    {UserAction::Move, Mode::OCE, +10},
-    {UserAction::Scan, Mode::OCE, 0},
-    // final OCT scans
-    {UserAction::Scan, Mode::OCT, 0},
-};
-
 CoordinatorNode::CoordinatorNode(const rclcpp::NodeOptions &options)
     : Node("coordinator_node",
            rclcpp::NodeOptions(options)
@@ -300,6 +240,8 @@ void CoordinatorNode::init() {
             return res;
         });
 
+    full_scan_recipe_.clear();
+    full_scan_plan_stale_ = true;
     RCLCPP_INFO(get_logger(), "Coordinator Node Initialized.");
 }
 
@@ -319,6 +261,56 @@ void CoordinatorNode::trigger_apply_config() {
     config_timer_weak_ = config_timer_;
 }
 
+std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
+    const double angle_init = angle_init_.load();
+    const double angle_limit = angle_limit_.load();
+    const int num_pt = std::max(1, num_pt_.load());
+    const int n_oct = std::max(0, n_oct_.load());
+    const double sweep = angle_limit - angle_init;
+    const double angle_increment =
+        sweep / static_cast<double>(std::max(1, num_pt));
+
+    std::vector<Step> recipe;
+    recipe.push_back({UserAction::Focus, Mode::ROBOT, 0.0});
+    if (std::abs(angle_init) > 1e-12) {
+        recipe.push_back({UserAction::Move, Mode::OCE, angle_init});
+    }
+
+    recipe.push_back({UserAction::Scan, Mode::OCTA, 0.0});
+    recipe.push_back({UserAction::Scan, Mode::OCE, 0.0});
+
+    std::vector<int> oct_breakpoints;
+    if (n_oct > 0) {
+        oct_breakpoints.reserve(n_oct);
+        int last_bp = 1;
+        for (int i = 1; i <= n_oct; ++i) {
+            double pos = static_cast<double>(i) * static_cast<double>(num_pt) /
+                         static_cast<double>(std::max(1, n_oct));
+            int bp = static_cast<int>(std::lround(pos));
+            bp = std::clamp(bp, last_bp, num_pt);
+            last_bp = bp;
+            oct_breakpoints.push_back(bp);
+        }
+        if (!oct_breakpoints.empty()) {
+            oct_breakpoints.back() = num_pt;
+        }
+    }
+
+    int completed_moves = 0;
+    for (int i = 0; i < num_pt; ++i) {
+        recipe.push_back({UserAction::Move, Mode::OCE, angle_increment});
+        recipe.push_back({UserAction::Scan, Mode::OCE, 0.0});
+        ++completed_moves;
+        while (!oct_breakpoints.empty() &&
+               completed_moves >= oct_breakpoints.front()) {
+            recipe.push_back({UserAction::Focus, Mode::ROBOT, 0.0});
+            recipe.push_back({UserAction::Scan, Mode::OCT, 0.0});
+            oct_breakpoints.erase(oct_breakpoints.begin());
+        }
+    }
+    return recipe;
+}
+
 void CoordinatorNode::subscriber_callback(
     const octa_ros::msg::Labviewdata::SharedPtr msg) {
     robot_vel_ = msg->robot_vel;
@@ -328,6 +320,8 @@ void CoordinatorNode::subscriber_callback(
     radius_ = msg->radius;
     angle_limit_ = msg->angle_limit;
     num_pt_ = msg->num_pt;
+    angle_init_ = msg->angle_init;
+    n_oct_ = msg->n_oct;
     autofocus_ = msg->autofocus;
     freedrive_ = msg->freedrive;
     reset_ = msg->reset;
@@ -378,6 +372,11 @@ void CoordinatorNode::subscriber_callback(
     oce_mode_read_ = msg->oce_mode;
     {
         std::lock_guard<std::mutex> lock(data_mutex_);
+        const bool recipe_param_changed =
+            msg->angle_limit != old_sub_msg_.angle_limit ||
+            msg->num_pt != old_sub_msg_.num_pt ||
+            msg->angle_init != old_sub_msg_.angle_init ||
+            msg->n_oct != old_sub_msg_.n_oct;
         if (*msg != old_sub_msg_) {
             std::ostringstream sub_log;
             sub_log << "[SUBSCRIBING]: Changed fields \n";
@@ -394,6 +393,9 @@ void CoordinatorNode::subscriber_callback(
             log_if_changed(msg->angle_limit, old_sub_msg_.angle_limit,
                            "angle_limit", sub_log);
             log_if_changed(msg->num_pt, old_sub_msg_.num_pt, "num_pt", sub_log);
+            log_if_changed(msg->angle_init, old_sub_msg_.angle_init,
+                           "angle_init", sub_log);
+            log_if_changed(msg->n_oct, old_sub_msg_.n_oct, "n_oct", sub_log);
             log_if_changed(msg->offset_x, old_sub_msg_.offset_x, "offset_x",
                            sub_log);
             log_if_changed(msg->offset_y, old_sub_msg_.offset_y, "offset_y",
@@ -433,6 +435,10 @@ void CoordinatorNode::subscriber_callback(
         }
         if (!full_scan_read_) {
             pc_ = 0;
+        }
+        if (recipe_param_changed) {
+            pc_ = 0;
+            full_scan_plan_stale_ = true;
         }
         old_sub_msg_ = *msg;
     }
@@ -529,6 +535,7 @@ void CoordinatorNode::main_loop() {
             full_scan_ = false;
             msg_ = "Canceling Full Scan action\n";
             RCLCPP_INFO(this->get_logger(), msg_.c_str());
+            full_scan_recipe_.clear();
         }
         pc_ = 0;
         current_action_ = UserAction::None;
@@ -546,17 +553,40 @@ void CoordinatorNode::main_loop() {
     }
 
     if (full_scan_read_) {
+        if (!full_scan_ &&
+            (full_scan_plan_stale_ || full_scan_recipe_.empty())) {
+            full_scan_recipe_ = build_full_scan_recipe();
+            full_scan_plan_stale_ = false;
+            full_scan_center_seeded_ = false;
+            pc_ = 0;
+        }
         full_scan_ = true;
-        if ((pc_.load() + 1) > full_scan_recipe.size()) {
+        if (full_scan_recipe_.empty()) {
+            msg_ = "Full Scan recipe is empty; aborting.\n";
             full_scan_ = false;
-            msg_ = "Full Scan complete!\n";
             return;
         }
-        const Step &step = full_scan_recipe[pc_.load()];
+        if ((pc_.load() + 1) > full_scan_recipe_.size()) {
+            full_scan_ = false;
+            msg_ = "Full Scan complete!\n";
+            if (full_scan_plan_stale_) {
+                full_scan_recipe_ = build_full_scan_recipe();
+                full_scan_plan_stale_ = false;
+            }
+            return;
+        }
+        const Step &step = full_scan_recipe_[pc_.load()];
         robot_mode_ = (step.mode == Mode::ROBOT);
         oct_mode_ = (step.mode == Mode::OCT);
         octa_mode_ = (step.mode == Mode::OCTA);
         oce_mode_ = (step.mode == Mode::OCE);
+        if (full_scan_ && step.action == UserAction::Move &&
+            !full_scan_center_seeded_) {
+            home_ = true;
+            angle_ = 0.0;
+            circle_state_ = 1;
+            full_scan_center_seeded_ = true;
+        }
         std::string action_mode;
         std::string scan_mode;
         if (robot_mode_) {
@@ -576,7 +606,7 @@ void CoordinatorNode::main_loop() {
             action_mode = "Scanning Action";
         }
         msg_ = std::format("Step [{}/{}]: {}, {}\n", pc_.load() + 1,
-                           full_scan_recipe.size(), action_mode, scan_mode);
+                           full_scan_recipe_.size(), action_mode, scan_mode);
 
         if (robot_mode_read_.load() != robot_mode_.load() ||
             oct_mode_read_.load() != oct_mode_.load() ||
@@ -679,6 +709,7 @@ void CoordinatorNode::main_loop() {
                 } else if (home_) {
                     yaw_ = -angle_;
                     msg_ = std::format("[Action] Home: {}\n", yaw_);
+                    circle_state_ = 1;
                 }
                 if (std::abs(angle_.load()) < 1e-10) {
                     circle_state_ = 1;
@@ -688,6 +719,7 @@ void CoordinatorNode::main_loop() {
             previous_action_ = UserAction::Move;
             current_action_ = UserAction::None;
             send_move_goal(yaw_);
+            home_ = false;
         }
         break;
     case UserAction::Scan:

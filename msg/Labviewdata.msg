@@ -22,3 +22,5 @@ bool oce_mode
 float64 offset_x
 float64 offset_y
 bool apply_offset
+float64 angle_init
+int32 n_oct

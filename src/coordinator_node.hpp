@@ -60,6 +60,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <rclcpp/parameter_client.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -101,6 +102,12 @@ enum class Mode : uint8_t {
     OCE,   ///< LabVIEW OCE mode.
 };
 
+struct Step {
+    UserAction action;
+    Mode mode;
+    double arg;
+};
+
 /**
  * @brief Central node coordinating user actions, motion, and OCT/OCE tasks.
  *
@@ -129,6 +136,7 @@ class CoordinatorNode : public rclcpp::Node {
     /** @brief Create publishers, subscribers, timers, and action/service
      * clients. */
     void init();
+    std::vector<Step> build_full_scan_recipe() const;
 
   private:
     // Action clients
@@ -183,6 +191,9 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<UserAction> previous_action_ = UserAction::None;
     octa_ros::msg::Labviewdata old_sub_msg_;
     octa_ros::msg::Robotdata old_pub_msg_;
+    std::vector<Step> full_scan_recipe_;
+    std::atomic<bool> full_scan_center_seeded_ = false;
+    std::atomic<bool> full_scan_plan_stale_ = true;
     double roll_ = 0.0;
     double pitch_ = 0.0;
     double yaw_ = 0.0;
@@ -220,6 +231,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<double> angle_tolerance_ = 0.0;
     std::atomic<double> radius_ = 0.0;
     std::atomic<double> angle_limit_ = 0.0;
+    std::atomic<double> angle_init_ = 0.0;
     std::atomic<double> offset_x_ = 0.0;
     std::atomic<double> offset_y_ = 0.0;
     std::atomic<bool> autofocus_ = false;
@@ -234,6 +246,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> full_scan_ = false;
     std::atomic<bool> full_scan_read_ = false;
     std::atomic<int> num_pt_ = 1;
+    std::atomic<int> n_oct_ = 3;
     std::atomic<bool> robot_mode_read_ = true;
     std::atomic<bool> oct_mode_read_ = false;
     std::atomic<bool> octa_mode_read_ = false;
