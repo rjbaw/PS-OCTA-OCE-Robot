@@ -257,9 +257,6 @@ void MoveActionServer::execute(
                 continue;
             }
             const auto &traj = *sol.trajectory;
-            if (traj.getWayPointCount() < 2) {
-                continue;
-            }
 
             double yaw = 0.0;
             const std::size_t N = traj.getWayPointCount();

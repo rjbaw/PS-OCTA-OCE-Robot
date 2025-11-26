@@ -211,11 +211,11 @@ logs:
 	LATEST_DIR=$$(find logs -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-); \
 	if [ -n "$$LATEST_DIR" ]; then \
 	  echo "RCUTILS logs in: $$LATEST_DIR"; \
-	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r tail -n 300; \
+	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r -I{} sh -c 'echo "===== {} ====="; cat "{}"'; \
 	  exit 0; \
 	fi; \
 	echo "No host logs found; checking in-container logs..."; \
-	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r tail -n 300; else echo "No container logs available."; fi' || true
+	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} =====\"; cat \"{}\""; else echo "No container logs available."; fi' || true
 
 status:
 	@set -e; \
