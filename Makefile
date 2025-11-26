@@ -28,20 +28,19 @@ TIDY_JOBS ?= $(if $(MAKE_JOBS),$(MAKE_JOBS),$(shell (command -v nproc >/dev/null
 GCC_MAJOR ?= $(shell g++ -dumpversion | sed -E 's/^([0-9]+).*/\1/')
 GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 
-.PHONY: build clean dev dev-cpu down format help lint local run test tidy test-ci logs status shell restart prune-logs pull
+.PHONY: build clean dev down format help lint local run test tidy logs status shell restart prune-logs pull
 
 help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
-	@echo "  test   - Run tests for $(PKG) and show results"
-	@echo "  test-ci - Run tests excluding test_bag.py"
+	@echo "  test   - Run full-stack test (URSim + container + bag)"
+	@echo "  test-ci - Run CI test suite"
 	@echo "  format - clang-format tracked C/C++ files; ruff on Python"
 	@echo "  tidy   - Run clang-tidy on tracked C/C++ files"
 	@echo "  lint   - Run 'tidy' and 'format'"
 	@echo "  clean  - Remove build/install/log and compile_commands.json"
 	@echo "  run    - Start deploy container"
 	@echo "  dev    - Start dev container (mounts source, bash)"
-	@echo "  dev-cpu - Start cpu dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
 	@echo "  logs   - Prune old logs, then show last 300 lines"
@@ -74,30 +73,8 @@ build:
 
 test:
 	@set -eo pipefail; \
-    if [ ! -f "$(ROS_SETUP)" ]; then \
-      if [ -n "$$ROS_DISTRO" ] && [ -f "/opt/ros/$$ROS_DISTRO/setup.bash" ]; then \
-        ROS_SETUP="/opt/ros/$$ROS_DISTRO/setup.bash"; \
-        echo "Using ROS setup at $$ROS_SETUP (ROS_DISTRO=$$ROS_DISTRO)"; \
-      else \
-        echo "ROS setup not found at $(ROS_SETUP). Set ROS_SETUP or export ROS_DISTRO."; \
-        exit 1; \
-      fi; \
-    fi; \
-	rm -rf \
-	  $(BUILD_BASE)/$(PKG)/Testing \
-	  $(BUILD_BASE)/$(PKG)/test_results \
-	  $(BUILD_BASE)/Testing \
-	  $(BUILD_BASE)/test_results \
-	  $(BUILD_BASE)/$(PKG)/CMakeCache.txt || true; \
-	$(COLCON) build --base-paths . --packages-select $(PKG) \
-	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
-	--cmake-args $(CMAKE_ARGS) $(TEST_CMAKE_ARGS) \
-	--event-handlers console_cohesion+; \
-	$(COLCON) test --base-paths . --packages-select $(PKG) \
-	--build-base $(BUILD_BASE) --install-base $(INSTALL_BASE) \
-	--event-handlers console_cohesion+ \
-	--ctest-args -j 1 -VV; \
-	$(COLCON) test-result --verbose --test-result-base $(BUILD_BASE)
+	echo "Running full-stack test (URSim + container + bag playback)..."; \
+	bash ./utils/fullstack_test.sh "$(DEV_COMPOSE)"
 
 test-ci:
 	@set -eo pipefail; \
@@ -202,12 +179,6 @@ dev:
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
 	HOST_UID=$$(id -u) HOST_GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(DEV_COMPOSE) up -d
-
-dev-cpu:
-	@set -e; \
-	echo "ROBOT_IP=$(ROBOT_IP)"; \
-	mkdir -p logs result; \
-	HOST_UID=$$(id -u) HOST_GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
 
 pull:
 	@set -e; \

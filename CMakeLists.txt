@@ -338,10 +338,6 @@ ament_package()
 
 if(launch_testing_ament_cmake_FOUND)
   add_launch_test(test/launch/test_actions.py TARGET test_actions TIMEOUT 60)
-  add_launch_test(test/launch/test_bag.py TARGET test_bag TIMEOUT 300)
-  if (DEFINED BUILD_TESTING)
-    set_property(TEST test_bag APPEND PROPERTY LABELS fullstack)
-  endif()
 endif()
 
 if(BUILD_TESTING)
