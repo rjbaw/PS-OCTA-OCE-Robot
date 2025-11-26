@@ -105,7 +105,9 @@ enum class Mode : uint8_t {
 struct Step {
     UserAction action;
     Mode mode;
-    double arg;
+    double yaw = 0.0;
+    double x = 0.0;
+    double y = 0.0;
 };
 
 /**
@@ -282,8 +284,15 @@ class CoordinatorNode : public rclcpp::Node {
 
     /** @brief Send a focus action goal if not already active. */
     void send_focus_goal();
-    /** @brief Send a Move goal. */
-    void send_move_goal(double yaw);
+    /** @brief Send a Move goal.
+     *
+     * @param yaw Target yaw increment [deg].
+     * @param offset_x Translation in X [mm].
+     * @param offset_y Translation in Y [mm].
+     * @param apply_offset If true, use XY translation.
+     */
+    void send_move_goal(double yaw, double offset_x, double offset_y,
+                        bool apply_offset);
     /** @brief Send a Freedrive goal to enable/disable manual guidance. */
     void send_freedrive_goal(bool enable);
     /** @brief Send a Reset goal to return to a safe posture. */

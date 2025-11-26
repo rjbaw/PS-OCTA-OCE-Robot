@@ -139,9 +139,10 @@ void MoveActionServer::execute(
         target_pose.pose.position.x += offset_x_mm * 0.001;
         target_pose.pose.position.y += offset_y_mm * 0.001;
     } else {
+        const double offset_radius = 4.3 - radius_;
         if ((goal->centre_set) || !centre_set_) {
             centre_xyz_ = current_pose.translation();
-            centre_xyz_.y() -= radius_ * 0.001;
+            centre_xyz_.y() -= offset_radius * 0.001;
             centre_set_ = true;
             RCLCPP_INFO(get_logger(),
                         "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
@@ -149,9 +150,9 @@ void MoveActionServer::execute(
         } else {
             const double path_angle_deg = angle_ + target_angle_deg;
             const double dx =
-                radius_ * std::sin(to_radian(path_angle_deg)) * 0.001;
+                offset_radius * std::sin(to_radian(path_angle_deg)) * 0.001;
             const double dy =
-                radius_ * std::cos(to_radian(path_angle_deg)) * 0.001;
+                offset_radius * std::cos(to_radian(path_angle_deg)) * 0.001;
 
             target_pose.pose.position.x = centre_xyz_.x() + dx;
             target_pose.pose.position.y = centre_xyz_.y() + dy;

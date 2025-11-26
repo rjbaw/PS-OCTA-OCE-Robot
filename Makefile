@@ -33,6 +33,7 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
+	@echo "  build-legacy - Build $(PKG) with LEGACY_IMG_PIPELINE=ON"
 	@echo "  test   - Run full-stack test (URSim + container + bag)"
 	@echo "  test-ci - Run CI test suite"
 	@echo "  format - clang-format tracked C/C++ files; ruff on Python"
@@ -65,6 +66,24 @@ build:
       fi; \
     fi; \
 	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) -DENABLE_CLANG_TIDY=ON; \
+	if [ -f build/$(PKG)/compile_commands.json ]; then \
+	  ln -sf build/$(PKG)/compile_commands.json ./compile_commands.json; \
+	elif [ -f build/compile_commands.json ]; then \
+	  ln -sf build/compile_commands.json ./compile_commands.json; \
+	fi
+
+build-legacy:
+	@set -eo pipefail; \
+    if [ ! -f "$(ROS_SETUP)" ]; then \
+      if [ -n "$$ROS_DISTRO" ] && [ -f "/opt/ros/$$ROS_DISTRO/setup.bash" ]; then \
+        ROS_SETUP="/opt/ros/$$ROS_DISTRO/setup.bash"; \
+        echo "Using ROS setup at $$ROS_SETUP (ROS_DISTRO=$$ROS_DISTRO)"; \
+      else \
+        echo "ROS setup not found at $(ROS_SETUP). Set ROS_SETUP or export ROS_DISTRO."; \
+        exit 1; \
+      fi; \
+    fi; \
+	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) -DENABLE_CLANG_TIDY=ON -DLEGACY_IMG_PIPELINE=ON; \
 	if [ -f build/$(PKG)/compile_commands.json ]; then \
 	  ln -sf build/$(PKG)/compile_commands.json ./compile_commands.json; \
 	elif [ -f build/compile_commands.json ]; then \
