@@ -15,7 +15,7 @@ services:
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       - ${HOME}:/workspace/home/
       - ${PWD}:/workspace/app/
-    user: "${UID}:${GID}"
+    user: "${HOST_UID}:${HOST_GID}"
     group_add:
       - 105
     cap_add:

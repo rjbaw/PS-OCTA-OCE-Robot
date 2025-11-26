@@ -16,7 +16,7 @@ services:
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       - ${PWD}/logs:/workspace/app/logs
       - ${PWD}/result:/workspace/app/result
-    user: "${UID}:${GID}"
+    user: "${HOST_UID}:${HOST_GID}"
     devices:
       - /dev/dri:/dev/dri
       - /dev/accel:/dev/accel

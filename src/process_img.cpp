@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <format>
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <unordered_map>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -148,6 +150,384 @@ void onlineKalmanFilter1D(std::vector<cv::Point> &coords) {
     }
 }
 
+Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
+    Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
+    for (int col = 0; col < 3; ++col) {
+        int max_idx;
+        rot_matrix.col(col).cwiseAbs().maxCoeff(&max_idx);
+        out_matrix.col(max_idx) = rot_matrix.col(col);
+    }
+    for (int col = 0; col < 3; ++col) {
+        if (out_matrix(col, col) < 0) {
+            out_matrix.col(col) *= -1.0;
+        }
+    }
+    return out_matrix;
+}
+
+void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
+    for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
+        cv::Point pt1 = ret_coord[i];
+        cv::Point pt2 = ret_coord[i + 1];
+        cv::line(image, pt1, pt2, cv::Scalar(255, 255, 255), 2);
+    }
+}
+
+static std::string g_curve_model_path;
+
+void set_curve_model_path(const std::string &path) {
+    g_curve_model_path = path;
+}
+
+static Ort::Session &load_session(const std::string &path,
+                                  int64_t batch_override);
+
+void preload_curve_model(std::size_t batch_size) {
+    (void)batch_size;
+#ifndef LEGACY_IMG_PIPELINE
+    std::string model_path;
+    if (!g_curve_model_path.empty()) {
+        model_path = g_curve_model_path;
+    } else {
+        const auto share =
+            ament_index_cpp::get_package_share_directory("octa_ros");
+        std::filesystem::path model_stdpath =
+            std::filesystem::path(share) / "config/curve_model.onnx";
+        model_path = model_stdpath.string();
+    }
+    (void)load_session(model_path,
+                       static_cast<int64_t>(batch_size == 0 ? 1 : batch_size));
+#endif
+}
+
+[[maybe_unused]] static cv::Mat gradient_legacy(const cv::Mat &img) {
+    CV_Assert(img.channels() == 1);
+
+    cv::Mat img_f;
+    img.convertTo(img_f, CV_32F);
+
+    std::array<float, 9> kx_vals{0.0F, 0.0F, 0.0F, -0.5F, 0.0F,
+                                 0.5F, 0.0F, 0.0F, 0.0F};
+    cv::Mat kx(3, 3, CV_32F, kx_vals.data());
+
+    cv::Mat ky = kx.t();
+
+    cv::Mat gx;
+    cv::Mat gy;
+    cv::filter2D(img_f, gx, -1, kx, cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+    cv::filter2D(img_f, gy, -1, ky, cv::Point(-1, -1), 0, cv::BORDER_REPLICATE);
+
+    cv::Mat gx2;
+    cv::Mat gy2;
+    cv::Mat mag;
+    cv::multiply(gx, gx, gx2);
+    cv::multiply(gy, gy, gy2);
+
+    gy2 *= 0.65F;
+    cv::add(gx2, gy2, mag);
+    cv::sqrt(mag, mag);
+
+    return mag;
+}
+
+[[maybe_unused]] static cv::Mat build_gaussian_filter_legacy(int nx, int ny) {
+    cv::Mat kernel(ny, nx, CV_32F);
+
+    float cx = static_cast<float>(nx - 1) / 2.0F;
+    float cy = static_cast<float>(ny - 1) / 2.0F;
+    float sigmaX = static_cast<float>(nx) / 4.0F;
+    float sigmaY = static_cast<float>(ny) / 4.0F;
+
+    double sumVal = 0.0;
+    for (int j = 0; j < ny; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            float x = static_cast<float>(i) - cx;
+            float y = static_cast<float>(j) - cy;
+            float val = std::exp(-(x * x) / (sigmaX * sigmaX)) *
+                        std::exp(-(y * y) / (sigmaY * sigmaY));
+            kernel.at<float>(j, i) = val;
+            sumVal += static_cast<double>(val);
+        }
+    }
+
+    kernel /= static_cast<float>(sumVal);
+
+    return kernel;
+}
+
+[[maybe_unused]] static cv::Mat lowpass_legacy(const cv::Mat &img, int nx,
+                                               int ny) {
+    cv::Mat kernel = build_gaussian_filter_legacy(nx, ny);
+
+    cv::Mat dst;
+    cv::filter2D(img, dst, -1, kernel, cv::Point(-1, -1), 0,
+                 cv::BORDER_REPLICATE);
+
+    return dst;
+}
+
+[[maybe_unused]] static cv::Mat load_bg_legacy() {
+    try {
+        std::string pkg_share =
+            ament_index_cpp::get_package_share_directory("octa_ros");
+        std::string bg_path = pkg_share + "/config/bg.jpg";
+        cv::Mat bg = cv::imread(bg_path, cv::IMREAD_GRAYSCALE);
+        if (bg.empty()) {
+            std::cerr << "[process_img] Background image not found at: "
+                      << bg_path << "; skipping background subtraction.\n";
+        }
+        return bg;
+    } catch (const std::exception &e) {
+        std::cerr << "[process_img] Could not resolve package share ("
+                  << e.what() << "); skipping background subtraction.\n";
+        return {};
+    }
+}
+
+[[maybe_unused]] static cv::Mat bg_sub_legacy(const cv::Mat &input) {
+    cv::Mat bg = load_bg_legacy();
+    if (bg.empty() || bg.size() != input.size() || bg.type() != input.type()) {
+        return input.clone();
+    }
+
+    cv::Mat input_f;
+    cv::Mat bg_f;
+    input.convertTo(input_f, CV_32F);
+    bg.convertTo(bg_f, CV_32F);
+
+    cv::Mat sub_f = input_f - bg_f;
+    cv::Mat output;
+    cv::normalize(sub_f, output, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+    return output;
+}
+
+[[maybe_unused]] static cv::Mat spatialFilter_legacy(const cv::Mat &input) {
+    cv::Mat raw;
+    input.convertTo(raw, CV_32F);
+    cv::Mat lp = lowpass_legacy(raw, 11, 5);
+    cv::Mat grad = gradient_legacy(lp);
+    cv::Mat grad_lp = lowpass_legacy(grad, 1, 3);
+    cv::Mat output = lp.mul(grad_lp);
+    cv::normalize(output, output, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+    return output;
+}
+
+[[maybe_unused]] static double median_legacy(const std::vector<double> &values,
+                                             int N) {
+    int initCount = std::min(static_cast<int>(values.size()), N);
+    if (initCount == 0) {
+        return 0.0;
+    }
+
+    std::vector<double> subset(
+        values.begin(),
+        values.begin() +
+            static_cast<std::vector<double>::difference_type>(initCount));
+    std::sort(subset.begin(), subset.end());
+
+    if ((initCount % 2) == 1) {
+        return subset[static_cast<size_t>(initCount / 2)];
+    }
+    double lower = subset[static_cast<size_t>((initCount / 2) - 1)];
+    double upper = subset[static_cast<size_t>(initCount / 2)];
+    return 0.5 * (lower + upper);
+}
+
+[[maybe_unused]] static std::vector<double>
+kalmanFilter1D_legacy(const std::vector<double> &observations, double Q = 0.01,
+                      double R = 0.5) {
+    std::vector<double> x_k_estimates;
+    x_k_estimates.reserve(observations.size());
+    if (observations.empty()) {
+        return x_k_estimates;
+    }
+
+    double x0 = median_legacy(observations, 10);
+    double x_k = x0;
+    double P_k = 1.0;
+
+    for (double z_k : observations) {
+        double x_k_pred = x_k;
+        double P_k_pred = P_k + Q;
+        double K_k = P_k_pred / (P_k_pred + R);
+        x_k = x_k_pred + K_k * (z_k - x_k_pred);
+        P_k = (1.0 - K_k) * P_k_pred;
+
+        x_k_estimates.push_back(x_k);
+    }
+    return x_k_estimates;
+}
+
+[[maybe_unused]] static std::vector<cv::Point>
+ol_removal_legacy(const std::vector<cv::Point> &coords) {
+    if (coords.empty()) {
+        return {};
+    }
+
+    std::vector<double> observations;
+    observations.reserve(coords.size());
+    for (const auto &pt : coords) {
+        observations.push_back(static_cast<double>(pt.y));
+    }
+
+    const int obs_length = static_cast<int>(observations.size());
+    const int window = std::max(1, obs_length / 3);
+    const double z_max = 40.0;
+
+    double best_slope = 0.0;
+    double best_sigma = std::numeric_limits<double>::infinity();
+
+    const int segmentCount = obs_length / 3;
+    for (int w = 0; w < segmentCount; ++w) {
+        const int start = w * window;
+        const int end = std::min(start + window, obs_length - 1);
+        if (end <= start) {
+            continue;
+        }
+
+        std::vector<double> segment(observations.begin() + start,
+                                    observations.begin() + end);
+
+        const double meanVal =
+            std::accumulate(segment.begin(), segment.end(), 0.0) /
+            static_cast<double>(segment.size());
+        double accum = 0.0;
+        for (double val : segment) {
+            const double diff = val - meanVal;
+            accum += diff * diff;
+        }
+        double stdv =
+            (segment.empty())
+                ? 0.0
+                : std::sqrt(accum / static_cast<double>(segment.size()));
+
+        auto median_filter_legacy = [](std::vector<double> &signal,
+                                       int window_size) {
+            const int half_win = window_size / 2;
+            std::vector<double> extended;
+            extended.reserve(signal.size() +
+                             static_cast<std::size_t>(2 * half_win));
+
+            for (int i = 0; i < half_win; ++i) {
+                extended.push_back(signal.front());
+            }
+            for (double val : signal) {
+                extended.push_back(val);
+            }
+            for (int i = 0; i < half_win; ++i) {
+                extended.push_back(signal.back());
+            }
+
+            for (int i = 0; i < static_cast<int>(signal.size()); ++i) {
+                std::vector<double> window(extended.begin() + i,
+                                           extended.begin() + i + window_size);
+                std::nth_element(
+                    window.begin(),
+                    window.begin() +
+                        static_cast<std::vector<double>::difference_type>(
+                            window_size / 2),
+                    window.end());
+                double med = window[static_cast<std::size_t>(window_size / 2)];
+                signal[static_cast<std::size_t>(i)] = med;
+            }
+        };
+        median_filter_legacy(segment, window);
+        double slopeCandidate = (segment.back() - segment.front()) /
+                                static_cast<double>(segment.size());
+
+        if (stdv < best_sigma && std::fabs(slopeCandidate) < z_max) {
+            best_sigma = stdv;
+            best_slope = slopeCandidate;
+        }
+    }
+
+    for (int i = 0; i < obs_length; ++i) {
+        if (i == 0) {
+            const int end = std::min(20, obs_length);
+            std::vector<double> firstChunk(observations.begin(),
+                                           observations.begin() + end);
+            std::nth_element(firstChunk.begin(),
+                             firstChunk.begin() +
+                                 static_cast<long>(firstChunk.size() / 2),
+                             firstChunk.end());
+            observations[0] =
+                firstChunk[static_cast<size_t>(firstChunk.size() / 2)];
+        } else {
+            double prev_pt = observations[static_cast<size_t>(i - 1)];
+            double pt = observations[static_cast<size_t>(i)];
+            double mse = std::fabs(pt - prev_pt);
+            if (mse > z_max) {
+                observations[static_cast<size_t>(i)] = prev_pt + best_slope;
+            }
+        }
+    }
+
+    std::vector<cv::Point> new_coords;
+    new_coords.reserve(coords.size());
+    for (int i = 0; i < obs_length; ++i) {
+        new_coords.emplace_back(
+            coords[static_cast<size_t>(i)].x,
+            static_cast<int>(std::round(observations[static_cast<size_t>(i)])));
+    }
+    return new_coords;
+}
+
+[[maybe_unused]] static std::vector<cv::Point>
+get_max_coor_legacy(const cv::Mat &img) {
+    const int width = img.cols;
+    std::vector<cv::Point> ret_coords(static_cast<size_t>(width));
+
+    for (int x = 0; x < width; ++x) {
+        cv::Mat intensity = img.col(x);
+        double minVal;
+        double maxVal;
+        cv::Point minLoc;
+        cv::Point maxLoc;
+        cv::minMaxLoc(intensity, &minVal, &maxVal, &minLoc, &maxLoc);
+        int detected_y = maxLoc.y;
+        ret_coords[static_cast<size_t>(x)] = cv::Point(x, detected_y);
+    }
+    return ret_coords;
+}
+
+[[maybe_unused]] static SegmentResult
+detect_lines_legacy(const cv::Mat &inputImg) {
+    CV_Assert(!inputImg.empty());
+
+    cv::Mat img_raw;
+    if (inputImg.channels() == 3) {
+        cv::cvtColor(inputImg, img_raw, cv::COLOR_BGR2GRAY);
+    } else {
+        img_raw = inputImg.clone();
+    }
+
+    cv::Mat sub_image = bg_sub_legacy(img_raw);
+    cv::Mat denoised_image = spatialFilter_legacy(sub_image);
+
+    std::vector<cv::Point> ret_coords = get_max_coor_legacy(denoised_image);
+    ret_coords = ol_removal_legacy(ret_coords);
+
+    std::vector<double> obs;
+    obs.reserve(ret_coords.size());
+    for (const auto &pt : ret_coords) {
+        obs.push_back(static_cast<double>(pt.y));
+    }
+    std::vector<double> kf_out = kalmanFilter1D_legacy(obs, 0.01, 0.5);
+    for (size_t i = 0; i < ret_coords.size(); ++i) {
+        ret_coords[i].y = static_cast<int>(std::round(kf_out[i]));
+    }
+
+    cv::Mat detected_img = img_raw.clone();
+    draw_line(detected_img, ret_coords);
+
+    SegmentResult result;
+    result.image = std::move(detected_img);
+    result.coordinates = std::move(ret_coords);
+    return result;
+}
+
 static Ort::Env &get_ort_env() {
     static auto *env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "octa_ros");
     return *env;
@@ -218,36 +598,7 @@ static Ort::Session &load_session(const std::string &path,
     return *session;
 }
 
-Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
-    Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
-    for (int col = 0; col < 3; ++col) {
-        int max_idx;
-        rot_matrix.col(col).cwiseAbs().maxCoeff(&max_idx);
-        out_matrix.col(max_idx) = rot_matrix.col(col);
-    }
-    for (int col = 0; col < 3; ++col) {
-        if (out_matrix(col, col) < 0) {
-            out_matrix.col(col) *= -1.0;
-        }
-    }
-    return out_matrix;
-}
-
-void draw_line(cv::Mat &image, const std::vector<cv::Point> &ret_coord) {
-    for (size_t i = 0; i < ret_coord.size() - 1; ++i) {
-        cv::Point pt1 = ret_coord[i];
-        cv::Point pt2 = ret_coord[i + 1];
-        cv::line(image, pt1, pt2, cv::Scalar(255, 255, 255), 2);
-    }
-}
-
-static std::string g_curve_model_path;
-
-void set_curve_model_path(const std::string &path) {
-    g_curve_model_path = path;
-}
-
-static std::vector<SegmentResult>
+[[maybe_unused]] static std::vector<SegmentResult>
 infer_batch(const std::vector<cv::Mat> &frames) {
     if (frames.empty()) {
         return {};
@@ -414,9 +765,13 @@ infer_batch(const std::vector<cv::Mat> &frames) {
 }
 
 SegmentResult detect_lines(const cv::Mat &inputImg) {
+#ifdef LEGACY_IMG_PIPELINE
+    return detect_lines_legacy(inputImg);
+#else
     auto results = infer_batch({inputImg});
     return results.empty() ? SegmentResult{inputImg.clone(), {}}
                            : std::move(results.front());
+#endif
 }
 
 inline std::filesystem::path
@@ -462,8 +817,16 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     double increments = (static_cast<double>(img_w) - 1.0) /
                         static_cast<double>(num_frames - 1);
 
-    std::vector<SegmentResult> detections = infer_batch(img_array);
+    std::vector<SegmentResult> detections;
+#ifdef LEGACY_IMG_PIPELINE
+    detections.reserve(img_array.size());
+    for (const auto &frame : img_array) {
+        detections.emplace_back(detect_lines_legacy(frame));
+    }
+#else
+    detections = infer_batch(img_array);
     CV_Assert(detections.size() == img_array.size());
+#endif
 
     for (size_t i = 0; i < img_array.size(); ++i) {
         const cv::Mat &img = img_array[i];

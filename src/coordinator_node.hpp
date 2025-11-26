@@ -291,8 +291,6 @@ class CoordinatorNode : public rclcpp::Node {
     /** @brief Scan3d service handler. */
     void scan3d_callback(std::shared_ptr<Scan3d::Request> request,
                          std::shared_ptr<Scan3d::Response> response);
-    /** @brief Call OCT background capture service; returns true if success. */
-    bool call_capture_background();
 
     /**
      * @brief Apply velocity/acceleration scaling [0,1] to a planning node.
@@ -302,6 +300,14 @@ class CoordinatorNode : public rclcpp::Node {
      */
     void apply_speed_scale_to_node(const std::string &node_name,
                                    double vel_scale, double acc_scale);
+
+#ifdef LEGACY_IMG_PIPELINE
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
+        capture_background_client_;
+
+    /** @brief Call OCT background capture service; returns true if success. */
+    bool call_capture_background();
+#endif
 };
 
 #endif // COORDINATOR_NODE_HPP

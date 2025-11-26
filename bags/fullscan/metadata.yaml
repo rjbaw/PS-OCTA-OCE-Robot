@@ -34,9 +34,9 @@ rosbag2_bagfile_information:
   compression_format: ""
   compression_mode: ""
   relative_file_paths:
-    - full_scan_0.mcap
+    - fullscan_0.mcap
   files:
-    - path: full_scan_0.mcap
+    - path: fullscan_0.mcap
       starting_time:
         nanoseconds_since_epoch: 1762289949251065438
       duration:

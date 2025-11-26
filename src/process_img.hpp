@@ -78,6 +78,17 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
                                       int interval);
 
 /**
+ * @brief Preload the ONNX curve model and create an inference session.
+ *
+ * This forces initialization of the ONNX Runtime environment and session so
+ * that subsequent calls to @ref detect_lines() / @ref lines_3d() do not incur
+ * one-time model loading latency.
+ *
+ * @param batch_size Expected batch size for typical inference calls.
+ */
+void preload_curve_model(std::size_t batch_size = 1);
+
+/**
  * @brief Override the default ONNX model path used for curve detection.
  *
  * If not set, the model is resolved from the package share directory under

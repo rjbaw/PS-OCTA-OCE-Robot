@@ -201,13 +201,13 @@ dev:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(DEV_COMPOSE) up -d
+	HOST_UID=$$(id -u) HOST_GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(DEV_COMPOSE) up -d
 
 dev-cpu:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
+	HOST_UID=$$(id -u) HOST_GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f docker/docker-compose-cpu.yaml up -d
 
 pull:
 	@set -e; \
@@ -217,7 +217,7 @@ run:
 	@set -e; \
 	echo "ROBOT_IP=$(ROBOT_IP)"; \
 	mkdir -p logs result; \
-	UID=$$(id -u) GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d; \
+	HOST_UID=$$(id -u) HOST_GID=$$(id -g) ROBOT_IP="$(ROBOT_IP)" docker compose -f $(RUN_COMPOSE) up -d; \
         docker compose -f $(RUN_COMPOSE) logs -f
 
 down:

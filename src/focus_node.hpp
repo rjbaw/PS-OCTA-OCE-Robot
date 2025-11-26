@@ -158,6 +158,19 @@ class FocusActionServer : public rclcpp::Node {
 
     rclcpp::Time start;
 
+#ifdef LEGACY_IMG_PIPELINE
+    /**
+     * @brief Capture current frame as background (for classic pipeline).
+     *
+     * Saves to package share `config/bg.jpg`.
+     */
+    void capture_background_callback(
+        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
+#endif
+
     /**
      * @brief Fast check if the image is near-blank.
      * @param img Grayscale image.

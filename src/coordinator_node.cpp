@@ -170,6 +170,13 @@ void CoordinatorNode::init() {
         rclcpp_action::create_client<Freedrive>(this, action_freedrive_name);
     reset_action_client_ =
         rclcpp_action::create_client<Reset>(this, action_reset_name);
+#ifdef LEGACY_IMG_PIPELINE
+    {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        capture_background_client_ = create_client<std_srvs::srv::Trigger>(
+            "capture_background", qos, parallel_group_);
+    }
+#endif
 
     if (!focus_action_client_->wait_for_action_server(
             std::chrono::milliseconds(action_server_wait_ms_))) {
@@ -996,6 +1003,16 @@ void CoordinatorNode::send_reset_goal() {
             switch (result.code) {
             case rclcpp_action::ResultCode::SUCCEEDED:
                 RCLCPP_INFO(this->get_logger(), "Reset SUCCESS");
+#ifdef LEGACY_IMG_PIPELINE
+                if (call_capture_background()) {
+                    msg_ += "\nBackground Captured\n";
+                    RCLCPP_INFO(this->get_logger(),
+                                "Background capture succeeded after reset.");
+                } else {
+                    RCLCPP_WARN(this->get_logger(),
+                                "Background capture after reset failed.");
+                }
+#endif
                 break;
             case rclcpp_action::ResultCode::ABORTED:
                 msg_ += "\nReset position abort\n";
@@ -1028,6 +1045,22 @@ void CoordinatorNode::send_reset_goal() {
     reset_action_client_->async_send_goal(goal_msg, options);
 }
 
+#ifdef LEGACY_IMG_PIPELINE
+bool CoordinatorNode::call_capture_background() {
+    if (!capture_background_client_) {
+        return false;
+    }
+    if (!capture_background_client_->wait_for_service(
+            std::chrono::milliseconds(service_poll_interval_ms_))) {
+        return false;
+    }
+    auto req = std::make_shared<std_srvs::srv::Trigger::Request>();
+    auto fut = capture_background_client_->async_send_request(req);
+    return fut.wait_for(std::chrono::milliseconds(1000)) ==
+               std::future_status::ready &&
+           fut.get()->success;
+}
+#endif
 void CoordinatorNode::scan3d_callback(
     const std::shared_ptr<Scan3d::Request> request,
     std::shared_ptr<Scan3d::Response> response) {

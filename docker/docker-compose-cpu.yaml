@@ -16,7 +16,7 @@ services:
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       - ${HOME}:/workspace/home/
       - ${PWD}:/workspace/app/
-    user: "${UID}:${GID}"
+    user: "${HOST_UID}:${HOST_GID}"
     cap_add:
       - SYS_NICE
       - SYS_RESOURCE

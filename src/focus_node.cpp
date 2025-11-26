@@ -234,6 +234,10 @@ void FocusActionServer::init() {
         std::filesystem::exists(curve_model_path)) {
         octa_ros::img::set_curve_model_path(curve_model_path);
     }
+#ifndef LEGACY_IMG_PIPELINE
+    octa_ros::img::preload_curve_model(static_cast<std::size_t>(interval_));
+#endif
+
     if (!(plan_only || offline_mode)) {
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
@@ -260,6 +264,14 @@ void FocusActionServer::init() {
         img_options);
 
     service_scan_3d_ = create_client<Scan3d>("scan_3d");
+#ifdef LEGACY_IMG_PIPELINE
+    capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
+        "capture_background",
+        [this](const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+               std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+            this->capture_background_callback(request, response);
+        });
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -360,6 +372,25 @@ cv::Mat FocusActionServer::get_img() {
     }
     return frame;
 }
+
+#ifdef LEGACY_IMG_PIPELINE
+void FocusActionServer::capture_background_callback(
+    [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
+        request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+    cv::Mat frame = get_img();
+    if (!frame.empty()) {
+        std::string pkg_share =
+            ament_index_cpp::get_package_share_directory("octa_ros");
+        std::string bg_path = pkg_share + "/config/bg.jpg";
+        cv::imwrite(bg_path, frame);
+        response->success = true;
+    } else {
+        RCLCPP_INFO(get_logger(), "No image captured – background not saved");
+        response->success = false;
+    }
+}
+#endif
 
 void FocusActionServer::image_callback(
     const octa_ros::msg::Img::SharedPtr msg) {

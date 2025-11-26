@@ -19,6 +19,9 @@ endif()
 
 option(ENABLE_CLANG_TIDY "Run clang-tidy during the build" ON)
 option(CLANG_TIDY_WARN_AS_ERRORS "Treat clang-tidy warnings as errors" OFF)
+option(LEGACY_IMG_PIPELINE
+       "Use classic CV-based image processing pipeline instead of ONNX model"
+       OFF)
 set(_OCTA_CLANG_TIDY_CMD "")
 if(ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy)
@@ -268,6 +271,14 @@ target_compile_definitions(reconnect_client PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(sub_img PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(test_detect PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(run_state_listener PRIVATE OCTA_COORDINATOR_NO_MAIN)
+
+if(LEGACY_IMG_PIPELINE)
+  foreach(tgt IN ITEMS focus_node test_detect)
+    if(TARGET ${tgt})
+      target_compile_definitions(${tgt} PRIVATE LEGACY_IMG_PIPELINE)
+    endif()
+  endforeach()
+endif()
 
 get_target_property(_ORT_LOCATION onnxruntime::onnxruntime IMPORTED_LOCATION)
 if(NOT _ORT_LOCATION)
