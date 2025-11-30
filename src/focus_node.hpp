@@ -144,9 +144,9 @@ class FocusActionServer : public rclcpp::Node {
     std::string image_topic_ = "/oct_image";
 
     // Tunables
-    double focus_step_timeout_sec_ = 5.0;
+    double focus_step_timeout_sec_ = 10.0;
     int64_t scan3d_service_wait_ms_ = 200;
-    int64_t scan3d_response_timeout_ms_ = 2000;
+    int64_t scan3d_response_timeout_ms_ = 4000;
 
     // Parameter callback
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr

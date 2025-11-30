@@ -171,7 +171,7 @@ format:
 lint: tidy format
 
 clean:
-	@rm -rf build install log compile_commands.json
+	@rm -rf build install log compile_commands.json || true
 
 DOCKER_TAG ?= ghcr.io/rjbaw/octa_ros:latest
 DOCKERFILE ?= docker/Dockerfile.cuda

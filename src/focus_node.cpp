@@ -366,10 +366,7 @@ bool FocusActionServer::pop_new(cv::Mat &frame) {
 
 cv::Mat FocusActionServer::get_img() {
     cv::Mat frame;
-    while (!pop_new(frame)) {
-        size_t expected = head_.load();
-        head_.wait(expected);
-    }
+    pop_new(frame);
     return frame;
 }
 
