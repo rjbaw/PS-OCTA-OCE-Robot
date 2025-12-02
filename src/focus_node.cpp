@@ -38,92 +38,23 @@ void FocusActionServer::init() {
     if (!this->has_parameter("plan_only")) {
         this->declare_parameter<bool>("plan_only", false);
     }
-    if (!this->has_parameter("offline_mode")) {
-        this->declare_parameter<bool>("offline_mode", false);
-    }
-    // Tunable parameters
-    if (!this->has_parameter("gating_interval_sec")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Minimum seconds between stored frames";
-        rcl_interfaces::msg::FloatingPointRange float_range;
-        float_range.from_value = 0.0;
-        float_range.to_value = 10.0;
-        float_range.step = 0.0;
-        descriptor.floating_point_range.emplace_back(float_range);
-        this->declare_parameter<double>("gating_interval_sec", gating_interval_,
-                                        descriptor);
-    }
     if (!this->has_parameter("focus_step_timeout_sec")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Timeout in seconds for each focus step";
-        rcl_interfaces::msg::FloatingPointRange float_range;
-        float_range.from_value = 0.1;
-        float_range.to_value = 120.0;
-        float_range.step = 0.0;
-        descriptor.floating_point_range.emplace_back(float_range);
         this->declare_parameter<double>("focus_step_timeout_sec",
-                                        focus_step_timeout_sec_, descriptor);
+                                        focus_step_timeout_sec_);
     }
     if (!this->has_parameter("scan3d_service_wait_ms")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description =
-            "Wait time for scan3d service availability (ms)";
-        rcl_interfaces::msg::IntegerRange int_range;
-        int_range.from_value = 1;
-        int_range.to_value = 10000;
-        int_range.step = 1;
-        descriptor.integer_range.emplace_back(int_range);
         this->declare_parameter<int64_t>("scan3d_service_wait_ms",
-                                         scan3d_service_wait_ms_, descriptor);
+                                         scan3d_service_wait_ms_);
     }
     if (!this->has_parameter("scan3d_response_timeout_ms")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Timeout for scan3d response (ms)";
-        rcl_interfaces::msg::IntegerRange int_range;
-        int_range.from_value = 1;
-        int_range.to_value = 60000;
-        int_range.step = 1;
-        descriptor.integer_range.emplace_back(int_range);
         this->declare_parameter<int64_t>("scan3d_response_timeout_ms",
-                                         scan3d_response_timeout_ms_,
-                                         descriptor);
-    }
-    if (!this->has_parameter("image_width")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Incoming image width (px)";
-        rcl_interfaces::msg::IntegerRange int_range;
-        int_range.from_value = 1;
-        int_range.to_value = 4096;
-        int_range.step = 1;
-        descriptor.integer_range.emplace_back(int_range);
-        this->declare_parameter<int64_t>("image_width", image_width_,
-                                         descriptor);
-    }
-    if (!this->has_parameter("image_height")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Incoming image height (px)";
-        rcl_interfaces::msg::IntegerRange int_range;
-        int_range.from_value = 1;
-        int_range.to_value = 4096;
-        int_range.step = 1;
-        descriptor.integer_range.emplace_back(int_range);
-        this->declare_parameter<int64_t>("image_height", image_height_,
-                                         descriptor);
-    }
-    if (!this->has_parameter("image_topic")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Image topic to subscribe";
-        this->declare_parameter<std::string>("image_topic", image_topic_);
+                                         scan3d_response_timeout_ms_);
     }
     if (!this->has_parameter("px_per_mm")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Pixels per millimeter calibration";
-        rcl_interfaces::msg::FloatingPointRange float_range;
-        float_range.from_value = 0.001;
-        float_range.to_value = 10000.0;
-        float_range.step = 0.0;
-        descriptor.floating_point_range.emplace_back(float_range);
-        this->declare_parameter<double>("px_per_mm", px_per_mm_, descriptor);
+        this->declare_parameter<double>("px_per_mm", px_per_mm_);
+    }
+    if (!this->has_parameter("image_topic")) {
+        this->declare_parameter<std::string>("image_topic", image_topic_);
     }
     // Declare planning related parameters once here
     if (!this->has_parameter("tool_link")) {
@@ -133,56 +64,38 @@ void FocusActionServer::init() {
         this->declare_parameter<std::string>("tool_link", std::string("tcp"),
                                              descriptor);
     }
-    if (!this->has_parameter("envelope_radius_m")) {
-        rcl_interfaces::msg::ParameterDescriptor descriptor;
-        descriptor.description = "Linear radius (m) for position envelope";
-        rcl_interfaces::msg::FloatingPointRange float_range;
-        float_range.from_value = 0.0;
-        float_range.to_value = 1.0;
-        float_range.step = 0.0;
-        descriptor.floating_point_range.emplace_back(float_range);
-        this->declare_parameter<double>("envelope_radius_m", 0.05, descriptor);
-    }
     if (!this->has_parameter("curve_model_path")) {
         this->declare_parameter<std::string>("curve_model_path",
                                              std::string(""));
     }
 
-    // Parameter update callback
     param_cb_handle_ = this->add_on_set_parameters_callback(
         [this](const std::vector<rclcpp::Parameter> &params) {
             rcl_interfaces::msg::SetParametersResult result;
             result.successful = true;
             result.reason = "";
             for (const auto &param : params) {
-                if (param.get_name() == "gating_interval_sec") {
-                    if (param.as_double() < 0.0) {
-                        result.successful = false;
-                        result.reason = "gating_interval_sec must be >= 0";
-                        return result;
-                    }
-                } else if (param.get_name() == "focus_step_timeout_sec") {
+                const auto &name = param.get_name();
+                if (name == "focus_step_timeout_sec") {
                     if (param.as_double() <= 0.0) {
                         result.successful = false;
                         result.reason = "focus_step_timeout_sec must be > 0";
                         return result;
                     }
-                } else if (param.get_name() == "scan3d_service_wait_ms" ||
-                           param.get_name() == "scan3d_response_timeout_ms" ||
-                           param.get_name() == "image_width" ||
-                           param.get_name() == "image_height") {
+                } else if (name == "scan3d_service_wait_ms" ||
+                           name == "scan3d_response_timeout_ms") {
                     if (param.as_int() <= 0) {
                         result.successful = false;
                         result.reason = "integer parameter must be > 0";
                         return result;
                     }
-                } else if (param.get_name() == "px_per_mm") {
+                } else if (name == "px_per_mm") {
                     if (param.as_double() <= 0.0) {
                         result.successful = false;
                         result.reason = "px_per_mm must be > 0";
                         return result;
                     }
-                } else if (param.get_name() == "curve_model_path") {
+                } else if (name == "curve_model_path") {
                     const auto &path_val = param.as_string();
                     if (!path_val.empty() &&
                         !std::filesystem::exists(path_val)) {
@@ -193,21 +106,16 @@ void FocusActionServer::init() {
                 }
             }
             for (const auto &param : params) {
-                if (param.get_name() == "gating_interval_sec") {
-                    gating_interval_ = param.as_double();
-                } else if (param.get_name() == "focus_step_timeout_sec") {
+                const auto &name = param.get_name();
+                if (name == "focus_step_timeout_sec") {
                     focus_step_timeout_sec_ = param.as_double();
-                } else if (param.get_name() == "scan3d_service_wait_ms") {
+                } else if (name == "scan3d_service_wait_ms") {
                     scan3d_service_wait_ms_ = param.as_int();
-                } else if (param.get_name() == "scan3d_response_timeout_ms") {
+                } else if (name == "scan3d_response_timeout_ms") {
                     scan3d_response_timeout_ms_ = param.as_int();
-                } else if (param.get_name() == "image_width") {
-                    image_width_ = param.as_int();
-                } else if (param.get_name() == "image_height") {
-                    image_height_ = param.as_int();
-                } else if (param.get_name() == "px_per_mm") {
+                } else if (name == "px_per_mm") {
                     px_per_mm_ = param.as_double();
-                } else if (param.get_name() == "curve_model_path") {
+                } else if (name == "curve_model_path") {
                     const std::string &path_val = param.as_string();
                     if (!path_val.empty()) {
                         octa_ros::img::set_curve_model_path(path_val);
@@ -218,16 +126,12 @@ void FocusActionServer::init() {
         });
 
     bool plan_only = this->get_parameter("plan_only").as_bool();
-    bool offline_mode = this->get_parameter("offline_mode").as_bool();
-    gating_interval_ = this->get_parameter("gating_interval_sec").as_double();
     focus_step_timeout_sec_ =
         this->get_parameter("focus_step_timeout_sec").as_double();
     scan3d_service_wait_ms_ =
         this->get_parameter("scan3d_service_wait_ms").as_int();
     scan3d_response_timeout_ms_ =
         this->get_parameter("scan3d_response_timeout_ms").as_int();
-    image_width_ = this->get_parameter("image_width").as_int();
-    image_height_ = this->get_parameter("image_height").as_int();
     px_per_mm_ = this->get_parameter("px_per_mm").as_double();
     auto curve_model_path = this->get_parameter("curve_model_path").as_string();
     if (!curve_model_path.empty() &&
@@ -238,7 +142,7 @@ void FocusActionServer::init() {
     octa_ros::img::preload_curve_model(static_cast<std::size_t>(interval_));
 #endif
 
-    if (!(plan_only || offline_mode)) {
+    if (!plan_only) {
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
         tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
@@ -253,7 +157,8 @@ void FocusActionServer::init() {
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     rclcpp::SubscriptionOptions img_options;
     img_options.callback_group = parallel_group_;
-    last_store_time_ = now() - rclcpp::Duration::from_seconds(gating_interval_);
+    last_store_time_ =
+        now() - rclcpp::Duration::from_seconds(gating_interval_);
     buffer_.fill(cv::Mat());
     image_topic_ = this->get_parameter("image_topic").as_string();
     img_subscriber_ = create_subscription<octa_ros::msg::Img>(
@@ -442,18 +347,16 @@ void FocusActionServer::execute(
 
     goal_handle->publish_feedback(feedback);
     bool plan_only_fb = this->get_parameter("plan_only").as_bool();
-    bool offline_mode_fb = this->get_parameter("offline_mode").as_bool();
-    if (plan_only_fb || offline_mode_fb) {
-        feedback->debug_msgs = "Plan-only/Offline mode: skipping execution.\n";
+    if (plan_only_fb) {
+        feedback->debug_msgs = "Plan-only mode: skipping execution.\n";
         goal_handle->publish_feedback(feedback);
         result->status = "Focus completed (plan-only/offline)\n";
         goal_handle->succeed(result);
         return;
     }
     bool plan_only = this->get_parameter("plan_only").as_bool();
-    bool offline_mode = this->get_parameter("offline_mode").as_bool();
-    if (plan_only || offline_mode) {
-        feedback->debug_msgs = "Plan-only/Offline mode: skipping execution.\n";
+    if (plan_only) {
+        feedback->debug_msgs = "Plan-only mode: skipping execution.\n";
         goal_handle->publish_feedback(feedback);
         result->status = "Focus completed (plan-only/offline)\n";
         goal_handle->succeed(result);
@@ -648,7 +551,10 @@ void FocusActionServer::execute(
                     ->getPlanningScene()
                     ->getPlanningFrame();
             const double envelope_radius =
-                this->get_parameter("envelope_radius_m").as_double();
+                this->has_parameter("envelope_radius_m")
+                    ? this->get_parameter("envelope_radius_m").as_double()
+                    : this->declare_parameter<double>("envelope_radius_m",
+                                                      0.05);
             auto envelope = octa_ros::motion::make_envelope(
                 start_tcp, planning_frame, tool_link, envelope_radius, M_PI);
             planning_component_->setPathConstraints(envelope);

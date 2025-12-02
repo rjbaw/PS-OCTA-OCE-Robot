@@ -8,8 +8,11 @@
  * canceling or on error.
  *
  * @par Parameters
- * - plan_only (bool, default: false): skip execution (plan only).
- * - offline_mode (bool, default: false): disable MoveIt and execution.
+ * - plan_only (bool, default: false): skip execution (plan-only/CI mode).
+ * - urscript_robot_vel (double, default: 0.5): URScript fallback joint
+ *   velocity (m/s equivalent in UR units).
+ * - urscript_robot_acc (double, default: 0.5): URScript fallback joint
+ *   acceleration (m/s^2 equivalent in UR units).
  *
  * @par Publishers
  * - `std_msgs::msg::String` on `/urscript_interface/script_command` (QoS:

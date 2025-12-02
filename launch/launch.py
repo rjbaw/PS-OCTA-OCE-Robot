@@ -443,10 +443,7 @@ def launch_setup():
         name="focus_node",
         output="screen",
         parameters=common_parameters
-        + [
-            {"plan_only": LaunchConfiguration("use_mock_hardware")},
-            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
-        ],
+        + [{"plan_only": LaunchConfiguration("use_mock_hardware")}],
     )
 
     reset_node = Node(
@@ -455,10 +452,7 @@ def launch_setup():
         name="reset_node",
         output="screen",
         parameters=common_parameters
-        + [
-            {"plan_only": LaunchConfiguration("use_mock_hardware")},
-            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
-        ],
+        + [{"plan_only": LaunchConfiguration("use_mock_hardware")}],
     )
 
     move_node = Node(
@@ -467,10 +461,7 @@ def launch_setup():
         name="move_node",
         output="screen",
         parameters=common_parameters
-        + [
-            {"plan_only": LaunchConfiguration("use_mock_hardware")},
-            {"offline_mode": LaunchConfiguration("use_mock_hardware")},
-        ],
+        + [{"plan_only": LaunchConfiguration("use_mock_hardware")}],
     )
 
     nodes_after_driver = RegisterEventHandler(

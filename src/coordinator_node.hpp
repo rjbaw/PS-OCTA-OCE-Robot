@@ -21,10 +21,7 @@
  * - action_freedrive_name (string, default: "freedrive_action"): Freedrive
  *   action server.
  * - action_reset_name (string, default: "reset_action"): Reset action server.
- * - pub_period_ms (int, default: 5 ms): publisher timer period.
- * - main_loop_period_ms (int, default: 5 ms): state machine tick period.
- * - action_server_wait_ms (int, default: 200 ms): wait for action servers.
- * - config_apply_ms (int, default: 50 ms): debounce time before applying mode
+ * - config_apply_ms (int, default: 60 ms): debounce time before applying mode
  *   changes.
  * - scan_trigger_timeout_sec (double, default: 2.0 s): timeout for scan
  *   triggers.
@@ -160,10 +157,7 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
     rclcpp::TimerBase::SharedPtr config_timer_;
     std::weak_ptr<rclcpp::TimerBase> config_timer_weak_;
-    rclcpp::TimerBase::SharedPtr scan_timer_;
-    std::weak_ptr<rclcpp::TimerBase> scan_timer_weak_;
 
-    // Tunable parameters
     int64_t pub_period_ms_ = 5;
     int64_t main_loop_period_ms_ = 5;
     int64_t action_server_wait_ms_ = 200;
@@ -171,11 +165,9 @@ class CoordinatorNode : public rclcpp::Node {
     double scan_trigger_timeout_sec_ = 2.0;
     int64_t scan3d_window_ms_ = 50;
     int64_t service_poll_interval_ms_ = 1;
-    static constexpr std::chrono::milliseconds kFullScanSwitchDelay{100};
-
-    // Parameter callback
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
         param_cb_handle_;
+    static constexpr std::chrono::milliseconds kFullScanSwitchDelay{100};
 
     // Pub/Sub
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
@@ -196,8 +188,6 @@ class CoordinatorNode : public rclcpp::Node {
     std::vector<Step> full_scan_recipe_;
     std::atomic<bool> full_scan_center_seeded_ = false;
     std::atomic<bool> full_scan_plan_stale_ = true;
-    double roll_ = 0.0;
-    double pitch_ = 0.0;
     double yaw_ = 0.0;
     double angle_increment_ = 0.0;
     std::mutex data_mutex_;

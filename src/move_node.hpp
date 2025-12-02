@@ -7,12 +7,7 @@
  * radius, while respecting constraints via MoveIt.
  *
  * @par Parameters
- * - plan_only (bool, default: false): skip execution (plan only).
- * - offline_mode (bool, default: false): disable MoveIt and execution.
- * - envelope_radius_m (double, default: 0.05 m): spherical envelope radius
- *   around current TCP used for path constraints (declared on first use).
- * - planning_pipelines (string[]; default: ["pilz_ptp", "pilz_lin"]): set of
- *   planning pipelines to try; the shortest plan is chosen.
+ * - plan_only (bool, default: false): skip execution (plan-only/CI mode).
  *
  * @par Action Server
  * - Name: `move_action`; Goal: `offset_x` (mm), `offset_y` (mm),

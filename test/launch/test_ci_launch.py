@@ -18,17 +18,17 @@ class TestCILaunch(unittest.TestCase):
                 Node(
                     package="octa_ros",
                     executable="reset_node",
-                    parameters=[{"plan_only": True, "offline_mode": True}],
+                    parameters=[{"plan_only": True}],
                 ),
                 Node(
                     package="octa_ros",
                     executable="move_node",
-                    parameters=[{"plan_only": True, "offline_mode": True}],
+                    parameters=[{"plan_only": True}],
                 ),
                 Node(
                     package="octa_ros",
                     executable="focus_node",
-                    parameters=[{"plan_only": True, "offline_mode": True}],
+                    parameters=[{"plan_only": True}],
                 ),
             ]
         )

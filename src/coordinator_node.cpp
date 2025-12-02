@@ -522,10 +522,9 @@ void CoordinatorNode::publisher_callback() {
 
             RCLCPP_INFO(get_logger(), pub_log.str().c_str());
         }
-        if (scan_trigger_.load()) {
-            if ((now() - scan_start).seconds() > scan_trigger_timeout_sec_) {
-                scan_trigger_ = false;
-            }
+        if (scan_trigger_.load() &&
+            (now() - scan_start).seconds() > scan_trigger_timeout_sec_) {
+            scan_trigger_ = false;
         }
         pub_handle_->publish(msg);
         old_pub_msg_ = msg;

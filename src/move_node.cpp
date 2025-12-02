@@ -20,8 +20,7 @@ void MoveActionServer::init() {
     };
 
     const bool plan_only = get_bool_param("plan_only", false);
-    const bool offline_mode = get_bool_param("offline_mode", false);
-    if (!(plan_only || offline_mode)) {
+    if (!plan_only) {
         moveit_cpp_ =
             std::make_shared<moveit_cpp::MoveItCpp>(shared_from_this());
         tem_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
@@ -103,10 +102,9 @@ void MoveActionServer::execute(
                    : this->declare_parameter<bool>(name, default_value);
     };
     const bool plan_only = get_bool_param("plan_only", false);
-    const bool offline_mode = get_bool_param("offline_mode", false);
-    if (plan_only || offline_mode) {
+    if (plan_only) {
         feedback->debug_msgs =
-            "Plan-only/Offline mode: skipping planning and execution.\n";
+            "Plan-only mode: skipping planning and execution.\n";
         goal_handle->publish_feedback(feedback);
         result->status = "Move completed (plan-only/offline)\n";
         goal_handle->succeed(result);
@@ -319,7 +317,7 @@ void MoveActionServer::execute(
     }
 
     bool execute_success = true;
-    if (!(plan_only || offline_mode)) {
+    if (!plan_only) {
         auto exec_status = moveit_cpp_->execute(plan_solution.trajectory);
         execute_success = static_cast<bool>(exec_status);
     } else {

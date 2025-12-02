@@ -193,7 +193,7 @@ Options:
 - `coordinator_node`: handles DDS messages and action server jobs
 - `focus_node`: handles image capture and auto-focusing of end effector to desired position.
 - `reset_node`: moves robot to default position and captures preview background
-- `move_z_angle_node`: rotates the robot end effector in the z-axis of the robot's TCP
+- `move_node`: adjusts yaw and/or translates the robot end effector around the TCP at a given radius
 - `freedrive_node`: switch robot controller to `freedrive_mode_controller` and back to `scaled_joint_trajectory_controller`
 - `reconnect_client`: resets the robot status to ready mode 
 - `joint_state_publisher`: echoes an binary integer that flips if there is velocity in the joints - freezes preview on robot movement.

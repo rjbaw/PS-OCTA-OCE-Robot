@@ -223,18 +223,18 @@ logs:
 	PRUNE_LOGS_DAYS=$(PRUNE_LOGS_DAYS) $(MAKE) -s prune-logs; \
 	CRASH=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); \
 	if [ -n "$$CRASH" ]; then \
-	  echo "Last crash log: $$CRASH"; \
-	  sed -e 's/^/[ROS] /' "$$CRASH"; \
+	  echo "Last crash log (tail -300): $$CRASH"; \
+	  tail -n 300 "$$CRASH" | sed -e 's/^/[ROS] /'; \
 	  exit 0; \
 	fi; \
 	LATEST_DIR=$$(find logs -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-); \
 	if [ -n "$$LATEST_DIR" ]; then \
 	  echo "RCUTILS logs in: $$LATEST_DIR"; \
-	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r -I{} sh -c 'echo "===== {} ====="; cat "{}"'; \
+	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r -I{} sh -c 'echo "===== {} (WARN/ERROR last 300, or tail -100) ====="; if grep -qE "\\[(WARN|ERROR|FATAL)\\]" "{}"; then grep -E "\\[(WARN|ERROR|FATAL)\\]" "{}" | tail -n 300; else tail -n 100 "{}"; fi'; \
 	  exit 0; \
 	fi; \
 	echo "No host logs found; checking in-container logs..."; \
-	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} =====\"; cat \"{}\""; else echo "No container logs available."; fi' || true
+	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} (WARN/ERROR last 300, or tail -100) =====\"; if grep -qE \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\"; then grep -E \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\" | tail -n 300; else tail -n 100 \"{}\"; fi"; else echo \"No container logs available.\"; fi' || true
 
 status:
 	@set -e; \

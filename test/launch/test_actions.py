@@ -31,7 +31,7 @@ def generate_test_description():
             package="octa_ros",
             executable="reset_node",
             name="reset_node",
-            parameters=[{"plan_only": True, "offline_mode": True}],
+            parameters=[{"plan_only": True}],
         )
     )
     ld.add_action(
@@ -39,7 +39,7 @@ def generate_test_description():
             package="octa_ros",
             executable="move_node",
             name="move_node",
-            parameters=[{"plan_only": True, "offline_mode": True}],
+            parameters=[{"plan_only": True}],
         )
     )
     ld.add_action(
@@ -47,7 +47,7 @@ def generate_test_description():
             package="octa_ros",
             executable="focus_node",
             name="focus_node",
-            parameters=[{"plan_only": True, "offline_mode": True}],
+            parameters=[{"plan_only": True}],
         )
     )
     ld.add_action(ReadyToTest())

@@ -45,17 +45,12 @@
  * 3D scan window.
  *
  * @par Parameters
- * - plan_only (bool, default: false): skip execution (plan only).
- * - offline_mode (bool, default: false): disable MoveIt and execution.
- * - gating_interval_sec (double, default: 0.02 s): minimum time between stored
- *   frames.
- * - focus_step_timeout_sec (double, default: 5.0 s): timeout per correction.
+ * - plan_only (bool, default: false): skip execution (plan-only/CI mode).
+ * - focus_step_timeout_sec (double, default: 10.0 s): timeout per correction.
  * - scan3d_service_wait_ms (int, default: 200 ms): wait for Scan3d service.
- * - scan3d_response_timeout_ms (int, default: 2000 ms): Scan3d RPC timeout.
- * - image_width (int, default: 500 px): expected width of incoming frames.
- * - image_height (int, default: 512 px): expected height of incoming frames.
- * - image_topic (string, default: "/oct_image"): OCT topic to subscribe.
+ * - scan3d_response_timeout_ms (int, default: 4000 ms): Scan3d RPC timeout.
  * - px_per_mm (double, default: 65.0 px/mm): pixel density used for dz.
+ * - image_topic (string, default: "/oct_image"): OCT topic to subscribe.
  * - tool_link (string, default: "tcp"): end-effector link name.
  * - envelope_radius_m (double, default: 0.05 m): spherical envelope radius.
  * - curve_model_path (string): override ONNX model path used by detection.
@@ -143,20 +138,18 @@ class FocusActionServer : public rclcpp::Node {
     double px_per_mm_ = 65.0;
     std::string image_topic_ = "/oct_image";
 
-    // Tunables
     double focus_step_timeout_sec_ = 10.0;
     int64_t scan3d_service_wait_ms_ = 200;
     int64_t scan3d_response_timeout_ms_ = 4000;
-
-    // Parameter callback
-    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
-        param_cb_handle_;
 
     double angle_tolerance_ = 0.0;
     double z_tolerance_ = 0.0;
     double z_height_ = 0.0;
 
     rclcpp::Time start;
+
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
+        param_cb_handle_;
 
 #ifdef LEGACY_IMG_PIPELINE
     /**
