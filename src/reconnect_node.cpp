@@ -34,7 +34,35 @@ ReconnectClient::ReconnectClient() : Node("reconnect_client_node") {
         "/io_and_status_controller/resend_robot_program");
     restart_safety_client_ = this->create_client<std_srvs::srv::Trigger>(
         "/dashboard_client/restart_safety");
+
+    status_pub_ =
+        this->create_publisher<std_msgs::msg::String>("/ur_status_msg", 10);
+    driver_health_pub_ =
+        this->create_publisher<std_msgs::msg::Bool>("/ur_driver_healthy", 1);
+
     timer_ = this->create_wall_timer(5s, [this]() { this->timerCallback(); });
+}
+
+void ReconnectClient::publish_status(const std::string &text) {
+    if (!status_pub_) {
+        return;
+    }
+    std_msgs::msg::String msg;
+    msg.data = text;
+    status_pub_->publish(msg);
+}
+
+void ReconnectClient::publish_driver_health(bool healthy) {
+    if (!driver_health_pub_) {
+        return;
+    }
+    if (driver_healthy_ == healthy) {
+        return;
+    }
+    driver_healthy_ = healthy;
+    std_msgs::msg::Bool msg;
+    msg.data = healthy;
+    driver_health_pub_->publish(msg);
 }
 
 bool ReconnectClient::callTriggerService(
@@ -69,12 +97,20 @@ void ReconnectClient::timerCallback() {
     if (!get_robot_mode_client_->wait_for_service(1s)) {
         RCLCPP_WARN(this->get_logger(),
                     "Service [/dashboard_client/get_robot_mode] not available");
+        publish_driver_health(false);
+        publish_status(
+            "[UR] dashboard_client/get_robot_mode not available; UR driver "
+            "unhealthy.");
         return;
     }
     if (!get_safety_mode_client_->wait_for_service(1s)) {
         RCLCPP_WARN(
             this->get_logger(),
             "Service [/dashboard_client/get_safety_mode] not available");
+        publish_driver_health(false);
+        publish_status(
+            "[UR] dashboard_client/get_safety_mode not available; UR driver "
+            "unhealthy.");
         return;
     }
 
@@ -90,8 +126,13 @@ void ReconnectClient::timerCallback() {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] get_robot_mode failed: %s",
                             resp->answer.c_str());
+                publish_driver_health(false);
+                publish_status(std::string("[UR] get_robot_mode failed: ") +
+                               resp->answer);
                 return;
             }
+
+            publish_driver_health(true);
 
             int8_t mode = resp->robot_mode.mode;
             RCLCPP_DEBUG(this->get_logger(),
@@ -102,16 +143,22 @@ void ReconnectClient::timerCallback() {
             case DISCONNECTED:
                 RCLCPP_INFO(this->get_logger(),
                             "DISCONNECTED => connecting...");
+                publish_status(
+                    "[UR] Robot DISCONNECTED – attempting to connect.");
                 callTriggerService(connect_client_,
                                    "/dashboard_client/connect");
                 break;
             case POWER_OFF:
                 RCLCPP_INFO(this->get_logger(), "POWER_OFF => powering on...");
+                publish_status(
+                    "[UR] Robot POWER_OFF – attempting to power on.");
                 callTriggerService(power_on_client_,
                                    "/dashboard_client/power_on");
                 break;
             case IDLE:
                 RCLCPP_INFO(this->get_logger(), "IDLE => releasing brakes...");
+                publish_status(
+                    "[UR] Robot IDLE – releasing brakes to enter READY.");
                 callTriggerService(brake_release_client_,
                                    "/dashboard_client/brake_release");
             default:
@@ -131,6 +178,9 @@ void ReconnectClient::timerCallback() {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] get_safety_mode failed: %s",
                             resp_safety->answer.c_str());
+                publish_driver_health(false);
+                publish_status(std::string("[UR] get_safety_mode failed: ") +
+                               resp_safety->answer);
                 return;
             };
             uint8_t safety_mode = resp_safety->safety_mode.mode;
@@ -141,6 +191,9 @@ void ReconnectClient::timerCallback() {
             if (safety_mode != SAFETY_MODE_NORMAL) {
                 RCLCPP_INFO(this->get_logger(),
                             "Safety not NORMAL => calling restart_safety...");
+                publish_status(
+                    "[UR] Safety mode not NORMAL – restarting safety. Check "
+                    "pendant.");
                 callTriggerService(restart_safety_client_,
                                    "/dashboard_client/restart_safety");
             };
@@ -157,8 +210,13 @@ void ReconnectClient::timerCallback() {
                 RCLCPP_WARN(this->get_logger(),
                             "[ReconnectClient] IsProgramRunning failed: %s",
                             resp->answer.c_str());
+                publish_driver_health(false);
+                publish_status(std::string("[UR] IsProgramRunning failed: ") +
+                               resp->answer);
                 return;
             }
+
+            publish_driver_health(true);
 
             bool running_program = resp->program_running;
             RCLCPP_DEBUG(this->get_logger(), "Is running program: %s",
@@ -168,6 +226,8 @@ void ReconnectClient::timerCallback() {
                 RCLCPP_INFO(this->get_logger(),
                             "Program is NOT running => Re-sending external "
                             "control...");
+                publish_status("[UR] ExternalControl not running – resending "
+                               "robot program.");
                 callTriggerService(
                     resend_program_client_,
                     "/io_and_status_controller/resend_robot_program");

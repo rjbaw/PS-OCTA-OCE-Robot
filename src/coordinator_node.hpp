@@ -72,6 +72,7 @@
 #include <octa_ros/msg/robotdata.hpp>
 #include <octa_ros/srv/scan3d.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
@@ -173,6 +174,8 @@ class CoordinatorNode : public rclcpp::Node {
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
     rclcpp::Subscription<octa_ros::msg::Labviewdata>::SharedPtr sub_handle_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr cancel_handle_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ur_status_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr ur_health_sub_;
 
     // Active goals
     FocusGoalHandle::SharedPtr active_focus_goal_handle_;
@@ -204,6 +207,8 @@ class CoordinatorNode : public rclcpp::Node {
 
     // Publisher fields
     std::string msg_ = "idle";
+    std::string ur_status_msg_;
+    std::atomic<bool> ur_driver_healthy_{true};
     std::atomic<double> angle_ = 0.0;
     std::atomic<int> circle_state_ = 1;
     std::atomic<bool> scan_trigger_ = false;

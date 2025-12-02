@@ -231,10 +231,25 @@ logs:
 	if [ -n "$$LATEST_DIR" ]; then \
 	  echo "RCUTILS logs in: $$LATEST_DIR"; \
 	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r -I{} sh -c 'echo "===== {} (WARN/ERROR last 300, or tail -100) ====="; if grep -qE "\\[(WARN|ERROR|FATAL)\\]" "{}"; then grep -E "\\[(WARN|ERROR|FATAL)\\]" "{}" | tail -n 300; else tail -n 100 "{}"; fi'; \
-	  exit 0; \
 	fi; \
-	echo "No host logs found; checking in-container logs..."; \
-	docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} (WARN/ERROR last 300, or tail -100) =====\"; if grep -qE \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\"; then grep -E \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\" | tail -n 300; else tail -n 100 \"{}\"; fi"; else echo \"No container logs available.\"; fi' || true
+	COORD=$$(ls -1t logs/coordinator_node_*.log 2>/dev/null | head -n1 || true); \
+	if [ -n "$$COORD" ]; then \
+	  echo "===== $$COORD (tail -200 coordinator_node) ====="; \
+	  tail -n 200 "$$COORD"; \
+	fi; \
+	for pat in ros2_control_node_ urscript_interface_ controller_stopper_node_ dashboard_client_; do \
+	  F=$$(ls -1t logs/$$pat*.log 2>/dev/null | head -n1 || true); \
+	  if [ -n "$$F" ]; then \
+	    echo "===== $$F (tail -200 $$pat) ====="; \
+	    tail -n 200 "$$F"; \
+	  fi; \
+	done; \
+	if command -v docker >/dev/null 2>&1; then \
+	  echo "Checking in-container logs..."; \
+	  docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} (WARN/ERROR last 300, or tail -100) =====\"; if grep -qE \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\"; then grep -E \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\" | tail -n 300; else tail -n 100 \"{}\"; fi\"; else echo \"No container logs available.\"; fi'; \
+	else \
+	  echo "Docker not available; skipping container logs."; \
+	fi
 
 status:
 	@set -e; \

@@ -157,8 +157,7 @@ void FocusActionServer::init() {
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     rclcpp::SubscriptionOptions img_options;
     img_options.callback_group = parallel_group_;
-    last_store_time_ =
-        now() - rclcpp::Duration::from_seconds(gating_interval_);
+    last_store_time_ = now() - rclcpp::Duration::from_seconds(gating_interval_);
     buffer_.fill(cv::Mat());
     image_topic_ = this->get_parameter("image_topic").as_string();
     img_subscriber_ = create_subscription<octa_ros::msg::Img>(

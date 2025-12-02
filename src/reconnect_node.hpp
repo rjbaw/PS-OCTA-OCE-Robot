@@ -45,6 +45,8 @@
 
 #include "ur_dashboard_msgs/msg/robot_mode.hpp"
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <ur_dashboard_msgs/srv/get_loaded_program.hpp>
 #include <ur_dashboard_msgs/srv/get_program_state.hpp>
@@ -88,6 +90,9 @@ class ReconnectClient : public rclcpp::Node {
     /** @brief Poll dashboard state and perform reconnection steps if needed. */
     void timerCallback();
 
+    void publish_status(const std::string &text);
+    void publish_driver_health(bool healthy);
+
     /**
      * @brief Call a standard Trigger service and log result.
      * @param client Trigger client instance.
@@ -115,8 +120,12 @@ class ReconnectClient : public rclcpp::Node {
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr restart_safety_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr brake_release_client_;
 
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr driver_health_pub_;
+
     rclcpp::TimerBase::SharedPtr timer_;
 
+    bool driver_healthy_ = false;
     bool executed_ = false;
 };
 

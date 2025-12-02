@@ -88,6 +88,22 @@ void CoordinatorNode::init() {
             },
             options);
     }
+    {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        ur_status_sub_ = this->create_subscription<std_msgs::msg::String>(
+            "/ur_status_msg", qos,
+            [this](const std_msgs::msg::String::SharedPtr msg) {
+                ur_status_msg_ = msg->data;
+            });
+    }
+    {
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+        ur_health_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/ur_driver_healthy", qos,
+            [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                ur_driver_healthy_.store(msg->data);
+            });
+    }
 
     {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
@@ -479,7 +495,17 @@ void CoordinatorNode::cancel_callback(
 
 void CoordinatorNode::publisher_callback() {
     octa_ros::msg::Robotdata msg;
-    msg.msg = msg_;
+    const bool ur_ok = ur_driver_healthy_.load();
+    if (ur_ok) {
+        msg.msg = msg_;
+    } else {
+        if (!ur_status_msg_.empty()) {
+            msg.msg = ur_status_msg_;
+        } else {
+            msg.msg =
+                "[UR] Driver unhealthy; check robot connection and controller.";
+        }
+    }
     msg.angle = angle_.load();
     msg.circle_state = circle_state_.load();
     msg.scan_trigger = scan_trigger_.load();
@@ -532,6 +558,10 @@ void CoordinatorNode::publisher_callback() {
 }
 
 void CoordinatorNode::main_loop() {
+    if (!ur_driver_healthy_.load()) {
+        return;
+    }
+
     if (cancel_action_) {
         if (goal_still_active(active_focus_goal_handle_)) {
             msg_ = "Canceling Focus action\n";
