@@ -86,7 +86,18 @@ class DriverManager(Node):
             if self._proc is not None and self._proc.poll() is None:
                 return
             # Build ros2 launch command
-            args = [
+            rt_args: list[str] = []
+            rt_prio_str = os.environ.get("ROS_RT_PRIORITY", "").strip()
+            if rt_prio_str:
+                try:
+                    rt_prio = int(rt_prio_str)
+                    if rt_prio > 0:
+                        rt_args = ["chrt", "-rr", str(rt_prio)]
+                except ValueError:
+                    # Invalid priority – silently fall back to non-RT launch
+                    rt_args = []
+
+            args = rt_args + [
                 "ros2",
                 "launch",
                 "octa_ros",

@@ -9,6 +9,7 @@ services:
       QT_X11_NO_MITSHIM: '1'
       XAUTHORITY: /workspace/.Xauthority
       RCUTILS_LOGGING_DIRECTORY: /workspace/app/logs
+      ROS_RT_PRIORITY: "90"
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
