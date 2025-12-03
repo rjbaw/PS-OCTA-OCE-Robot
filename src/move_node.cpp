@@ -134,8 +134,13 @@ void MoveActionServer::execute(
     target_pose.pose = tf2::toMsg(current_pose);
 
     if (apply_offset) {
-        target_pose.pose.position.x += offset_x_mm * 0.001;
-        target_pose.pose.position.y += offset_y_mm * 0.001;
+        // T_world_target = T_world_tcp * T_tcp_target
+        const Eigen::Vector3d offset_tcp(offset_x_mm * 0.001,
+                                         offset_y_mm * 0.001, 0.0);
+        const Eigen::Vector3d offset_world = current_pose.linear() * offset_tcp;
+        target_pose.pose.position.x += offset_world.x();
+        target_pose.pose.position.y += offset_world.y();
+        target_pose.pose.position.z += offset_world.z();
     } else {
         const double offset_radius = 4.3 - radius_;
         if ((goal->centre_set) || !centre_set_) {
@@ -293,8 +298,12 @@ void MoveActionServer::execute(
             moveit_msgs::msg::MoveItErrorCodes::PLANNING_FAILED;
         return fail;
     };
-    planning_interface::MotionPlanResponse plan_solution =
-        planning_component_->plan(req, enforce_direction);
+    planning_interface::MotionPlanResponse plan_solution;
+    if (std::fabs(target_rad) > 1e-6) {
+        plan_solution = planning_component_->plan(req, enforce_direction);
+    } else {
+        plan_solution = planning_component_->plan(req);
+    }
     if (plan_solution.error_code.val !=
         moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
         RCLCPP_WARN(get_logger(), "Planning failed!");

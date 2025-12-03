@@ -339,11 +339,11 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
             recipe.push_back(
                 {.action = UserAction::Focus, .mode = Mode::ROBOT});
             recipe.push_back({.action = UserAction::Move,
-                              .mode = Mode::OCTA,
+                              .mode = Mode::OCT,
                               .y = scan_offset});
             recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCT});
             recipe.push_back({.action = UserAction::Move,
-                              .mode = Mode::OCTA,
+                              .mode = Mode::OCT,
                               .y = -scan_offset});
             oct_breakpoints.erase(oct_breakpoints.begin());
         }

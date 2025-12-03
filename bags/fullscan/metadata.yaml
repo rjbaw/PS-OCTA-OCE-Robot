@@ -2,25 +2,31 @@ rosbag2_bagfile_information:
   version: 9
   storage_identifier: mcap
   duration:
-    nanoseconds: 269986356608
+    nanoseconds: 185114120974
   starting_time:
-    nanoseconds_since_epoch: 1762289949251065438
-  message_count: 878
+    nanoseconds_since_epoch: 1764711409730963853
+  message_count: 879
   topics_with_message_count:
-    - topic_metadata:
-        name: /cancel_current_action
-        type: std_msgs/msg/Bool
-        serialization_format: cdr
-        offered_qos_profiles:
-          []
-        type_description_hash: ""
-      message_count: 292
     - topic_metadata:
         name: /oct_image
         type: octa_ros/msg/Img
         serialization_format: cdr
         offered_qos_profiles:
-          []
+          - history: unknown
+            depth: 0
+            reliability: reliable
+            durability: volatile
+            deadline:
+              sec: 9223372036
+              nsec: 854775807
+            lifespan:
+              sec: 9223372036
+              nsec: 854775807
+            liveliness: automatic
+            liveliness_lease_duration:
+              sec: 9223372036
+              nsec: 854775807
+            avoid_ros_namespace_conventions: false
         type_description_hash: ""
       message_count: 293
     - topic_metadata:
@@ -28,7 +34,43 @@ rosbag2_bagfile_information:
         type: octa_ros/msg/Labviewdata
         serialization_format: cdr
         offered_qos_profiles:
-          []
+          - history: unknown
+            depth: 0
+            reliability: reliable
+            durability: volatile
+            deadline:
+              sec: 9223372036
+              nsec: 854775807
+            lifespan:
+              sec: 9223372036
+              nsec: 854775807
+            liveliness: automatic
+            liveliness_lease_duration:
+              sec: 9223372036
+              nsec: 854775807
+            avoid_ros_namespace_conventions: false
+        type_description_hash: ""
+      message_count: 293
+    - topic_metadata:
+        name: /cancel_current_action
+        type: std_msgs/msg/Bool
+        serialization_format: cdr
+        offered_qos_profiles:
+          - history: unknown
+            depth: 0
+            reliability: reliable
+            durability: volatile
+            deadline:
+              sec: 9223372036
+              nsec: 854775807
+            lifespan:
+              sec: 9223372036
+              nsec: 854775807
+            liveliness: automatic
+            liveliness_lease_duration:
+              sec: 9223372036
+              nsec: 854775807
+            avoid_ros_namespace_conventions: false
         type_description_hash: ""
       message_count: 293
   compression_format: ""
@@ -38,9 +80,9 @@ rosbag2_bagfile_information:
   files:
     - path: fullscan_0.mcap
       starting_time:
-        nanoseconds_since_epoch: 1762289949251065438
+        nanoseconds_since_epoch: 1764711409730963853
       duration:
-        nanoseconds: 269986356608
-      message_count: 878
+        nanoseconds: 185114120974
+      message_count: 879
   custom_data: ~
   ros_distro: jazzy
