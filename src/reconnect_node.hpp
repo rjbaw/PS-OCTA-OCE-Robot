@@ -126,7 +126,10 @@ class ReconnectClient : public rclcpp::Node {
     rclcpp::TimerBase::SharedPtr timer_;
 
     bool driver_healthy_ = false;
-    bool executed_ = false;
+
+    int8_t last_robot_mode_ = NO_CONTROLLER;
+    uint8_t last_safety_mode_ = UNDEFINED_SAFETY_MODE;
+    bool last_program_running_ = false;
 };
 
 #endif // RECONNECT_NODE_HPP

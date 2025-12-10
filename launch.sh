@@ -80,6 +80,9 @@ echo "[INFO] Logs dir: $LOG_DIR"
 if $debug; then
 	echo "[INFO] Debug mode: launching driver directly (bypassing manager)"
 	echo "[INFO] ROBOT_IP=$ROBOT_IP HOST_IP=$HOST_IP"
+	export RCUTILS_LOGGING_MIN_SEVERITY=DEBUG
+	export RCL_LOG_LEVEL=DEBUG
+	export ROS_LOG_LEVEL=DEBUG
 	cd /workspace/app 2>/dev/null || true
 	if [ -n "$RT_PRIO" ]; then
 		echo "[INFO] Using real-time priority RT_PRIO=$RT_PRIO for launch"

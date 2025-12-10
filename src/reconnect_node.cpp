@@ -94,6 +94,12 @@ bool ReconnectClient::callTriggerService(
 }
 
 void ReconnectClient::timerCallback() {
+    RCLCPP_DEBUG(this->get_logger(),
+                 "[ReconnectClient] timer tick. Last state — "
+                 "robot_mode: %d, safety_mode: %u, program_running: %s",
+                 last_robot_mode_, last_safety_mode_,
+                 last_program_running_ ? "true" : "false");
+
     if (!get_robot_mode_client_->wait_for_service(1s)) {
         RCLCPP_WARN(this->get_logger(),
                     "Service [/dashboard_client/get_robot_mode] not available");
@@ -135,9 +141,18 @@ void ReconnectClient::timerCallback() {
             publish_driver_health(true);
 
             int8_t mode = resp->robot_mode.mode;
-            RCLCPP_DEBUG(this->get_logger(),
-                         "Current RobotMode: %d (answer: %s)", mode,
-                         resp->answer.c_str());
+            if (mode != last_robot_mode_) {
+                RCLCPP_INFO(this->get_logger(),
+                            "[ReconnectClient] RobotMode transition: %d -> %d "
+                            "(answer: %s)",
+                            last_robot_mode_, mode, resp->answer.c_str());
+                last_robot_mode_ = mode;
+            } else {
+                RCLCPP_DEBUG(this->get_logger(),
+                             "[ReconnectClient] RobotMode unchanged: %d "
+                             "(answer: %s)",
+                             mode, resp->answer.c_str());
+            }
 
             switch (mode) {
             case DISCONNECTED:
@@ -184,9 +199,19 @@ void ReconnectClient::timerCallback() {
                 return;
             };
             uint8_t safety_mode = resp_safety->safety_mode.mode;
-            RCLCPP_DEBUG(this->get_logger(),
-                         "Current SafetyMode: %u (answer: %s)", safety_mode,
-                         resp_safety->answer.c_str());
+            if (safety_mode != last_safety_mode_) {
+                RCLCPP_INFO(this->get_logger(),
+                            "[ReconnectClient] SafetyMode transition: %u -> %u "
+                            "(answer: %s)",
+                            last_safety_mode_, safety_mode,
+                            resp_safety->answer.c_str());
+                last_safety_mode_ = safety_mode;
+            } else {
+                RCLCPP_DEBUG(this->get_logger(),
+                             "[ReconnectClient] SafetyMode unchanged: %u "
+                             "(answer: %s)",
+                             safety_mode, resp_safety->answer.c_str());
+            }
 
             if (safety_mode != SAFETY_MODE_NORMAL) {
                 RCLCPP_INFO(this->get_logger(),
@@ -219,15 +244,28 @@ void ReconnectClient::timerCallback() {
             publish_driver_health(true);
 
             bool running_program = resp->program_running;
-            RCLCPP_DEBUG(this->get_logger(), "Is running program: %s",
-                         running_program ? "true" : "false");
+            if (running_program != last_program_running_) {
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    "[ReconnectClient] ProgramRunning transition: %s -> %s "
+                    "(answer: %s)",
+                    last_program_running_ ? "true" : "false",
+                    running_program ? "true" : "false", resp->answer.c_str());
+                last_program_running_ = running_program;
+            } else {
+                RCLCPP_DEBUG(this->get_logger(),
+                             "[ReconnectClient] ProgramRunning unchanged: %s",
+                             running_program ? "true" : "false");
+            }
 
             if (!running_program) {
                 RCLCPP_INFO(this->get_logger(),
-                            "Program is NOT running => Re-sending external "
-                            "control...");
-                publish_status("[UR] ExternalControl not running – resending "
-                               "robot program.");
+                            "Program is NOT running (robot_mode=%d, "
+                            "safety_mode=%u) => Re-sending external control...",
+                            last_robot_mode_, last_safety_mode_);
+                publish_status(
+                    "[UR] ExternalControl not running – resending robot "
+                    "program.");
                 callTriggerService(
                     resend_program_client_,
                     "/io_and_status_controller/resend_robot_program");
