@@ -75,7 +75,6 @@ export RCUTILS_LOGGING_DIRECTORY="$LOG_DIR"
 export ROS_LOG_DIR="$LOG_DIR"
 export ROBOT_IP
 export HOST_IP
-RT_PRIO="${ROS_RT_PRIORITY:-}"
 echo "[INFO] Logs dir: $LOG_DIR"
 if $debug; then
 	echo "[INFO] Debug mode: launching driver directly (bypassing manager)"
@@ -84,12 +83,7 @@ if $debug; then
 	export RCL_LOG_LEVEL=DEBUG
 	export ROS_LOG_LEVEL=DEBUG
 	cd /workspace/app 2>/dev/null || true
-	if [ -n "$RT_PRIO" ]; then
-		echo "[INFO] Using real-time priority RT_PRIO=$RT_PRIO for launch"
-		exec chrt -rr "$RT_PRIO" ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
-	else
-		exec ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
-	fi
+	exec ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
 else
   echo "[INFO] Manager starting (ROBOT_IP=$ROBOT_IP HOST_IP=$HOST_IP)"
   exec ros2 run octa_ros driver_manager.py \
