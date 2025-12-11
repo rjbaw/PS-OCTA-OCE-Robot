@@ -131,6 +131,8 @@ class DriverManager(Node):
             proc = self._proc
         if proc is None:
             return
+        self.driver_healthy = True
+        self.health_false_since = None
         try:
             os.killpg(proc.pid, signal.SIGINT)
         except Exception:
