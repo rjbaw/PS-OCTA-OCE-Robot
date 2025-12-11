@@ -332,7 +332,6 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
         recipe.push_back({.action = UserAction::Move,
                           .mode = Mode::OCE,
                           .yaw = angle_increment});
-        recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCE});
         ++completed_moves;
         while (!oct_breakpoints.empty() &&
                completed_moves >= oct_breakpoints.front()) {
@@ -347,6 +346,7 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
                               .y = -scan_offset});
             oct_breakpoints.erase(oct_breakpoints.begin());
         }
+        recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCE});
     }
     return recipe;
 }

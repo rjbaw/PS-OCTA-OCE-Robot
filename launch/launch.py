@@ -12,7 +12,6 @@ from launch.actions import (
     DeclareLaunchArgument,
     RegisterEventHandler,
     Shutdown,
-    TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
@@ -481,16 +480,11 @@ def launch_setup():
         )
     )
 
-    reconnect_client_action = TimerAction(
-        period=10.0,
-        actions=[
-            Node(
-                package="octa_ros",
-                executable="reconnect_client",
-                name="reconnect_client",
-                output="screen",
-            )
-        ],
+    reconnect_client_action = Node(
+        package="octa_ros",
+        executable="reconnect_client",
+        name="reconnect_client",
+        output="screen",
         condition=IfCondition(run_reconnect_node),
     )
 
