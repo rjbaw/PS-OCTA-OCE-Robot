@@ -126,7 +126,7 @@ void CoordinatorNode::init() {
     collision_objects.push_back(octa_ros::scene::make_floor(planning_frame));
     collision_objects.push_back(
         octa_ros::scene::make_robot_base(planning_frame));
-    collision_objects.push_back(octa_ros::scene::make_monitor(planning_frame));
+    // collision_objects.push_back(octa_ros::scene::make_monitor(planning_frame));
     psi.addCollisionObjects(collision_objects);
 
     RCLCPP_INFO(get_logger(), "Collision objects added to planning scene.");

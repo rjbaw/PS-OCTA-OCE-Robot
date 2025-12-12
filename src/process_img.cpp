@@ -533,6 +533,19 @@ static Ort::Env &get_ort_env() {
     return *env;
 }
 
+static Ort::SessionOptions build_session_options(const OrtApi &api,
+                                                 int64_t batch_override) {
+    Ort::SessionOptions opts;
+    OrtSessionOptions *raw = opts;
+    if (batch_override > 0) {
+        Ort::ThrowOnError(
+            api.AddFreeDimensionOverrideByName(raw, "batch", batch_override));
+    }
+    opts.SetIntraOpNumThreads(1);
+    opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+    return opts;
+}
+
 static Ort::Session &load_session(const std::string &path,
                                   int64_t batch_override) {
     static Ort::Session *session = nullptr;
@@ -543,50 +556,51 @@ static Ort::Session &load_session(const std::string &path,
 
     if (session == nullptr || cached_path != path ||
         cached_batch != batch_override) {
-        Ort::SessionOptions opts;
         const OrtApi &api = Ort::GetApi();
-        OrtSessionOptions *raw = opts;
-        if (batch_override > 0) {
-            Ort::ThrowOnError(api.AddFreeDimensionOverrideByName(
-                raw, "batch", batch_override));
-        }
-        opts.SetIntraOpNumThreads(1);
-        opts.SetGraphOptimizationLevel(
-            GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
         for (auto &provider : Ort::GetAvailableProviders()) {
             std::cerr << "[ORT] available EP: " << provider << "\n";
         }
 
-        bool ep_set = false;
+        Ort::Session *new_session = nullptr;
         const char *ep_name = "CPU";
         try {
+            auto opts = build_session_options(api, batch_override);
             OrtCUDAProviderOptionsV2 *cuda_opts = nullptr;
             Ort::ThrowOnError(api.CreateCUDAProviderOptions(&cuda_opts));
             Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_CUDA_V2(
                 opts, cuda_opts));
             api.ReleaseCUDAProviderOptions(cuda_opts);
-            ep_set = true;
+            new_session = new Ort::Session(env, path.c_str(), opts);
             ep_name = "CUDA";
         } catch (const Ort::Exception &ex) {
-            std::cerr << "[ORT] " << ex.what() << "\n";
+            std::cerr << "[ORT] CUDA session init failed: " << ex.what()
+                      << "\n";
         }
-        if (!ep_set) {
+
+        if (new_session == nullptr) {
             try {
+                auto opts = build_session_options(api, batch_override);
                 std::unordered_map<std::string, std::string> ov_opts;
                 ov_opts["device_type"] = "HETERO:GPU,NPU";
                 ov_opts["precision"] = "FP16";
                 opts.AppendExecutionProvider_OpenVINO_V2(ov_opts);
-                ep_set = true;
+                new_session = new Ort::Session(env, path.c_str(), opts);
                 ep_name = "OpenVINO";
             } catch (const Ort::Exception &ex) {
-                std::cerr << "[ORT] OpenVINO EP append failed: " << ex.what()
+                std::cerr << "[ORT] OpenVINO session init failed: " << ex.what()
                           << "\n";
             }
         }
 
+        if (new_session == nullptr) {
+            auto opts = build_session_options(api, batch_override);
+            new_session = new Ort::Session(env, path.c_str(), opts);
+            ep_name = "CPU";
+        }
+
         delete session;
-        session = new Ort::Session(env, path.c_str(), opts);
+        session = new_session;
         cached_path = path;
         cached_batch = batch_override;
         static bool printed = false;

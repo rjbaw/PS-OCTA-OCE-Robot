@@ -460,11 +460,13 @@ void FocusActionServer::execute(
         Eigen::Vector3d center = boundbox.GetCenter();
         rotmat_eigen_ = octa_ros::img::align_to_direction(boundbox.R_);
 
+        const std::string tool_link =
+            this->get_parameter("tool_link").as_string();
         planning_component_->setStartStateToCurrentState();
         moveit::core::RobotStatePtr current_state =
             moveit_cpp_->getCurrentState();
         Eigen::Isometry3d current_pose =
-            current_state->getGlobalLinkTransform("tcp");
+            current_state->getGlobalLinkTransform(tool_link);
         target_pose_.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
                                            ->getPlanningScene()
                                            ->getPlanningFrame();
@@ -483,6 +485,9 @@ void FocusActionServer::execute(
         rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
         dz_ = (z_height_ - center[2]) / (px_per_mm_ * 1000.0);
+        // T_world_target = T_world_tcp * T_tcp_target
+        const Eigen::Vector3d dz_tcp(0.0, 0.0, dz_);
+        const Eigen::Vector3d dz_world = current_pose.linear() * dz_tcp;
 
         msg_ = std::format("Calculated:\n"
                            "    [Rotation] R:{:.2f} P:{:.2f} Y:{:.2f}\n"
@@ -522,7 +527,9 @@ void FocusActionServer::execute(
 
         if (angle_focused_ && !z_focused_) {
             planning_ = true;
-            target_pose_.pose.position.z += dz_;
+            target_pose_.pose.position.x += dz_world.x();
+            target_pose_.pose.position.y += dz_world.y();
+            target_pose_.pose.position.z += dz_world.z();
             print_target(get_logger(), target_pose_.pose);
         }
 
@@ -533,7 +540,9 @@ void FocusActionServer::execute(
             target_q_ = target_q_ * current_quat_;
             target_q_.normalize();
             target_pose_.pose.orientation = tf2::toMsg(target_q_);
-            target_pose_.pose.position.z += dz_;
+            target_pose_.pose.position.x += dz_world.x();
+            target_pose_.pose.position.y += dz_world.y();
+            target_pose_.pose.position.z += dz_world.z();
             print_target(get_logger(), target_pose_.pose);
         }
 
@@ -541,8 +550,6 @@ void FocusActionServer::execute(
             planning_component_->setStartStateToCurrentState();
             moveit::core::RobotStatePtr cur_state =
                 moveit_cpp_->getCurrentState();
-            const std::string tool_link =
-                this->get_parameter("tool_link").as_string();
             Eigen::Isometry3d start_tcp =
                 cur_state->getGlobalLinkTransform(tool_link);
             const std::string planning_frame =

@@ -81,6 +81,10 @@ class DriverManager(Node):
             f"DriverManager: robot_ip={self.robot_ip} host_ip={self.host_ip} ur_type={self.ur_type} headless={self.headless}"
         )
 
+    def _proc_running(self) -> bool:
+        with self._lock:
+            return self._proc is not None and self._proc.poll() is None
+
     def _ensure_started(self):
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
@@ -127,12 +131,12 @@ class DriverManager(Node):
                 self.get_logger().error(f"Failed to start ros2 launch: {e}")
 
     def _ensure_stopped(self):
+        self.driver_healthy = True
+        self.health_false_since = None
         with self._lock:
             proc = self._proc
         if proc is None:
             return
-        self.driver_healthy = True
-        self.health_false_since = None
         try:
             os.killpg(proc.pid, signal.SIGINT)
         except Exception:
@@ -171,7 +175,7 @@ class DriverManager(Node):
             stop_reason = "ping_failed"
         elif self.state_run_false:
             stop_reason = "run_state_false"
-        elif not self.driver_healthy:
+        elif self._proc_running() and not self.driver_healthy:
             if self.health_false_since is not None:
                 if time.monotonic() - self.health_false_since >= self.ur_health_grace:
                     stop_reason = "ur_driver_unhealthy"
