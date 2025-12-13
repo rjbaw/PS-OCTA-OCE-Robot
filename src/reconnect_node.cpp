@@ -28,6 +28,8 @@ ReconnectClient::ReconnectClient() : Node("reconnect_client_node") {
         "/dashboard_client/connect");
     power_on_client_ = this->create_client<std_srvs::srv::Trigger>(
         "/dashboard_client/power_on");
+    play_client_ =
+        this->create_client<std_srvs::srv::Trigger>("/dashboard_client/play");
     brake_release_client_ = this->create_client<std_srvs::srv::Trigger>(
         "/dashboard_client/brake_release");
     resend_program_client_ = this->create_client<std_srvs::srv::Trigger>(
@@ -259,16 +261,36 @@ void ReconnectClient::timerCallback() {
             }
 
             if (!running_program) {
+                ++program_not_running_ticks_;
+                if (resend_cooldown_ticks_ > 0) {
+                    --resend_cooldown_ticks_;
+                }
+
                 RCLCPP_INFO(this->get_logger(),
                             "Program is NOT running (robot_mode=%d, "
-                            "safety_mode=%u) => Re-sending external control...",
+                            "safety_mode=%u) => attempting dashboard play.",
                             last_robot_mode_, last_safety_mode_);
-                publish_status(
-                    "[UR] ExternalControl not running – resending robot "
-                    "program.");
-                callTriggerService(
-                    resend_program_client_,
-                    "/io_and_status_controller/resend_robot_program");
+                publish_status("[UR] Program not running – attempting play.");
+                callTriggerService(play_client_, "/dashboard_client/play");
+
+                constexpr int kResendAfterTicks = 2;
+                constexpr int kResendCooldownTicks = 3;
+                if (program_not_running_ticks_ >= kResendAfterTicks &&
+                    resend_cooldown_ticks_ == 0) {
+                    RCLCPP_INFO(this->get_logger(),
+                                "Program still NOT running => resending "
+                                "external control program.");
+                    publish_status(
+                        "[UR] ExternalControl still not running – resending "
+                        "robot program.");
+                    callTriggerService(
+                        resend_program_client_,
+                        "/io_and_status_controller/resend_robot_program");
+                    resend_cooldown_ticks_ = kResendCooldownTicks;
+                }
+            } else {
+                program_not_running_ticks_ = 0;
+                resend_cooldown_ticks_ = 0;
             }
         });
 

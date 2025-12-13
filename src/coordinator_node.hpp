@@ -244,6 +244,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> full_scan_read_ = false;
     std::atomic<int> num_pt_ = 1;
     std::atomic<int> n_oct_ = 3;
+    std::atomic<bool> apply_octa_ = true;
     std::atomic<bool> robot_mode_read_ = true;
     std::atomic<bool> oct_mode_read_ = false;
     std::atomic<bool> octa_mode_read_ = false;

@@ -24,3 +24,4 @@ float64 offset_y
 bool apply_offset
 float64 angle_init
 int32 n_oct
+bool apply_octa

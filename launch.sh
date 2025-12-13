@@ -83,7 +83,7 @@ if $debug; then
 	export RCL_LOG_LEVEL=DEBUG
 	export ROS_LOG_LEVEL=DEBUG
 	cd /workspace/app 2>/dev/null || true
-	exec ros2 launch octa_ros launch.py ur_type:=ur3e robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
+	exec ros2 launch octa_ros launch.py ur_type:=$UR_TYPE robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
 else
   echo "[INFO] Manager starting (ROBOT_IP=$ROBOT_IP HOST_IP=$HOST_IP)"
   exec ros2 run octa_ros driver_manager.py \

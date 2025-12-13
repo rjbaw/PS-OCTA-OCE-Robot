@@ -289,6 +289,7 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
     const double angle_limit = angle_limit_.load();
     const int num_pt = std::max(1, num_pt_.load());
     const int n_oct = std::max(0, n_oct_.load());
+    const bool apply_octa = apply_octa_.load();
     const double sweep = angle_limit - angle_init;
     const double angle_increment =
         sweep / static_cast<double>(std::max(1, num_pt));
@@ -298,16 +299,19 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
     recipe.push_back(
         {.action = UserAction::Focus, .mode = Mode::ROBOT, .yaw = 0.0});
     if (std::abs(angle_init) > 1e-12) {
-        recipe.push_back({.action = UserAction::Move,
-                          .mode = Mode::OCTA,
-                          .yaw = angle_init});
+        const Mode move_mode = apply_octa ? Mode::OCTA : Mode::OCE;
+        recipe.push_back(
+            {.action = UserAction::Move, .mode = move_mode, .yaw = angle_init});
     }
 
-    recipe.push_back(
-        {.action = UserAction::Move, .mode = Mode::OCTA, .y = scan_offset});
-    recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCTA});
-    recipe.push_back(
-        {.action = UserAction::Move, .mode = Mode::OCTA, .y = -scan_offset});
+    if (apply_octa) {
+        recipe.push_back(
+            {.action = UserAction::Move, .mode = Mode::OCTA, .y = scan_offset});
+        recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCTA});
+        recipe.push_back({.action = UserAction::Move,
+                          .mode = Mode::OCTA,
+                          .y = -scan_offset});
+    }
     recipe.push_back({.action = UserAction::Scan, .mode = Mode::OCE});
 
     std::vector<int> oct_breakpoints;
@@ -362,6 +366,7 @@ void CoordinatorNode::subscriber_callback(
     num_pt_ = msg->num_pt;
     angle_init_ = msg->angle_init;
     n_oct_ = msg->n_oct;
+    apply_octa_ = msg->apply_octa;
     autofocus_ = msg->autofocus;
     freedrive_ = msg->freedrive;
     reset_ = msg->reset;
@@ -416,7 +421,8 @@ void CoordinatorNode::subscriber_callback(
             msg->angle_limit != old_sub_msg_.angle_limit ||
             msg->num_pt != old_sub_msg_.num_pt ||
             msg->angle_init != old_sub_msg_.angle_init ||
-            msg->n_oct != old_sub_msg_.n_oct;
+            msg->n_oct != old_sub_msg_.n_oct ||
+            msg->apply_octa != old_sub_msg_.apply_octa;
         if (*msg != old_sub_msg_) {
             std::ostringstream sub_log;
             sub_log << "[SUBSCRIBING]: Changed fields \n";
@@ -436,6 +442,8 @@ void CoordinatorNode::subscriber_callback(
             log_if_changed(msg->angle_init, old_sub_msg_.angle_init,
                            "angle_init", sub_log);
             log_if_changed(msg->n_oct, old_sub_msg_.n_oct, "n_oct", sub_log);
+            log_if_changed(msg->apply_octa, old_sub_msg_.apply_octa,
+                           "apply_octa", sub_log);
             log_if_changed(msg->offset_x, old_sub_msg_.offset_x, "offset_x",
                            sub_log);
             log_if_changed(msg->offset_y, old_sub_msg_.offset_y, "offset_y",

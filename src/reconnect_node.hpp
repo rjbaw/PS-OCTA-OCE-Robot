@@ -116,6 +116,7 @@ class ReconnectClient : public rclcpp::Node {
 
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr connect_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr power_on_client_;
+    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr play_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr resend_program_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr restart_safety_client_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr brake_release_client_;
@@ -130,6 +131,9 @@ class ReconnectClient : public rclcpp::Node {
     int8_t last_robot_mode_ = NO_CONTROLLER;
     uint8_t last_safety_mode_ = UNDEFINED_SAFETY_MODE;
     bool last_program_running_ = false;
+
+    int program_not_running_ticks_ = 0;
+    int resend_cooldown_ticks_ = 0;
 };
 
 #endif // RECONNECT_NODE_HPP
