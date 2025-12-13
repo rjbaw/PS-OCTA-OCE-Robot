@@ -52,7 +52,6 @@ class DriverManager(Node):
         ur_type: str,
         headless: bool,
         ping_timeout: float,
-        ur_health_grace: float,
     ):
         super().__init__("driver_manager")
         self.robot_ip = robot_ip
@@ -60,18 +59,11 @@ class DriverManager(Node):
         self.ur_type = ur_type
         self.headless = headless
         self.ping_timeout = ping_timeout
-        self.ur_health_grace = ur_health_grace
 
         self.state_run_false = False
         self.state_last_msg_time = 0.0
-        self.driver_healthy = True
-        self._last_stop_reason: str | None = None
-        self.health_false_since: float | None = None
 
         self.sub = self.create_subscription(Bool, "/run_state", self._on_run_state, 1)
-        self.health_sub = self.create_subscription(
-            Bool, "/ur_driver_healthy", self._on_driver_health, 1
-        )
         self.timer = self.create_timer(0.5, self._tick)
 
         self._proc: subprocess.Popen | None = None
@@ -81,27 +73,12 @@ class DriverManager(Node):
             f"DriverManager: robot_ip={self.robot_ip} host_ip={self.host_ip} ur_type={self.ur_type} headless={self.headless}"
         )
 
-    def _proc_running(self) -> bool:
-        with self._lock:
-            return self._proc is not None and self._proc.poll() is None
-
     def _ensure_started(self):
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 return
             # Build ros2 launch command
-            rt_args: list[str] = []
-            rt_prio_str = os.environ.get("ROS_RT_PRIORITY", "").strip()
-            if rt_prio_str:
-                try:
-                    rt_prio = int(rt_prio_str)
-                    if rt_prio > 0:
-                        rt_args = ["chrt", "-rr", str(rt_prio)]
-                except ValueError:
-                    # Invalid priority – silently fall back to non-RT launch
-                    rt_args = []
-
-            args = rt_args + [
+            args = [
                 "ros2",
                 "launch",
                 "octa_ros",
@@ -131,8 +108,6 @@ class DriverManager(Node):
                 self.get_logger().error(f"Failed to start ros2 launch: {e}")
 
     def _ensure_stopped(self):
-        self.driver_healthy = True
-        self.health_false_since = None
         with self._lock:
             proc = self._proc
         if proc is None:
@@ -156,51 +131,15 @@ class DriverManager(Node):
         self.state_last_msg_time = time.monotonic()
         self.state_run_false = msg.data is False
 
-    def _on_driver_health(self, msg: Bool):
-        now = time.monotonic()
-        if msg.data:
-            self.driver_healthy = True
-            self.health_false_since = None
-        else:
-            if self.driver_healthy:
-                # Transition from healthy to unhealthy
-                self.health_false_since = now
-            self.driver_healthy = False
-
     def _tick(self):
         online = _ping(self.robot_ip, self.ping_timeout)
-        stop_reason = None
-
         if not online:
-            stop_reason = "ping_failed"
-        elif self.state_run_false:
-            stop_reason = "run_state_false"
-        elif self._proc_running() and not self.driver_healthy:
-            if self.health_false_since is not None:
-                if time.monotonic() - self.health_false_since >= self.ur_health_grace:
-                    stop_reason = "ur_driver_unhealthy"
+            self._ensure_stopped()
+            return
 
-        if stop_reason is not None:
-            if stop_reason != self._last_stop_reason:
-                if stop_reason == "ping_failed":
-                    self.get_logger().warn(
-                        "Stopping UR driver: robot not reachable (ping/dashboard)."
-                    )
-                elif stop_reason == "run_state_false":
-                    self.get_logger().info("Stopping UR driver: /run_state is false.")
-                elif stop_reason == "ur_driver_unhealthy":
-                    self.get_logger().warn(
-                        "Stopping UR driver: /ur_driver_healthy is false "
-                        f"for >= {self.ur_health_grace:.1f} s."
-                    )
-                self._last_stop_reason = stop_reason
+        if self.state_run_false:
             self._ensure_stopped()
         else:
-            if self._last_stop_reason is not None:
-                self.get_logger().info(
-                    "UR driver conditions healthy; ensuring driver is running."
-                )
-                self._last_stop_reason = None
             self._ensure_started()
 
 
@@ -215,22 +154,11 @@ def main():
     parser.add_argument(
         "--ping-timeout", type=float, default=float(os.environ.get("PING_TIMEOUT", 3))
     )
-    parser.add_argument(
-        "--ur-health-grace",
-        type=float,
-        default=float(os.environ.get("UR_HEALTH_GRACE_SEC", 15)),
-        help="Seconds /ur_driver_healthy must be false before restarting UR driver.",
-    )
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=ros_args)
     node = DriverManager(
-        args.robot_ip,
-        args.host_ip,
-        args.ur_type,
-        args.headless,
-        args.ping_timeout,
-        args.ur_health_grace,
+        args.robot_ip, args.host_ip, args.ur_type, args.headless, args.ping_timeout
     )
     try:
         rclpy.spin(node)
