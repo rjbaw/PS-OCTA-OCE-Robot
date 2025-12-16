@@ -178,6 +178,11 @@ cleanup() {
   echo "[test] Cleaning up (exit code=${exit_code})..."
   set +e
 
+  if [ "${exit_code}" -ne 0 ] && [ -n "${STACK_LAUNCH_LOG:-}" ] && [ -f "${STACK_LAUNCH_LOG}" ]; then
+    echo "[test] Stack launch log (tail -200): ${STACK_LAUNCH_LOG}"
+    tail -n 200 "${STACK_LAUNCH_LOG}" | sed -e 's/^/[stack] /'
+  fi
+
   # Tear down the ROS stack container(s)
   if [ -f "${COMPOSE_FILE}" ]; then
     echo "[test] Stopping docker compose stack (${COMPOSE_FILE})..."
@@ -234,12 +239,22 @@ docker exec "${STACK_CONTAINER_NAME}" bash -lc '
 
 # Launch the ROS stack in simulation mode inside the container.
 echo "[test] Launching stack inside container '${STACK_CONTAINER_NAME}' (./launch.sh -s)..."
-docker exec -e ROBOT_IP="${ROBOT_IP}" -e PING_TIMEOUT="${PING_TIMEOUT:-1}" "${STACK_CONTAINER_NAME}" bash -lc '
+STACK_LAUNCH_LOG="${ROOT_DIR}/logs/stack_launch.log"
+: > "${STACK_LAUNCH_LOG}"
+docker exec \
+  -e ROBOT_IP="${ROBOT_IP}" \
+  -e PING_TIMEOUT="${PING_TIMEOUT:-1}" \
+  -e UR_HEALTH_STARTUP_GRACE_SEC="${UR_HEALTH_STARTUP_GRACE_SEC:-30}" \
+  -e UR_HEALTH_STALE_SEC="${UR_HEALTH_STALE_SEC:-15}" \
+  -e UR_HEALTH_UNHEALTHY_SEC="${UR_HEALTH_UNHEALTHY_SEC:-15}" \
+  -e RESTART_DELAY_SEC="${RESTART_DELAY_SEC:-5}" \
+  -e RESTART_COOLDOWN_SEC="${RESTART_COOLDOWN_SEC:-10}" \
+  "${STACK_CONTAINER_NAME}" bash -lc '
   set -eo pipefail
   cd /workspace/app
   echo "[container] Starting ./launch.sh -s (simulation)..."
   ./launch.sh -s
-' &
+' >"${STACK_LAUNCH_LOG}" 2>&1 &
 
 echo "[test] Waiting for driver_manager process..."
 wait_for_stack_proc "running" "driver_manager.py" 60
@@ -275,6 +290,19 @@ for cycle in $(seq 1 "${STANDBY_BOOT_CYCLES}"); do
     wait_for_stack_proc "stopped" "ros2 launch octa_ros launch.py" "${DRIVER_STOP_TIMEOUT_S}"
   fi
 done
+
+echo "[test] Dead-state recovery test: simulate a dead dashboard client and verify manager restarts the stack..."
+docker exec "${STACK_CONTAINER_NAME}" bash -lc '
+  set -euo pipefail
+  pkill -f "ur_robot_driver/[d]ashboard_client" 2>/dev/null || pkill -f "[d]ashboard_client" 2>/dev/null || true
+'
+echo "[test] Waiting for driver launch to stop (health-triggered restart)..."
+wait_for_stack_proc "stopped" "ros2 launch octa_ros launch.py" "${DRIVER_STOP_TIMEOUT_S}"
+echo "[test] Waiting for driver launch to start again..."
+wait_for_stack_proc "running" "ros2 launch octa_ros launch.py" "${DRIVER_START_TIMEOUT_S}"
+echo "[test] Waiting for dashboard service health after restart..."
+wait_for_dashboard_ok "${DASHBOARD_OK_TIMEOUT_S}"
+echo "[test] Dead-state recovery OK."
 
 # Give the ROS stack a bit of time to come up internally before playing the bag.
 STACK_STARTUP_DELAY_S="${STACK_STARTUP_DELAY_S:-30}"

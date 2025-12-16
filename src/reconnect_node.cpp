@@ -58,9 +58,6 @@ void ReconnectClient::publish_driver_health(bool healthy) {
     if (!driver_health_pub_) {
         return;
     }
-    if (driver_healthy_ == healthy) {
-        return;
-    }
     driver_healthy_ = healthy;
     std_msgs::msg::Bool msg;
     msg.data = healthy;
@@ -120,6 +117,18 @@ void ReconnectClient::timerCallback() {
             "[UR] dashboard_client/get_safety_mode not available; UR driver "
             "unhealthy.");
         return;
+    }
+
+    const bool program_running_available =
+        running_program_client_->wait_for_service(1s);
+    if (!program_running_available) {
+        RCLCPP_WARN(
+            this->get_logger(),
+            "Service [/dashboard_client/program_running] not available");
+        publish_driver_health(false);
+        publish_status(
+            "[UR] dashboard_client/program_running not available; UR driver "
+            "unhealthy.");
     }
 
     auto request =
@@ -228,71 +237,78 @@ void ReconnectClient::timerCallback() {
 
     auto running_req =
         std::make_shared<ur_dashboard_msgs::srv::IsProgramRunning::Request>();
-    running_program_client_->async_send_request(
-        running_req,
-        [this](rclcpp::Client<
-               ur_dashboard_msgs::srv::IsProgramRunning>::SharedFuture future) {
-            const auto &resp = future.get();
-            if (!resp->success) {
-                RCLCPP_WARN(this->get_logger(),
-                            "[ReconnectClient] IsProgramRunning failed: %s",
-                            resp->answer.c_str());
-                publish_driver_health(false);
-                publish_status(std::string("[UR] IsProgramRunning failed: ") +
-                               resp->answer);
-                return;
-            }
-
-            publish_driver_health(true);
-
-            bool running_program = resp->program_running;
-            if (running_program != last_program_running_) {
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "[ReconnectClient] ProgramRunning transition: %s -> %s "
-                    "(answer: %s)",
-                    last_program_running_ ? "true" : "false",
-                    running_program ? "true" : "false", resp->answer.c_str());
-                last_program_running_ = running_program;
-            } else {
-                RCLCPP_DEBUG(this->get_logger(),
-                             "[ReconnectClient] ProgramRunning unchanged: %s",
-                             running_program ? "true" : "false");
-            }
-
-            if (!running_program) {
-                ++program_not_running_ticks_;
-                if (resend_cooldown_ticks_ > 0) {
-                    --resend_cooldown_ticks_;
-                }
-
-                RCLCPP_INFO(this->get_logger(),
-                            "Program is NOT running (robot_mode=%d, "
-                            "safety_mode=%u) => attempting dashboard play.",
-                            last_robot_mode_, last_safety_mode_);
-                publish_status("[UR] Program not running – attempting play.");
-                callTriggerService(play_client_, "/dashboard_client/play");
-
-                constexpr int kResendAfterTicks = 2;
-                constexpr int kResendCooldownTicks = 3;
-                if (program_not_running_ticks_ >= kResendAfterTicks &&
-                    resend_cooldown_ticks_ == 0) {
-                    RCLCPP_INFO(this->get_logger(),
-                                "Program still NOT running => resending "
-                                "external control program.");
+    if (program_running_available) {
+        running_program_client_->async_send_request(
+            running_req,
+            [this](rclcpp::Client<
+                   ur_dashboard_msgs::srv::IsProgramRunning>::SharedFuture
+                       future) {
+                const auto &resp = future.get();
+                if (!resp->success) {
+                    RCLCPP_WARN(this->get_logger(),
+                                "[ReconnectClient] IsProgramRunning failed: %s",
+                                resp->answer.c_str());
+                    publish_driver_health(false);
                     publish_status(
-                        "[UR] ExternalControl still not running – resending "
-                        "robot program.");
-                    callTriggerService(
-                        resend_program_client_,
-                        "/io_and_status_controller/resend_robot_program");
-                    resend_cooldown_ticks_ = kResendCooldownTicks;
+                        std::string("[UR] IsProgramRunning failed: ") +
+                        resp->answer);
+                    return;
                 }
-            } else {
-                program_not_running_ticks_ = 0;
-                resend_cooldown_ticks_ = 0;
-            }
-        });
+
+                publish_driver_health(true);
+
+                bool running_program = resp->program_running;
+                if (running_program != last_program_running_) {
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        "[ReconnectClient] ProgramRunning transition: %s -> %s "
+                        "(answer: %s)",
+                        last_program_running_ ? "true" : "false",
+                        running_program ? "true" : "false",
+                        resp->answer.c_str());
+                    last_program_running_ = running_program;
+                } else {
+                    RCLCPP_DEBUG(
+                        this->get_logger(),
+                        "[ReconnectClient] ProgramRunning unchanged: %s",
+                        running_program ? "true" : "false");
+                }
+
+                if (!running_program) {
+                    ++program_not_running_ticks_;
+                    if (resend_cooldown_ticks_ > 0) {
+                        --resend_cooldown_ticks_;
+                    }
+
+                    RCLCPP_INFO(this->get_logger(),
+                                "Program is NOT running (robot_mode=%d, "
+                                "safety_mode=%u) => attempting dashboard play.",
+                                last_robot_mode_, last_safety_mode_);
+                    publish_status(
+                        "[UR] Program not running – attempting play.");
+                    callTriggerService(play_client_, "/dashboard_client/play");
+
+                    constexpr int kResendAfterTicks = 2;
+                    constexpr int kResendCooldownTicks = 3;
+                    if (program_not_running_ticks_ >= kResendAfterTicks &&
+                        resend_cooldown_ticks_ == 0) {
+                        RCLCPP_INFO(this->get_logger(),
+                                    "Program still NOT running => resending "
+                                    "external control program.");
+                        publish_status(
+                            "[UR] ExternalControl still not running – "
+                            "resending robot program.");
+                        callTriggerService(
+                            resend_program_client_,
+                            "/io_and_status_controller/resend_robot_program");
+                        resend_cooldown_ticks_ = kResendCooldownTicks;
+                    }
+                } else {
+                    program_not_running_ticks_ = 0;
+                    resend_cooldown_ticks_ = 0;
+                }
+            });
+    }
 
     // auto program_req =
     //     std::make_shared<ur_dashboard_msgs::srv::GetProgramState::Request>();

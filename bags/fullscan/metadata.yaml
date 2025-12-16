@@ -8,12 +8,12 @@ rosbag2_bagfile_information:
   message_count: 879
   topics_with_message_count:
     - topic_metadata:
-        name: /oct_image
-        type: octa_ros/msg/Img
+        name: /cancel_current_action
+        type: std_msgs/msg/Bool
         serialization_format: cdr
         offered_qos_profiles:
           - history: unknown
-            depth: 0
+            depth: 10
             reliability: reliable
             durability: volatile
             deadline:
@@ -35,7 +35,7 @@ rosbag2_bagfile_information:
         serialization_format: cdr
         offered_qos_profiles:
           - history: unknown
-            depth: 0
+            depth: 10
             reliability: reliable
             durability: volatile
             deadline:
@@ -52,12 +52,12 @@ rosbag2_bagfile_information:
         type_description_hash: ""
       message_count: 293
     - topic_metadata:
-        name: /cancel_current_action
-        type: std_msgs/msg/Bool
+        name: /oct_image
+        type: octa_ros/msg/Img
         serialization_format: cdr
         offered_qos_profiles:
           - history: unknown
-            depth: 0
+            depth: 10
             reliability: reliable
             durability: volatile
             deadline:
@@ -78,11 +78,6 @@ rosbag2_bagfile_information:
   relative_file_paths:
     - fullscan_0.mcap
   files:
-    - path: fullscan_0.mcap
-      starting_time:
-        nanoseconds_since_epoch: 1764711409730963853
-      duration:
-        nanoseconds: 185114120974
-      message_count: 879
+    []
   custom_data: ~
   ros_distro: jazzy

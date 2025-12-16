@@ -16,16 +16,16 @@ rosbag2_bagfile_information:
         type_description_hash: ""
       message_count: 75
     - topic_metadata:
-        name: /oct_image
-        type: octa_ros/msg/Img
+        name: /labview_data
+        type: octa_ros/msg/Labviewdata
         serialization_format: cdr
         offered_qos_profiles:
           []
         type_description_hash: ""
       message_count: 75
     - topic_metadata:
-        name: /labview_data
-        type: octa_ros/msg/Labviewdata
+        name: /oct_image
+        type: octa_ros/msg/Img
         serialization_format: cdr
         offered_qos_profiles:
           []
@@ -36,11 +36,6 @@ rosbag2_bagfile_information:
   relative_file_paths:
     - rotate_z_0.mcap
   files:
-    - path: rotate_z_0.mcap
-      starting_time:
-        nanoseconds_since_epoch: 1762291542566027819
-      duration:
-        nanoseconds: 16959361105
-      message_count: 225
+    []
   custom_data: ~
   ros_distro: jazzy
