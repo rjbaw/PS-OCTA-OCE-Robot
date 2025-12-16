@@ -142,24 +142,28 @@ void MoveActionServer::execute(
         target_pose.pose.position.y += offset_world.y();
         target_pose.pose.position.z += offset_world.z();
     } else {
-        const double offset_radius = 4.3 - radius_;
+        const double offset_radius_mm = 4.3 - radius_;
+        const double offset_radius_m = offset_radius_mm * 0.001;
         if ((goal->centre_set) || !centre_set_) {
-            centre_xyz_ = current_pose.translation();
-            centre_xyz_.y() -= offset_radius * 0.001;
+            centre_basis_ = current_pose.linear();
+            const Eigen::Vector3d offset_tcp(0.0, offset_radius_m, 0.0);
+            const Eigen::Vector3d offset_world = centre_basis_ * offset_tcp;
+            centre_xyz_ = current_pose.translation() - offset_world;
             centre_set_ = true;
             RCLCPP_INFO(get_logger(),
                         "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
                         centre_xyz_.x(), centre_xyz_.y(), centre_xyz_.z());
         } else {
             const double path_angle_deg = angle_ + target_angle_deg;
-            const double dx =
-                offset_radius * std::sin(to_radian(path_angle_deg)) * 0.001;
-            const double dy =
-                offset_radius * std::cos(to_radian(path_angle_deg)) * 0.001;
+            const double theta = to_radian(path_angle_deg);
+            const Eigen::Vector3d offset_tcp(offset_radius_m * std::sin(theta),
+                                             -offset_radius_m * std::cos(theta),
+                                             0.0);
+            const Eigen::Vector3d offset_world = centre_basis_ * offset_tcp;
 
-            target_pose.pose.position.x = centre_xyz_.x() + dx;
-            target_pose.pose.position.y = centre_xyz_.y() + dy;
-            target_pose.pose.position.z = centre_xyz_.z();
+            target_pose.pose.position.x = centre_xyz_.x() + offset_world.x();
+            target_pose.pose.position.y = centre_xyz_.y() + offset_world.y();
+            target_pose.pose.position.z = centre_xyz_.z() + offset_world.z();
         }
 
         tf2::Quaternion target_q;

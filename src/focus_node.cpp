@@ -484,7 +484,7 @@ void FocusActionServer::execute(
         yaw_ = tmp_yaw_;
         rotmat_tf_.setRPY(roll_, pitch_, yaw_);
 
-        dz_ = (z_height_ - center[2]) / (px_per_mm_ * 1000.0);
+        dz_ = (center[2] - z_height_) / (px_per_mm_ * 1000.0);
         // T_world_target = T_world_tcp * T_tcp_target
         const Eigen::Vector3d dz_tcp(0.0, 0.0, dz_);
         const Eigen::Vector3d dz_world = current_pose.linear() * dz_tcp;

@@ -240,9 +240,8 @@ void ReconnectClient::timerCallback() {
     if (program_running_available) {
         running_program_client_->async_send_request(
             running_req,
-            [this](rclcpp::Client<
-                   ur_dashboard_msgs::srv::IsProgramRunning>::SharedFuture
-                       future) {
+            [this](rclcpp::Client<ur_dashboard_msgs::srv::IsProgramRunning>::
+                       SharedFuture future) {
                 const auto &resp = future.get();
                 if (!resp->success) {
                     RCLCPP_WARN(this->get_logger(),

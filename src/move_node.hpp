@@ -88,6 +88,7 @@ class MoveActionServer : public rclcpp::Node {
     double angle_ = 0.0;
 
     Eigen::Vector3d centre_xyz_{0.0, 0.0, 0.0};
+    Eigen::Matrix3d centre_basis_{Eigen::Matrix3d::Identity()};
     bool centre_set_ = false;
 
     /** @brief Action callbacks for goal lifecycle and execution. */

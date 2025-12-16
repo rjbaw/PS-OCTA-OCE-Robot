@@ -24,6 +24,25 @@ URSIM_SCRIPT="${ROOT_DIR}/utils/start_ursim.sh"
 URSIM_NAME="ursim"
 STACK_CONTAINER_NAME="ps-oce-robot"
 DEFAULT_URSIM_IP="192.168.56.101"
+URSIM_LOG="${ROOT_DIR}/logs/ursim_test.log"
+STACK_LAUNCH_LOG="${ROOT_DIR}/logs/stack_launch.log"
+STACK_EXEC_PID=""
+
+STANDBY_BOOT_CYCLES="${STANDBY_BOOT_CYCLES:-3}"
+DRIVER_START_TIMEOUT_S="${DRIVER_START_TIMEOUT_S:-180}"
+DRIVER_STOP_TIMEOUT_S="${DRIVER_STOP_TIMEOUT_S:-120}"
+DASHBOARD_OK_TIMEOUT_S="${DASHBOARD_OK_TIMEOUT_S:-180}"
+STACK_STARTUP_DELAY_S="${STACK_STARTUP_DELAY_S:-30}"
+BAG_TIMEOUT_S="${BAG_TIMEOUT_S:-900}"
+RESULT_TIMEOUT_S="${RESULT_TIMEOUT_S:-900}"
+RESULT_MIN_IMAGES="${RESULT_MIN_IMAGES:-6}"
+
+PING_TIMEOUT="${PING_TIMEOUT:-1}"
+UR_HEALTH_STARTUP_GRACE_SEC="${UR_HEALTH_STARTUP_GRACE_SEC:-30}"
+UR_HEALTH_STALE_SEC="${UR_HEALTH_STALE_SEC:-15}"
+UR_HEALTH_UNHEALTHY_SEC="${UR_HEALTH_UNHEALTHY_SEC:-15}"
+RESTART_DELAY_SEC="${RESTART_DELAY_SEC:-5}"
+RESTART_COOLDOWN_SEC="${RESTART_COOLDOWN_SEC:-10}"
 
 echo "[test] Repository root: ${ROOT_DIR}"
 echo "[test] Using compose file: ${COMPOSE_FILE}"
@@ -39,19 +58,116 @@ if [ ! -x "${URSIM_SCRIPT}" ]; then
 fi
 
 mkdir -p "${ROOT_DIR}/logs" "${ROOT_DIR}/result"
-: > "${ROOT_DIR}/logs/ursim_test.log"
+: > "${URSIM_LOG}"
+: > "${STACK_LAUNCH_LOG}"
 
 # Start with a clean result directory so we only consider images from this run.
 rm -rf "${ROOT_DIR}/result"/*
 
 URSIM_PID=""
 
-stack_proc_running() {
+docker_container_running() {
+  local name="$1"
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${name}"
+}
+
+wait_for_docker_container() {
+  local name="$1"
+  local timeout_s="$2"
+  local watched_pid="${3:-}"
+
+  local start_ts now_ts elapsed last_print_ts
+  start_ts="$(date +%s)"
+  last_print_ts="${start_ts}"
+  while :; do
+    now_ts="$(date +%s)"
+    elapsed=$((now_ts - start_ts))
+    if [ "${elapsed}" -ge "${timeout_s}" ]; then
+      echo "[test] ERROR: Timed out (${timeout_s}s) waiting for container '${name}' to be running" >&2
+      return 1
+    fi
+
+    if docker_container_running "${name}"; then
+      return 0
+    fi
+
+    if [ -n "${watched_pid}" ] && ! kill -0 "${watched_pid}" 2>/dev/null; then
+      echo "[test] ERROR: Helper process exited while waiting for container '${name}' (pid=${watched_pid})." >&2
+      return 1
+    fi
+
+    if [ $((now_ts - last_print_ts)) -ge 10 ]; then
+      echo "[test] Waiting for container '${name}'... (${elapsed}/${timeout_s}s)"
+      last_print_ts="${now_ts}"
+    fi
+
+    sleep 1
+  done
+}
+
+stack_exec() {
+  local cmd="$1"
+  docker exec "${STACK_CONTAINER_NAME}" bash -lc "${cmd}"
+}
+
+stack_exec_opts() {
+  local cmd="$1"
+  shift
+  docker exec "$@" "${STACK_CONTAINER_NAME}" bash -lc "${cmd}"
+}
+
+stack_proc_pid() {
   local pattern="$1"
   docker exec -e PROC_PATTERN="${pattern}" "${STACK_CONTAINER_NAME}" bash -lc '
     set -euo pipefail
-    ps -eo args -ww | grep -F "$PROC_PATTERN" | grep -F -v grep >/dev/null 2>&1
-  '
+    ps -eo pid=,args= -ww | grep -F "$PROC_PATTERN" | grep -F -v grep | head -n 1 | awk "{print \$1}"
+  ' 2>/dev/null || true
+}
+
+stack_proc_running() {
+  local pattern="$1"
+  [ -n "$(stack_proc_pid "${pattern}")" ]
+}
+
+stack_pid_exists() {
+  local pid="$1"
+  docker exec -e PID="${pid}" "${STACK_CONTAINER_NAME}" bash -lc '
+    set -euo pipefail
+    ps -p "$PID" >/dev/null 2>&1
+  ' 2>/dev/null
+}
+
+wait_for_proc_restart() {
+  local pattern="$1"
+  local old_pid="$2"
+  local timeout_s="$3"
+
+  local start_ts now_ts elapsed last_print_ts
+  start_ts="$(date +%s)"
+  last_print_ts="${start_ts}"
+  while :; do
+    now_ts="$(date +%s)"
+    elapsed=$((now_ts - start_ts))
+    if [ "${elapsed}" -ge "${timeout_s}" ]; then
+      echo "[test] ERROR: Timed out (${timeout_s}s) waiting for process '${pattern}' to restart (old pid=${old_pid})" >&2
+      return 1
+    fi
+
+    if [ $((now_ts - last_print_ts)) -ge 10 ]; then
+      echo "[test] Waiting for '${pattern}' to restart... (${elapsed}/${timeout_s}s)"
+      last_print_ts="${now_ts}"
+    fi
+
+    current_pid="$(stack_proc_pid "${pattern}" || true)"
+    if [ -n "${current_pid}" ] && [ "${current_pid}" != "${old_pid}" ]; then
+      if ! stack_pid_exists "${old_pid}"; then
+        echo "[test] Detected restart: pid ${old_pid} -> ${current_pid}"
+        return 0
+      fi
+    fi
+
+    sleep 2
+  done
 }
 
 wait_for_stack_proc() {
@@ -107,7 +223,7 @@ wait_for_dashboard_ok() {
       last_print_ts="${now_ts}"
     fi
 
-    if docker exec "${STACK_CONTAINER_NAME}" bash -lc '
+    if stack_exec '
       set -eo pipefail
       cd /workspace/app
       source "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash"
@@ -125,28 +241,17 @@ wait_for_dashboard_ok() {
 }
 
 ursim_start() {
-  local log_file="${ROOT_DIR}/logs/ursim_test.log"
   echo "[test] Starting URSim using ${URSIM_SCRIPT}..."
-  "${URSIM_SCRIPT}" >>"${log_file}" 2>&1 &
+  "${URSIM_SCRIPT}" >>"${URSIM_LOG}" 2>&1 &
   URSIM_PID=$!
   echo "[test] URSim script PID=${URSIM_PID}"
 
   echo "[test] Waiting for URSim container '${URSIM_NAME}' to be up..."
-  for i in $(seq 1 60); do
-    if docker ps --format '{{.Names}}' | grep -qx "${URSIM_NAME}"; then
-      echo "[test] URSim container is running."
-      break
-    fi
-    if ! kill -0 "${URSIM_PID}" 2>/dev/null; then
-      echo "[test] ERROR: URSim script exited unexpectedly. See logs/ursim_test.log" >&2
-      exit 1
-    fi
-    sleep 1
-    if [ "${i}" -eq 60 ]; then
-      echo "[test] ERROR: Timed out waiting for URSim container '${URSIM_NAME}'" >&2
-      exit 1
-    fi
-  done
+  if ! wait_for_docker_container "${URSIM_NAME}" 60 "${URSIM_PID}"; then
+    echo "[test] ERROR: URSim failed to start. See ${URSIM_LOG}" >&2
+    exit 1
+  fi
+  echo "[test] URSim container is running."
 
   URSIM_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${URSIM_NAME}" 2>/dev/null || true)"
   if [[ -z "${URSIM_IP}" ]]; then
@@ -183,6 +288,11 @@ cleanup() {
     tail -n 200 "${STACK_LAUNCH_LOG}" | sed -e 's/^/[stack] /'
   fi
 
+  if [ -n "${STACK_EXEC_PID}" ] && kill -0 "${STACK_EXEC_PID}" 2>/dev/null; then
+    kill "${STACK_EXEC_PID}" >/dev/null 2>&1 || true
+    wait "${STACK_EXEC_PID}" >/dev/null 2>&1 || true
+  fi
+
   # Tear down the ROS stack container(s)
   if [ -f "${COMPOSE_FILE}" ]; then
     echo "[test] Stopping docker compose stack (${COMPOSE_FILE})..."
@@ -215,21 +325,14 @@ HOST_UID="${HOST_UID}" HOST_GID="${HOST_GID}" ROBOT_IP="${ROBOT_IP}" \
   docker compose -f "${COMPOSE_FILE}" up -d
 
 echo "[test] Waiting for stack container '${STACK_CONTAINER_NAME}'..."
-for i in $(seq 1 60); do
-  if docker ps --format '{{.Names}}' | grep -qx "${STACK_CONTAINER_NAME}"; then
-    echo "[test] Stack container is running."
-    break
-  fi
-  sleep 2
-  if [ "${i}" -eq 60 ]; then
-    echo "[test] ERROR: Timed out waiting for stack container '${STACK_CONTAINER_NAME}'" >&2
-    exit 1
-  fi
-done
+if ! wait_for_docker_container "${STACK_CONTAINER_NAME}" 120; then
+  exit 1
+fi
+echo "[test] Stack container is running."
 
 # Build workspace inside dev container
 echo "[test] Building workspace inside container '${STACK_CONTAINER_NAME}'..."
-docker exec "${STACK_CONTAINER_NAME}" bash -lc '
+stack_exec '
   set -eo pipefail
   cd /workspace/app
   echo "[container] Running: make clean && make build"
@@ -239,33 +342,29 @@ docker exec "${STACK_CONTAINER_NAME}" bash -lc '
 
 # Launch the ROS stack in simulation mode inside the container.
 echo "[test] Launching stack inside container '${STACK_CONTAINER_NAME}' (./launch.sh -s)..."
-STACK_LAUNCH_LOG="${ROOT_DIR}/logs/stack_launch.log"
 : > "${STACK_LAUNCH_LOG}"
-docker exec \
-  -e ROBOT_IP="${ROBOT_IP}" \
-  -e PING_TIMEOUT="${PING_TIMEOUT:-1}" \
-  -e UR_HEALTH_STARTUP_GRACE_SEC="${UR_HEALTH_STARTUP_GRACE_SEC:-30}" \
-  -e UR_HEALTH_STALE_SEC="${UR_HEALTH_STALE_SEC:-15}" \
-  -e UR_HEALTH_UNHEALTHY_SEC="${UR_HEALTH_UNHEALTHY_SEC:-15}" \
-  -e RESTART_DELAY_SEC="${RESTART_DELAY_SEC:-5}" \
-  -e RESTART_COOLDOWN_SEC="${RESTART_COOLDOWN_SEC:-10}" \
-  "${STACK_CONTAINER_NAME}" bash -lc '
+stack_env_args=(
+  -e "ROBOT_IP=${ROBOT_IP}"
+  -e "PING_TIMEOUT=${PING_TIMEOUT}"
+  -e "UR_HEALTH_STARTUP_GRACE_SEC=${UR_HEALTH_STARTUP_GRACE_SEC}"
+  -e "UR_HEALTH_STALE_SEC=${UR_HEALTH_STALE_SEC}"
+  -e "UR_HEALTH_UNHEALTHY_SEC=${UR_HEALTH_UNHEALTHY_SEC}"
+  -e "RESTART_DELAY_SEC=${RESTART_DELAY_SEC}"
+  -e "RESTART_COOLDOWN_SEC=${RESTART_COOLDOWN_SEC}"
+)
+docker exec "${stack_env_args[@]}" "${STACK_CONTAINER_NAME}" bash -lc '
   set -eo pipefail
   cd /workspace/app
   echo "[container] Starting ./launch.sh -s (simulation)..."
   ./launch.sh -s
 ' >"${STACK_LAUNCH_LOG}" 2>&1 &
+STACK_EXEC_PID=$!
 
 echo "[test] Waiting for driver_manager process..."
 wait_for_stack_proc "running" "driver_manager.py" 60
 
 # Standby boot test: start with URSim offline, then bring it online/offline a few times and
 # assert driver launch starts/stops accordingly.
-STANDBY_BOOT_CYCLES="${STANDBY_BOOT_CYCLES:-3}"
-DRIVER_START_TIMEOUT_S="${DRIVER_START_TIMEOUT_S:-180}"
-DRIVER_STOP_TIMEOUT_S="${DRIVER_STOP_TIMEOUT_S:-120}"
-DASHBOARD_OK_TIMEOUT_S="${DASHBOARD_OK_TIMEOUT_S:-180}"
-
 echo "[test] Standby boot test: URSim offline->online cycles=${STANDBY_BOOT_CYCLES}"
 echo "[test] Ensuring driver is not running while URSim is offline..."
 ursim_stop
@@ -292,25 +391,27 @@ for cycle in $(seq 1 "${STANDBY_BOOT_CYCLES}"); do
 done
 
 echo "[test] Dead-state recovery test: simulate a dead dashboard client and verify manager restarts the stack..."
-docker exec "${STACK_CONTAINER_NAME}" bash -lc '
+old_launch_pid="$(stack_proc_pid "ros2 launch octa_ros launch.py" || true)"
+if [ -z "${old_launch_pid}" ]; then
+  echo "[test] ERROR: Could not determine current 'ros2 launch octa_ros launch.py' PID before dead-state test" >&2
+  exit 1
+fi
+stack_exec '
   set -euo pipefail
   pkill -f "ur_robot_driver/[d]ashboard_client" 2>/dev/null || pkill -f "[d]ashboard_client" 2>/dev/null || true
 '
-echo "[test] Waiting for driver launch to stop (health-triggered restart)..."
-wait_for_stack_proc "stopped" "ros2 launch octa_ros launch.py" "${DRIVER_STOP_TIMEOUT_S}"
-echo "[test] Waiting for driver launch to start again..."
-wait_for_stack_proc "running" "ros2 launch octa_ros launch.py" "${DRIVER_START_TIMEOUT_S}"
+echo "[test] Waiting for driver launch to restart (health-triggered)..."
+wait_for_proc_restart "ros2 launch octa_ros launch.py" "${old_launch_pid}" "${DRIVER_START_TIMEOUT_S}"
 echo "[test] Waiting for dashboard service health after restart..."
 wait_for_dashboard_ok "${DASHBOARD_OK_TIMEOUT_S}"
 echo "[test] Dead-state recovery OK."
 
 # Give the ROS stack a bit of time to come up internally before playing the bag.
-STACK_STARTUP_DELAY_S="${STACK_STARTUP_DELAY_S:-30}"
 echo "[test] Waiting ${STACK_STARTUP_DELAY_S}s for ROS 2 stack to initialize..."
 sleep "${STACK_STARTUP_DELAY_S}"
 
 echo "[test] Starting bag playback inside container '${STACK_CONTAINER_NAME}'..."
-docker exec "${STACK_CONTAINER_NAME}" bash -lc '
+stack_exec_opts '
   set -eo pipefail
   cd /workspace/app
   echo "[container] Sourcing ROS and workspace..."
@@ -341,14 +442,15 @@ docker exec "${STACK_CONTAINER_NAME}" bash -lc '
   fi
 
   echo "[container] Running: ${CMD[*]}"
-  timeout "${BAG_TIMEOUT_S:-900}s" "${CMD[@]}"
-'
+  timeout "${BAG_TIMEOUT_S}s" "${CMD[@]}"
+' -e "BAG_TIMEOUT_S=${BAG_TIMEOUT_S}"
 
 echo "[test] Bag playback finished; checking for result images..."
 
 RESULT_ROOT="${ROOT_DIR}/result"
 start_ts="$(date +%s)"
-timeout_s="${RESULT_TIMEOUT_S:-900}"
+timeout_s="${RESULT_TIMEOUT_S}"
+min_images="${RESULT_MIN_IMAGES}"
 found=0
 
 while :; do
@@ -366,7 +468,7 @@ while :; do
     if [ -n "${latest}" ]; then
       raw_count="$(find "${latest}" -maxdepth 1 -type f -name "raw_image*.jpg" | wc -l || echo 0)"
       det_count="$(find "${latest}" -maxdepth 1 -type f -name "detected_image*.jpg" | wc -l || echo 0)"
-      if [ "${raw_count}" -ge 6 ] && [ "${det_count}" -ge 6 ]; then
+      if [ "${raw_count}" -ge "${min_images}" ] && [ "${det_count}" -ge "${min_images}" ]; then
         echo "[test] Found ${raw_count} raw and ${det_count} detected images in ${latest}"
         found=1
         break
@@ -378,7 +480,7 @@ while :; do
 done
 
 if [ "${found}" -ne 1 ]; then
-  echo "[test] ERROR: Result images not found or insufficient (need >=6 raw and >=6 detected)." >&2
+  echo "[test] ERROR: Result images not found or insufficient (need >=${min_images} raw and >=${min_images} detected)." >&2
   exit 1
 fi
 
