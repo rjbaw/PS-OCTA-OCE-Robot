@@ -235,9 +235,7 @@ bash utils/ur_moveit.sh
 
 ## Simulation
 
-![sim1](./assets/sim1.png)
-
-![sim2](./assets/sim2.png)
+![sim](./assets/sim.png)
 
 ## Hardware
 ![setup](./assets/setup.jpeg)
