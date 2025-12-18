@@ -409,7 +409,7 @@ void CoordinatorNode::subscriber_callback(
                 full_scan_delay_timer_active_ = false;
                 if (!prev_full_scan && full_scan_read_) {
                     pc_ = 0;
-                    full_scan_center_seeded_ = false;
+                    full_scan_centre_seeded_ = false;
                     angle_ = 0.0;
                     circle_state_ = 1;
                     scan_trigger_store_ = scan_trigger_read_.load();
@@ -621,12 +621,13 @@ void CoordinatorNode::main_loop() {
         return;
     }
 
+    bool centre_set_this = false;
     if (full_scan_read_) {
         if (!full_scan_ &&
             (full_scan_plan_stale_ || full_scan_recipe_.empty())) {
             full_scan_recipe_ = build_full_scan_recipe();
             full_scan_plan_stale_ = false;
-            full_scan_center_seeded_ = false;
+            full_scan_centre_seeded_ = false;
             pc_ = 0;
         }
         full_scan_ = true;
@@ -683,11 +684,11 @@ void CoordinatorNode::main_loop() {
         yaw_ = step.yaw;
 
         if (full_scan_ && step.action == UserAction::Move &&
-            !full_scan_center_seeded_) {
-            home_ = true;
+            !full_scan_centre_seeded_) {
+            centre_set_this = true;
             angle_ = 0.0;
             circle_state_ = 1;
-            full_scan_center_seeded_ = true;
+            full_scan_centre_seeded_ = true;
         }
 
         current_action_ = step.action;
@@ -776,24 +777,32 @@ void CoordinatorNode::main_loop() {
                                         std::abs(offset_y) > 1e-12)
                                      : apply_offset_.load();
 
+            const bool centre_set =
+                from_recipe ? centre_set_this : home_.load();
+
             if (apply) {
                 msg_ = std::format("[Action] Translate to (x,y): ({},{})\n",
                                    offset_x, offset_y);
             } else {
-                angle_increment_ = (num_pt_.load() == 0)
-                                       ? 0.0
-                                       : (angle_limit_.load() /
-                                          static_cast<double>(num_pt_.load()));
-                if (next_) {
-                    yaw_ = angle_increment_;
-                    msg_ = std::format("[Action] Next: {}\n", yaw_);
-                } else if (previous_) {
-                    yaw_ = -angle_increment_;
-                    msg_ = std::format("[Action] Previous: {}\n", yaw_);
-                } else if (home_) {
-                    yaw_ = -angle_;
-                    msg_ = std::format("[Action] Home: {}\n", yaw_);
-                    circle_state_ = 1;
+                if (from_recipe) {
+                    yaw_ = step.yaw;
+                } else {
+                    angle_increment_ =
+                        (num_pt_.load() == 0)
+                            ? 0.0
+                            : (angle_limit_.load() /
+                               static_cast<double>(num_pt_.load()));
+                    if (next_) {
+                        yaw_ = angle_increment_;
+                        msg_ = std::format("[Action] Next: {}\n", yaw_);
+                    } else if (previous_) {
+                        yaw_ = -angle_increment_;
+                        msg_ = std::format("[Action] Previous: {}\n", yaw_);
+                    } else if (home_) {
+                        yaw_ = -angle_;
+                        msg_ = std::format("[Action] Home: {}\n", yaw_);
+                        circle_state_ = 1;
+                    }
                 }
                 if (std::abs(angle_.load()) < 1e-10) {
                     circle_state_ = 1;
@@ -802,7 +811,7 @@ void CoordinatorNode::main_loop() {
             RCLCPP_INFO(get_logger(), msg_.c_str());
             previous_action_ = UserAction::Move;
             current_action_ = UserAction::None;
-            send_move_goal(yaw_, offset_x, offset_y, apply);
+            send_move_goal(yaw_, offset_x, offset_y, apply, centre_set);
             home_ = false;
         }
         break;
@@ -902,7 +911,8 @@ void CoordinatorNode::send_focus_goal() {
 }
 
 void CoordinatorNode::send_move_goal(double yaw, double offset_x,
-                                     double offset_y, bool apply) {
+                                     double offset_y, bool apply,
+                                     bool centre_set) {
     Move::Goal goal_msg;
 
     goal_msg.offset_x = offset_x;
@@ -911,7 +921,7 @@ void CoordinatorNode::send_move_goal(double yaw, double offset_x,
     goal_msg.apply_offset = apply;
     goal_msg.radius = radius_.load();
     goal_msg.angle = angle_.load();
-    goal_msg.centre_set = home_.load();
+    goal_msg.centre_set = centre_set;
 
     apply_speed_scale_to_node("/move_node", robot_vel_.load(),
                               robot_acc_.load());

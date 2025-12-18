@@ -189,7 +189,7 @@ class CoordinatorNode : public rclcpp::Node {
     octa_ros::msg::Labviewdata old_sub_msg_;
     octa_ros::msg::Robotdata old_pub_msg_;
     std::vector<Step> full_scan_recipe_;
-    std::atomic<bool> full_scan_center_seeded_ = false;
+    std::atomic<bool> full_scan_centre_seeded_ = false;
     std::atomic<bool> full_scan_plan_stale_ = true;
     double yaw_ = 0.0;
     double angle_increment_ = 0.0;
@@ -288,7 +288,7 @@ class CoordinatorNode : public rclcpp::Node {
      * @param apply_offset If true, use XY translation.
      */
     void send_move_goal(double yaw, double offset_x, double offset_y,
-                        bool apply_offset);
+                        bool apply_offset, bool centre_set);
     /** @brief Send a Freedrive goal to enable/disable manual guidance. */
     void send_freedrive_goal(bool enable);
     /** @brief Send a Reset goal to return to a safe posture. */
