@@ -396,7 +396,8 @@ void CoordinatorNode::subscriber_callback(
         apply_offset_ = msg->apply_offset;
     }
     {
-        if (msg->full_scan != full_scan_read_.load()) {
+        const bool prev_full_scan = full_scan_read_.load();
+        if (msg->full_scan != prev_full_scan) {
             if (!full_scan_delay_timer_active_) {
                 full_scan_delay_since_ = std::chrono::steady_clock::now();
                 full_scan_delay_timer_active_ = true;
@@ -406,6 +407,13 @@ void CoordinatorNode::subscriber_callback(
             if (elapsed >= kFullScanSwitchDelay) {
                 full_scan_read_ = msg->full_scan;
                 full_scan_delay_timer_active_ = false;
+                if (!prev_full_scan && full_scan_read_) {
+                    pc_ = 0;
+                    full_scan_center_seeded_ = false;
+                    angle_ = 0.0;
+                    circle_state_ = 1;
+                    scan_trigger_store_ = scan_trigger_read_.load();
+                }
             }
         } else {
             full_scan_delay_timer_active_ = false;
