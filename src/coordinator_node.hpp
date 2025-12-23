@@ -23,7 +23,7 @@
  * - action_reset_name (string, default: "reset_action"): Reset action server.
  * - config_apply_ms (int, default: 60 ms): debounce time before applying mode
  *   changes.
- * - scan_trigger_timeout_sec (double, default: 2.0 s): timeout for scan
+ * - scan_trigger_timeout_sec (double, default: 10.0 s): timeout for scan
  *   triggers.
  * - scan3d_window_ms (int, default: 50 ms): duration of scan window.
  * - service_poll_interval_ms (int, default: 1 ms): poll interval for services.
@@ -163,7 +163,7 @@ class CoordinatorNode : public rclcpp::Node {
     int64_t main_loop_period_ms_ = 5;
     int64_t action_server_wait_ms_ = 200;
     int64_t config_apply_ms_ = 60;
-    double scan_trigger_timeout_sec_ = 2.0;
+    double scan_trigger_timeout_sec_ = 10.0;
     int64_t scan3d_window_ms_ = 50;
     int64_t service_poll_interval_ms_ = 1;
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr

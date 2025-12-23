@@ -53,11 +53,6 @@
 #+STARTUP: latexpreview
 #+LATEX_COMPILER: lualatex
 
-* Credentials
-
-- =USER: bail=
-- =PASS: uwamitudub=
-
 * Remote Access
 
 ** Look for =mstsc.exe=
@@ -86,6 +81,12 @@ Images should be inside =result/= inside the project directory.
 \pagebreak
 
 * Operation
+
+Robot must be in remote control mode for the driver to work.
+
+[[./remote_control.png]]
+
+
 ** Quick commands (Make)
 #+ATTR_LATEX: :options frame=lines, linenos
 #+begin_src bash
@@ -276,7 +277,7 @@ Notes:
   - =focus_action=, =move_action=, =freedrive_action=, =reset_action= (names configurable via parameters).
 - Key parameters:
   - =config_apply_ms= (int, default 60): debounce before applying mode changes to LabVIEW.
-  - =scan_trigger_timeout_sec= (double, default 2.0): max time a scan trigger can stay active before it is cleared.
+  - =scan_trigger_timeout_sec= (double, default 10.0): max time a scan trigger can stay active before it is cleared.
   - =scan3d_window_ms= (int, default 50): duration of the 3D scan acquisition window.
   - =service_poll_interval_ms= (int, default 1): poll interval for scan3d and legacy background services.
 

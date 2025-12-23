@@ -18,7 +18,7 @@ moveit_msgs::msg::CollisionObject make_floor(const std::string &frame_id) {
 
     shape_msgs::msg::SolidPrimitive primitive;
     primitive.type = shape_msgs::msg::SolidPrimitive::BOX;
-    primitive.dimensions = {0.6, 0.6, 0.01};
+    primitive.dimensions = {0.35, 0.35, 0.01};
 
     geometry_msgs::msg::Pose pose;
     pose.orientation.w = 1.0;
