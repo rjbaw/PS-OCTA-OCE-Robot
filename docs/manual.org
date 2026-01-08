@@ -65,6 +65,7 @@
 
 
 ** Project directory location
+Project directory is located in the home location =/home/bail/=
 [[./directory.png]]
 
 ** Operating shell
@@ -76,16 +77,27 @@ All make commands should be operated inside the project workspace.
 
 [[./root.png]]
 
-Images should be inside =result/= inside the project directory.
+Images should be inside =result/= inside the project directory. They do not automatically clear so you have to routinely clean it up.
    
 \pagebreak
 
 * Operation
 
+** Robot settings
+
 Robot must be in remote control mode for the driver to work.
 
 [[./remote_control.png]]
 
+Networking must also be set to manual mode with the following settings:
+
+#+begin_example
+IP: 192.168.0.10
+SUBNETMASK: 255.255.255.0
+GATEWAY: 192.168.0.2
+DNS1: 192.168.0.2
+DNS2: 192.168.0.1
+#+end_example
 
 ** Quick commands (Make)
 #+ATTR_LATEX: :options frame=lines, linenos

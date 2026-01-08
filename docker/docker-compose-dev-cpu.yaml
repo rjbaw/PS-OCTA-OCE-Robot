@@ -14,7 +14,6 @@ services:
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
       - ${HOME}/.Xauthority:/workspace/.Xauthority:ro
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
       - ${HOME}:/workspace/home/
       - ${PWD}:/workspace/app/
     user: "${HOST_UID}:${HOST_GID}"
