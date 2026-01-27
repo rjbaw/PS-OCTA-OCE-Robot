@@ -621,7 +621,7 @@ infer_batch(const std::vector<cv::Mat> &frames) {
     const size_t batch_size = frames.size();
     const cv::Mat &first_img = frames.front();
     CV_Assert(!first_img.empty());
-    CV_Assert(first_img.channels() == 1);
+    CV_Assert(first_img.channels() == 1 || first_img.channels() == 3);
     const int img_h = first_img.rows;
     const int img_w = first_img.cols;
     CV_Assert(img_h > 0 && img_w > 0);
@@ -629,7 +629,7 @@ infer_batch(const std::vector<cv::Mat> &frames) {
     for (size_t idx = 1; idx < batch_size; ++idx) {
         const cv::Mat &img = frames[idx];
         CV_Assert(!img.empty());
-        CV_Assert(img.channels() == 1);
+        CV_Assert(img.channels() == 1 || img.channels() == 3);
         CV_Assert(img.rows == img_h && img.cols == img_w);
     }
 
@@ -664,29 +664,39 @@ infer_batch(const std::vector<cv::Mat> &frames) {
         }
     }
 
-    const std::array<float, 3> mean{0.485F, 0.456F, 0.406F};
-    const std::array<float, 3> stdev{0.229F, 0.224F, 0.225F};
     std::vector<float> input_data(static_cast<size_t>(batch_size) * 3 * run_h *
                                   run_w);
     for (size_t idx = 0; idx < batch_size; ++idx) {
         const cv::Mat &img = frames[idx];
-        cv::Mat rgb_u8;
-        cv::cvtColor(img, rgb_u8, cv::COLOR_GRAY2RGB);
-        cv::Mat rgb_f32;
-        rgb_u8.convertTo(rgb_f32, CV_32F, 1.0 / 255.0);
-        CV_Assert(rgb_f32.isContinuous());
+        cv::Mat img_u8;
+        if (img.channels() == 1) {
+            img_u8 = img;
+        } else {
+            CV_Assert(img.channels() == 3);
+            cv::cvtColor(img, img_u8, cv::COLOR_BGR2GRAY);
+        }
+        CV_Assert(img_u8.type() == CV_8UC1);
 
-        size_t base = idx * static_cast<size_t>(3 * run_h * run_w);
-        size_t cursor = base;
-        for (int ch = 0; ch < 3; ++ch) {
-            for (int py = 0; py < run_h; ++py) {
-                const float *row = rgb_f32.ptr<float>(py);
-                for (int px = 0; px < run_w; ++px) {
-                    const float val = row[px * 3 + ch];
-                    input_data[cursor++] =
-                        (val - mean[static_cast<size_t>(ch)]) /
-                        stdev[static_cast<size_t>(ch)];
-                }
+        cv::Mat img_f32;
+        img_u8.convertTo(img_f32, CV_32F, 1.0 / 255.0);
+
+        cv::Scalar mu_s;
+        cv::Scalar sigma_s;
+        cv::meanStdDev(img_f32, mu_s, sigma_s);
+        const auto mu = static_cast<float>(mu_s[0]);
+        auto sigma = static_cast<float>(sigma_s[0]);
+        sigma = std::max(sigma, 1e-6F);
+
+        const size_t plane = static_cast<size_t>(run_h) * run_w;
+        const size_t base = idx * static_cast<size_t>(3) * plane;
+        for (int py = 0; py < run_h; ++py) {
+            const float *row = img_f32.ptr<float>(py);
+            for (int px = 0; px < run_w; ++px) {
+                const float v = (row[px] - mu) / sigma;
+                const size_t hw = static_cast<size_t>(py) * run_w + px;
+                input_data[base + 0 * plane + hw] = v;
+                input_data[base + 1 * plane + hw] = v;
+                input_data[base + 2 * plane + hw] = v;
             }
         }
     }
@@ -748,7 +758,9 @@ infer_batch(const std::vector<cv::Mat> &frames) {
     results.reserve(batch_size);
     for (size_t idx = 0; idx < batch_size; ++idx) {
         SegmentResult result{frames[idx].clone(), {}};
-        if (to_prob(presence_ptr[idx * presence_stride]) >= 0.5F &&
+
+        const float keep_curve_prob = 0.7F;
+        if (to_prob(presence_ptr[idx * presence_stride]) >= keep_curve_prob &&
             curve_stride > 0) {
             result.coordinates.resize(img_w);
             for (int column_idx = 0; column_idx < img_w; ++column_idx) {

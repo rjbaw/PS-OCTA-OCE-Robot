@@ -54,7 +54,7 @@ Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix);
  * the detection network. Returns the overlay image and the per-column pixel
  * coordinates for the detected curve, if present.
  *
- * @param inputImg Single-channel uint8 image.
+ * @param inputImg Single-channel uint8 image. If 3-channel (BGR), it is converted to grayscale.
  * @return SegmentResult with overlay and coordinates (possibly empty).
  * @note Model path resolution: if `set_curve_model_path()` is not called, the
  *       ONNX model is loaded from the package share path
@@ -70,7 +70,7 @@ SegmentResult detect_lines(const cv::Mat &inputImg);
  * If environment variable `OCTA_SAVE_DEBUG` is set (and not 0/false), raw and
  * overlay frames are saved under `result/` in a timestamped subdirectory.
  *
- * @param img_array Sequence of grayscale frames (same size).
+ * @param img_array Sequence of frames (same size).
  * @param interval Number of frames per Z period (>=2 recommended).
  * @return Vector of 3D points (x,z,y) in pixels.
  */
