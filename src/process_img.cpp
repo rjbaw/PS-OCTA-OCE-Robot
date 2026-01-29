@@ -181,6 +181,8 @@ void set_curve_model_path(const std::string &path) {
 
 static Ort::Session &load_session(const std::string &path,
                                   int64_t batch_override);
+[[maybe_unused]] static std::vector<SegmentResult>
+infer_batch(const std::vector<cv::Mat> &frames);
 
 void preload_curve_model(std::size_t batch_size) {
     (void)batch_size;
@@ -197,6 +199,21 @@ void preload_curve_model(std::size_t batch_size) {
     }
     (void)load_session(model_path,
                        static_cast<int64_t>(batch_size == 0 ? 1 : batch_size));
+#endif
+}
+
+void warmup_curve_model(const cv::Mat &example_frame,
+                        const std::size_t batch_size) {
+#ifndef LEGACY_IMG_PIPELINE
+    if (example_frame.empty()) {
+        return;
+    }
+    const size_t run_batch = batch_size == 0 ? 1 : batch_size;
+    std::vector<cv::Mat> frames(run_batch, example_frame);
+    (void)infer_batch(frames);
+#else
+    (void)example_frame;
+    (void)batch_size;
 #endif
 }
 

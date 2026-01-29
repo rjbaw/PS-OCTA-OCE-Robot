@@ -140,6 +140,13 @@ void FocusActionServer::init() {
     }
 #ifndef LEGACY_IMG_PIPELINE
     octa_ros::img::preload_curve_model(static_cast<std::size_t>(interval_));
+    if (!plan_only) {
+        cv::Mat warmup_img(static_cast<int>(image_height_),
+                           static_cast<int>(image_width_), CV_8UC1,
+                           cv::Scalar(0));
+        octa_ros::img::warmup_curve_model(warmup_img,
+                                          static_cast<std::size_t>(interval_));
+    }
 #endif
 
     if (!plan_only) {

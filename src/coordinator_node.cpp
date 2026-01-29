@@ -426,6 +426,7 @@ void CoordinatorNode::subscriber_callback(
     {
         std::lock_guard<std::mutex> lock(data_mutex_);
         const bool recipe_param_changed =
+            msg->radius != old_sub_msg_.radius ||
             msg->angle_limit != old_sub_msg_.angle_limit ||
             msg->num_pt != old_sub_msg_.num_pt ||
             msg->angle_init != old_sub_msg_.angle_init ||

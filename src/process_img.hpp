@@ -54,7 +54,8 @@ Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix);
  * the detection network. Returns the overlay image and the per-column pixel
  * coordinates for the detected curve, if present.
  *
- * @param inputImg Single-channel uint8 image. If 3-channel (BGR), it is converted to grayscale.
+ * @param inputImg Single-channel uint8 image. If 3-channel (BGR), it is
+ * converted to grayscale.
  * @return SegmentResult with overlay and coordinates (possibly empty).
  * @note Model path resolution: if `set_curve_model_path()` is not called, the
  *       ONNX model is loaded from the package share path
@@ -87,6 +88,18 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
  * @param batch_size Expected batch size for typical inference calls.
  */
 void preload_curve_model(std::size_t batch_size = 1);
+
+/**
+ * @brief Warm up the ONNX curve model with a dummy inference.
+ *
+ * Runs a single inference pass using the provided example frame to trigger
+ * any one-time runtime initialization (e.g., kernel compilation).
+ *
+ * @param example_frame Example frame matching the expected input size.
+ * @param batch_size Batch size to warm (should match typical inference).
+ */
+void warmup_curve_model(const cv::Mat &example_frame,
+                        std::size_t batch_size = 1);
 
 /**
  * @brief Override the default ONNX model path used for curve detection.
