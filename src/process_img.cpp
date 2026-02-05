@@ -66,90 +66,6 @@ void medianFilter1D(std::vector<cv::Point> &coords) {
     }
 }
 
-void onlineKalmanFilter1D(std::vector<cv::Point> &coords) {
-    if (coords.empty()) {
-        return;
-    }
-
-    const int Tinit = 4;
-    const double beta = 2.0 / std::log(static_cast<double>(Tinit));
-    const double lambda = 10.0;
-
-    CV_Assert(Tinit > (beta * std::log(static_cast<double>(Tinit))));
-
-    const int N_length = static_cast<int>(coords.size());
-    if (N_length <= 0) {
-        return;
-    }
-
-    Eigen::VectorXd y(N_length);
-    for (int i = 0; i < N_length; ++i) {
-        y[i] = static_cast<double>(coords[static_cast<size_t>(i)].y);
-    }
-
-    Eigen::VectorXd ytilde = Eigen::VectorXd::Zero(N_length);
-    std::vector<uint8_t> has_pred(static_cast<size_t>(N_length), 0);
-
-    int i = 1;
-    while (true) {
-        const int T =
-            static_cast<int>(std::pow(2.0, static_cast<double>(i - 1))) * Tinit;
-        const int p =
-            std::max(1, static_cast<int>(std::ceil(
-                            beta * std::log(static_cast<double>(T)))));
-
-        if (T <= p || (T + p) > N_length) {
-            break;
-        }
-
-        Eigen::MatrixXd V_inv;
-        {
-            // V̄_{T-1} = lambda * I_{p} + ∑_{t=p}^{T-1} Z_t,p @ Z_t,p^{*}
-            Eigen::MatrixXd V_prev = lambda * Eigen::MatrixXd::Identity(p, p);
-            Eigen::RowVectorXd yZ_sum = Eigen::RowVectorXd::Zero(p);
-            for (int t = p; t < (T - 1); ++t) {
-                Eigen::Map<const Eigen::VectorXd> Z_t(&y[t - p], p);
-                V_prev.noalias() += Z_t * Z_t.transpose();
-                yZ_sum.noalias() += (y[t] * Z_t.transpose());
-            }
-
-            // G̃_{T-1} = (∑_{t=p}^{T-1} y_t @ Z_t,p^{*} ) @ V̄_{T-1}^{-1}
-            V_inv = V_prev.inverse();
-            Eigen::RowVectorXd G_prev = yZ_sum * V_inv;
-
-            for (int k = T; k < std::min(2 * T - 1, N_length); ++k) {
-
-                Eigen::Map<const Eigen::VectorXd> Z_k(&y[k - p], p);
-
-                // predict ỹ_k = G̃_{k-1} @ Z_k,p
-                ytilde[k] = (G_prev * Z_k)(0, 0);
-                has_pred[static_cast<size_t>(k)] = 1;
-
-                // update V̄_k = V̄_{k-1} + Z_k,p @ Z_k,p^{*}
-
-                // Sherman-Morrison
-                // V_k^{-1} = (V + z z^T)^{-1} = V^{-1} − (V^{-1} z z^T V^{-1})
-                // / (1 + z^T V^{-1} z)
-                V_inv = V_inv - (V_inv * Z_k * Z_k.transpose() * V_inv) /
-                                    (1.0 + Z_k.transpose() * V_inv * Z_k);
-
-                // G̃_k = G̃_{k-1} + (y_k - ỹ_k) @ (Z_k,p^{*} * V̄_k^{-1})
-                const Eigen::RowVectorXd G_k =
-                    G_prev + (y[k] - ytilde[k]) * (Z_k.transpose() * V_inv);
-                G_prev = G_k;
-            }
-        }
-        ++i;
-    }
-
-    for (int n = 0; n < N_length; ++n) {
-        if (has_pred[static_cast<size_t>(n)] != 0U) {
-            coords[static_cast<size_t>(n)].y =
-                static_cast<int>(std::lround(ytilde[n]));
-        }
-    }
-}
-
 Eigen::Matrix3d align_to_direction(const Eigen::Matrix3d &rot_matrix) {
     Eigen::Matrix3d out_matrix = Eigen::Matrix3d::Zero();
     for (int col = 0; col < 3; ++col) {
@@ -797,7 +713,6 @@ infer_batch(const std::vector<cv::Mat> &frames) {
             }
         }
         medianFilter1D(result.coordinates);
-        onlineKalmanFilter1D(result.coordinates);
         if (!result.coordinates.empty()) {
             draw_line(result.image, result.coordinates);
         }
