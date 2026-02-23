@@ -712,7 +712,7 @@ infer_batch(const std::vector<cv::Mat> &frames) {
                     cv::Point(column_idx, row_val);
             }
         }
-        medianFilter1D(result.coordinates);
+        //medianFilter1D(result.coordinates);
         if (!result.coordinates.empty()) {
             draw_line(result.image, result.coordinates);
         }
