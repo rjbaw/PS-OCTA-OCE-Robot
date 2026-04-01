@@ -5,6 +5,9 @@
  */
 
 #include "move_node.hpp"
+#include <Eigen/src/Core/Matrix.h>
+#include <Eigen/src/Geometry/Rotation2D.h>
+#include <Eigen/src/Geometry/Transform.h>
 
 MoveActionServer::MoveActionServer(const rclcpp::NodeOptions &options)
     : Node("move_action_server",
@@ -144,36 +147,26 @@ void MoveActionServer::execute(
     } else {
         const double offset_radius_mm = 4.3 - radius_;
         const double offset_radius_m = offset_radius_mm * 0.001;
-        if ((goal->centre_set) || !centre_set_) {
-            centre_basis_ = current_pose.linear();
-            const Eigen::Vector3d offset_tcp(0.0, offset_radius_m, 0.0);
-            const Eigen::Vector3d offset_world = centre_basis_ * offset_tcp;
-            centre_xyz_ = current_pose.translation() - offset_world;
-            centre_set_ = true;
-            RCLCPP_INFO(get_logger(),
-                        "Captured centre at angle=0 -> (%.4f, %.4f, %.4f)m",
-                        centre_xyz_.x(), centre_xyz_.y(), centre_xyz_.z());
-        } else {
-            const double path_angle_deg = angle_ + target_angle_deg;
-            const double theta = to_radian(path_angle_deg);
-            const Eigen::Vector3d offset_tcp(offset_radius_m * std::sin(theta),
-                                             -offset_radius_m * std::cos(theta),
-                                             0.0);
-            const Eigen::Vector3d offset_world = centre_basis_ * offset_tcp;
+        const double target_angle_rad = to_radian(target_angle_deg);
+        Eigen::Isometry3d T_tcp_oce = Eigen::Isometry3d::Identity();
+        T_tcp_oce.translation() = Eigen::Vector3d(0.0, -offset_radius_m, 0.0);
+        Eigen::Isometry3d T_oce_rotate = Eigen::Isometry3d::Identity();
+        T_oce_rotate.linear() =
+            Eigen::AngleAxisd(target_angle_rad, Eigen::Vector3d::UnitZ())
+                .toRotationMatrix();
+        Eigen::Isometry3d T_target =
+            current_pose * T_tcp_oce * T_oce_rotate * T_tcp_oce.inverse();
 
-            target_pose.pose.position.x = centre_xyz_.x() + offset_world.x();
-            target_pose.pose.position.y = centre_xyz_.y() + offset_world.y();
-            target_pose.pose.position.z = centre_xyz_.z() + offset_world.z();
-        }
+        target_pose.pose.position.x = T_target.translation().x();
+        target_pose.pose.position.y = T_target.translation().y();
+        target_pose.pose.position.z = T_target.translation().z();
 
-        tf2::Quaternion target_q;
-        tf2::Quaternion apply_q;
-        tf2::fromMsg(target_pose.pose.orientation, target_q);
-        apply_q.setRPY(0, 0, to_radian(target_angle_deg));
-        apply_q.normalize();
-        target_q = target_q * apply_q;
-        target_q.normalize();
-        target_pose.pose.orientation = tf2::toMsg(target_q);
+        Eigen::Quaterniond q_target(T_target.linear());
+        q_target.normalize();
+        target_pose.pose.orientation.x = q_target.x();
+        target_pose.pose.orientation.y = q_target.y();
+        target_pose.pose.orientation.z = q_target.z();
+        target_pose.pose.orientation.w = q_target.w();
     }
 
     print_target(get_logger(), target_pose.pose);
