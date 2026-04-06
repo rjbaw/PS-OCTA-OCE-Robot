@@ -4,6 +4,7 @@
  */
 
 #include "process_img.hpp"
+#include "robust_plane_fit.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -712,7 +713,7 @@ infer_batch(const std::vector<cv::Mat> &frames) {
                     cv::Point(column_idx, row_val);
             }
         }
-        //medianFilter1D(result.coordinates);
+        // medianFilter1D(result.coordinates);
         if (!result.coordinates.empty()) {
             draw_line(result.image, result.coordinates);
         }
@@ -748,9 +749,11 @@ prepare_output_dir(const std::filesystem::path &base_dir, bool make_session) {
     std::filesystem::create_directories(dir);
     return dir;
 }
+SurfaceReconstructionResult
+reconstruct_surface(const std::vector<cv::Mat> &img_array, const int interval) {
 
-std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
-                                      const int interval) {
+    SurfaceReconstructionResult out;
+
     bool save_debug = true;
     if (const char *env = std::getenv("OCTA_SAVE_DEBUG"); env != nullptr) {
         std::string env_var = env;
@@ -765,15 +768,14 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
         out_dir = prepare_output_dir(base_out_dir, create_session_dir);
     }
 
-    std::vector<Eigen::Vector3d> pc_3d;
     if (img_array.empty()) {
-        return pc_3d;
+        return out;
     }
 
-    int num_frames = interval > 1 ? interval : 2;
-    int img_w = img_array.front().cols;
-    double increments = (static_cast<double>(img_w) - 1.0) /
-                        static_cast<double>(num_frames - 1);
+    const int num_frames = interval > 1 ? interval : 2;
+    const int img_w = img_array.front().cols;
+    const double increments = (static_cast<double>(img_w) - 1.0) /
+                              static_cast<double>(num_frames - 1);
 
     std::vector<SegmentResult> detections;
 #ifdef LEGACY_IMG_PIPELINE
@@ -786,32 +788,77 @@ std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
     CV_Assert(detections.size() == img_array.size());
 #endif
 
+    using Points3d = octa_ros::img::Points3d;
+    std::vector<Points3d> strips;
+    strips.reserve(detections.size());
+    int valid_strip_count = 0;
+    double min_sweep_pos = std::numeric_limits<double>::infinity();
+    double max_sweep_pos = -std::numeric_limits<double>::infinity();
+
     for (size_t i = 0; i < img_array.size(); ++i) {
         const cv::Mat &img = img_array[i];
-        const SegmentResult &point_cloud = detections[i];
+        const SegmentResult &det = detections[i];
+
         if (save_debug) {
             const std::string raw_filename = std::format("raw_image{}.jpg", i);
             const std::string processed_filename =
                 std::format("detected_image{}.jpg", i);
             cv::imwrite((out_dir / raw_filename).string(), img);
-            cv::imwrite((out_dir / processed_filename).string(),
-                        point_cloud.image);
+            cv::imwrite((out_dir / processed_filename).string(), det.image);
         }
-        if (point_cloud.coordinates.empty()) {
+
+        if (det.coordinates.empty()) {
             continue;
         }
 
-        int idx = static_cast<int>(i) % interval;
-        double z_val = idx * increments;
+        const int idx = static_cast<int>(i) % num_frames;
+        const double sweep_pos = idx * increments;
+        min_sweep_pos = std::min(min_sweep_pos, sweep_pos);
+        max_sweep_pos = std::max(max_sweep_pos, sweep_pos);
+        ++valid_strip_count;
 
-        for (const auto &coordinate : point_cloud.coordinates) {
-            auto x_pts = static_cast<double>(coordinate.x);
-            auto y_pts = static_cast<double>(coordinate.y);
-            pc_3d.emplace_back(x_pts, z_val, y_pts);
+        Points3d strip(static_cast<Eigen::Index>(det.coordinates.size()), 3);
+
+        for (size_t k = 0; k < det.coordinates.size(); ++k) {
+            const auto &coord = det.coordinates[k];
+
+            const auto x = static_cast<double>(coord.x);
+            const auto z = static_cast<double>(coord.y);
+            Eigen::Vector3d p(x, sweep_pos, z);
+
+            out.point_cloud.push_back(p);
+            strip.row(static_cast<Eigen::Index>(k)) = p.transpose();
         }
+
+        strips.push_back(std::move(strip));
     }
 
-    return pc_3d;
+    if (valid_strip_count < 2 || (max_sweep_pos - min_sweep_pos) < 1e-9) {
+        return out;
+    }
+
+    RobustPlaneOptions opts;
+    opts.up_dir = Eigen::Vector3d::UnitZ();
+    opts.sweep_direction = Eigen::Vector3d::UnitY();
+
+    const auto fit = fit_robust_plane_tukey_irls(strips, opts);
+    if (!fit.ok) {
+        return out;
+    }
+
+    out.pose_ok = true;
+    out.rotation = fit.rotation;
+    out.center = fit.center;
+    out.normal = fit.normal;
+    out.d = fit.d;
+    out.robust_scale = fit.scale;
+
+    return out;
+}
+
+std::vector<Eigen::Vector3d> lines_3d(const std::vector<cv::Mat> &img_array,
+                                      const int interval) {
+    return reconstruct_surface(img_array, interval).point_cloud;
 }
 
 } // namespace octa_ros::img

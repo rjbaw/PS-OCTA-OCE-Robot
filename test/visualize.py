@@ -81,4 +81,4 @@ def main(dirpath, interpolate_3d=True):
 
 
 if __name__ == "__main__":
-    main("data/labeled/2025-07-29T21-28-34")
+    main("test/data/result_cpp")

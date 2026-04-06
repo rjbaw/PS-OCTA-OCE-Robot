@@ -14,6 +14,7 @@
 
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
+#include <vector>
 
 /** @addtogroup imaging
  *  @{ */
@@ -31,6 +32,34 @@ struct SegmentResult {
     cv::Mat image;                      ///< Associated image.
     std::vector<cv::Point> coordinates; ///< Detected (x,y) curve pixels.
 };
+
+/**
+ * @brief Reconstructed sparse surface point cloud plus optional robust plane
+ * pose.
+ *
+ * `point_cloud` is always populated from the detected strips. Pose fields are
+ * valid only when `pose_ok` is true.
+ */
+struct SurfaceReconstructionResult {
+    std::vector<Eigen::Vector3d> point_cloud;
+
+    bool pose_ok = false;
+    Eigen::Matrix3d rotation = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d center = Eigen::Vector3d::Zero();
+    Eigen::Vector3d normal = Eigen::Vector3d::UnitZ();
+    double d = 0.0;
+    double robust_scale = 0.0;
+};
+
+/**
+ * @brief Reconstruct a sparse 3D surface and estimate a robust fitted plane.
+ *
+ * If the detected strips span at least two sweep positions and the robust
+ * plane fit succeeds, `pose_ok` is set and the fitted center/normal/rotation
+ * are returned alongside the point cloud.
+ */
+SurfaceReconstructionResult
+reconstruct_surface(const std::vector<cv::Mat> &img_array, int interval);
 
 /**
  * @brief Draw a polyline onto an image using the provided pixel coordinates.

@@ -449,7 +449,8 @@ void FocusActionServer::execute(
         msg_ = "Calculating Rotations";
         RCLCPP_INFO(get_logger(), msg_.c_str());
 
-        pc_lines_ = octa_ros::img::lines_3d(img_array, interval_);
+        auto surface = octa_ros::img::reconstruct_surface(img_array, interval_);
+        pc_lines_ = surface.point_cloud;
         if (pc_lines_.empty()) {
             feedback->debug_msgs = "Background detected"
                                    "; reacquiring image stack...\n";
@@ -459,13 +460,27 @@ void FocusActionServer::execute(
             continue;
         }
 
-        open3d::geometry::PointCloud pcd;
-        for (const auto &point : pc_lines_) {
-            pcd.points_.emplace_back(point);
+        Eigen::Vector3d center;
+        if (surface.pose_ok) {
+            center = surface.center;
+            rotmat_eigen_ = octa_ros::img::align_to_direction(surface.rotation);
+            RCLCPP_INFO_STREAM(get_logger(), "\nRobust Plane Rotation:\n"
+                                                 << surface.rotation
+                                                 << "\nRobust Plane Normal: "
+                                                 << surface.normal.transpose()
+                                                 << "\nRobust Plane Scale: "
+                                                 << surface.robust_scale);
+        } else {
+            open3d::geometry::PointCloud pcd;
+            for (const auto &point : pc_lines_) {
+                pcd.points_.emplace_back(point);
+            }
+            auto boundbox = pcd.GetMinimalOrientedBoundingBox(false);
+            center = boundbox.GetCenter();
+            rotmat_eigen_ = octa_ros::img::align_to_direction(boundbox.R_);
+            RCLCPP_WARN(get_logger(),
+                        "Robust plane fit unavailable; using OBB fallback.");
         }
-        auto boundbox = pcd.GetMinimalOrientedBoundingBox(false);
-        Eigen::Vector3d center = boundbox.GetCenter();
-        rotmat_eigen_ = octa_ros::img::align_to_direction(boundbox.R_);
 
         const std::string tool_link =
             this->get_parameter("tool_link").as_string();
