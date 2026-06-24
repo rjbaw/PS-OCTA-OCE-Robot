@@ -209,6 +209,11 @@ Options:
 
 [](https://github.com/user-attachments/assets/fba01416-4875-4cd9-9928-0afa79f6a66c)
 
+[](https://github.com/user-attachments/assets/54bc900d-b3d7-4b72-8513-6f3910cb1fc0)
+
+[](https://github.com/user-attachments/assets/13eef2a0-d3fd-48f4-9e88-3d835a6b447b)
+
+
 ### Controlling from LabVIEW
 
 ![robot_control](./assets/robot_control.png)
