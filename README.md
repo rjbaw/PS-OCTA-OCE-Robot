@@ -278,9 +278,16 @@ In this example, the slow axis is the inverse of the robot's X-axis and the fast
     <td align="center">OCT TCP (CR: Agathe Marmin)</td>
     <td align="center">Robot TCP</td>
   </tr>
+
   <tr>
-  <td width="50%"><img src="./assets/oct.png" alt="oct"/></td>
-  <td width="50%"><img src="./assets/robot_slow_fast.png" alt="slow"/></td>
+    <td width="50%"><img src="./assets/oct.png" alt="oct"/></td>
+    <td width="50%"><img src="./assets/robot_slow_fast.png" alt="slow"/></td>
+  </tr>
+
+  <tr>
+    <td colspan="2" align="center">
+      <img src="./assets/oct_2.png" alt="oct 2"/>
+    </td>
   </tr>
 </table>
 
