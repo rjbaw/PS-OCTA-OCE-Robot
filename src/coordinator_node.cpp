@@ -288,7 +288,12 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
     const double angle_init = angle_init_.load();
     const double angle_limit = angle_limit_.load();
     const int num_pt = std::max(1, num_pt_.load());
-    const int n_oct = std::max(0, n_oct_.load());
+    const int signed_n_oct = n_oct_.load();
+    const bool full_scan_autofocus = signed_n_oct >= 0;
+    const std::int64_t n_oct_magnitude =
+        std::abs(static_cast<std::int64_t>(signed_n_oct));
+    const int n_oct =
+        static_cast<int>(std::min<std::int64_t>(n_oct_magnitude, num_pt));
     const bool apply_octa = apply_octa_.load();
     const double sweep = angle_limit - angle_init;
     const double angle_increment =
@@ -296,8 +301,10 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
     const double scan_offset = radius_.load() - 4.3;
 
     std::vector<Step> recipe;
-    recipe.push_back(
-        {.action = UserAction::Focus, .mode = Mode::ROBOT, .yaw = 0.0});
+    if (full_scan_autofocus) {
+        recipe.push_back(
+            {.action = UserAction::Focus, .mode = Mode::ROBOT, .yaw = 0.0});
+    }
     if (std::abs(angle_init) > 1e-12) {
         const Mode move_mode = apply_octa ? Mode::OCTA : Mode::OCE;
         recipe.push_back(
@@ -339,8 +346,10 @@ std::vector<Step> CoordinatorNode::build_full_scan_recipe() const {
         ++completed_moves;
         while (!oct_breakpoints.empty() &&
                completed_moves >= oct_breakpoints.front()) {
-            recipe.push_back(
-                {.action = UserAction::Focus, .mode = Mode::ROBOT});
+            if (full_scan_autofocus) {
+                recipe.push_back(
+                    {.action = UserAction::Focus, .mode = Mode::ROBOT});
+            }
             recipe.push_back({.action = UserAction::Move,
                               .mode = Mode::OCT,
                               .y = scan_offset});
