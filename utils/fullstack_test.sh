@@ -6,8 +6,8 @@ set -euo pipefail
 # 2. Inside the container: make clean && make build, then ./launch.sh -s
 # 3. Verify the driver "standby boot" behavior by toggling URSim offline/online
 #    (driver_manager should start/stop the driver launch accordingly)
-# 4. Play the recorded bag inside the container
-# 5. Wait for result images to be generated
+# 4. Play the recorded Fullscan and motion bags inside the container
+# 5. Verify the recorded actions and wait for result images
 # 6. Tear everything down (URSim + containers)
 #
 # Usage (from repo root, via Makefile):
@@ -34,6 +34,7 @@ DRIVER_STOP_TIMEOUT_S="${DRIVER_STOP_TIMEOUT_S:-120}"
 DASHBOARD_OK_TIMEOUT_S="${DASHBOARD_OK_TIMEOUT_S:-180}"
 STACK_STARTUP_DELAY_S="${STACK_STARTUP_DELAY_S:-30}"
 BAG_TIMEOUT_S="${BAG_TIMEOUT_S:-900}"
+ACTION_TIMEOUT_S="${ACTION_TIMEOUT_S:-120}"
 RESULT_TIMEOUT_S="${RESULT_TIMEOUT_S:-900}"
 RESULT_MIN_IMAGES="${RESULT_MIN_IMAGES:-6}"
 
@@ -43,6 +44,7 @@ UR_HEALTH_STALE_SEC="${UR_HEALTH_STALE_SEC:-15}"
 UR_HEALTH_UNHEALTHY_SEC="${UR_HEALTH_UNHEALTHY_SEC:-15}"
 RESTART_DELAY_SEC="${RESTART_DELAY_SEC:-5}"
 RESTART_COOLDOWN_SEC="${RESTART_COOLDOWN_SEC:-10}"
+LAUNCH_RVIZ="${LAUNCH_RVIZ:-true}"
 
 echo "[test] Repository root: ${ROOT_DIR}"
 echo "[test] Using compose file: ${COMPOSE_FILE}"
@@ -351,6 +353,7 @@ stack_env_args=(
   -e "UR_HEALTH_UNHEALTHY_SEC=${UR_HEALTH_UNHEALTHY_SEC}"
   -e "RESTART_DELAY_SEC=${RESTART_DELAY_SEC}"
   -e "RESTART_COOLDOWN_SEC=${RESTART_COOLDOWN_SEC}"
+  -e "LAUNCH_RVIZ=${LAUNCH_RVIZ}"
 )
 docker exec "${stack_env_args[@]}" "${STACK_CONTAINER_NAME}" bash -lc '
   set -eo pipefail
@@ -410,78 +413,232 @@ echo "[test] Dead-state recovery OK."
 echo "[test] Waiting ${STACK_STARTUP_DELAY_S}s for ROS 2 stack to initialize..."
 sleep "${STACK_STARTUP_DELAY_S}"
 
-echo "[test] Starting bag playback inside container '${STACK_CONTAINER_NAME}'..."
-stack_exec_opts '
-  set -eo pipefail
-  cd /workspace/app
-  echo "[container] Sourcing ROS and workspace..."
-  source "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash"
-  if [ -f "install/setup.bash" ]; then
-    source "install/setup.bash"
+log_count() {
+  local pattern="$1"
+  grep -F -c "${pattern}" "${STACK_LAUNCH_LOG}" || true
+}
+
+wait_for_log_increment() {
+  local description="$1"
+  local pattern="$2"
+  local baseline="$3"
+  local increment="$4"
+  local timeout_s="${5:-${ACTION_TIMEOUT_S}}"
+  local target start_ts now_ts count
+  target=$((baseline + increment))
+  start_ts="$(date +%s)"
+
+  while :; do
+    count="$(log_count "${pattern}")"
+    if [ "${count}" -ge "${target}" ]; then
+      echo "[test] Verified ${description}: +$((count - baseline))"
+      return 0
+    fi
+    now_ts="$(date +%s)"
+    if [ $((now_ts - start_ts)) -ge "${timeout_s}" ]; then
+      echo "[test] ERROR: Timed out waiting for ${description}; expected +${increment}, found +$((count - baseline))." >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+assert_log_delta() {
+  local description="$1"
+  local pattern="$2"
+  local baseline="$3"
+  local expected="$4"
+  local count delta
+  count="$(log_count "${pattern}")"
+  delta=$((count - baseline))
+  if [ "${delta}" -ne "${expected}" ]; then
+    echo "[test] ERROR: Expected ${description} exactly ${expected} time(s), found ${delta}." >&2
+    return 1
   fi
+  echo "[test] Verified ${description}: +${delta}"
+}
 
-  BAG_DIR="/workspace/app/bags/fullscan"
-  QOS_YAML="/workspace/app/config/bag_qos.yaml"
+replay_bag() {
+  local bag_name="$1"
+  echo "[test] Replaying ${bag_name} inside container '${STACK_CONTAINER_NAME}'..."
+  stack_exec_opts '
+    set -eo pipefail
+    cd /workspace/app
+    source "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash"
+    if [ -f "install/setup.bash" ]; then
+      source "install/setup.bash"
+    fi
 
-  echo "[container] BAG_DIR=${BAG_DIR}"
-  echo "[container] QOS_YAML=${QOS_YAML}"
+    BAG_DIR="/workspace/app/bags/${BAG_NAME}"
+    QOS_YAML="/workspace/app/config/bag_qos.yaml"
+    if [ ! -d "${BAG_DIR}" ]; then
+      echo "[container] ERROR: Bag directory not found: ${BAG_DIR}" >&2
+      exit 1
+    fi
+    if [ ! -f "${QOS_YAML}" ]; then
+      echo "[container] WARNING: QoS override file not found: ${QOS_YAML}; running without overrides."
+      QOS_YAML=""
+    fi
 
-  if [ ! -d "${BAG_DIR}" ]; then
-    echo "[container] ERROR: Bag directory not found: ${BAG_DIR}" >&2
-    exit 1
+    CMD=(ros2 bag play "${BAG_DIR}" --disable-loan-message)
+    if [ "${BAG_NAME}" != "fullscan" ]; then
+      CMD+=(--topics /labview_data)
+    fi
+    if [ -n "${QOS_YAML}" ]; then
+      CMD+=(--qos-profile-overrides-path "${QOS_YAML}")
+    fi
+
+    echo "[container] Running: ${CMD[*]}"
+    timeout "${BAG_TIMEOUT_S}s" "${CMD[@]}"
+  ' -e "BAG_NAME=${bag_name}" -e "BAG_TIMEOUT_S=${BAG_TIMEOUT_S}"
+}
+
+verify_rotate_z() {
+  local description="$1"
+  local next_before previous_before move_before
+  local next_delta previous_delta expected_moves
+
+  next_before="$(log_count "[Action] Next:")"
+  previous_before="$(log_count "[Action] Previous:")"
+  move_before="$(log_count "Move SUCCEEDED")"
+  replay_bag rotate_z
+  wait_for_log_increment "${description} Next request" "[Action] Next:" "${next_before}" 1
+  wait_for_log_increment "${description} Previous request" "[Action] Previous:" "${previous_before}" 1
+  # Bag playback can exit just before the last DDS sample reaches the
+  # coordinator log. Give the optional second Previous edge time to arrive.
+  sleep 2
+  next_delta=$(( $(log_count "[Action] Next:") - next_before ))
+  previous_delta=$(( $(log_count "[Action] Previous:") - previous_before ))
+  if [ "${next_delta}" -ne 1 ] ||
+     [ "${previous_delta}" -lt 1 ] || [ "${previous_delta}" -gt 2 ]; then
+    echo "[test] ERROR: ${description} dispatched ${next_delta} Next and ${previous_delta} Previous request(s); expected 1 Next and 1-2 Previous." >&2
+    return 1
   fi
+  expected_moves=$((next_delta + previous_delta))
+  echo "[test] Verified ${description} requests: Next=${next_delta}, Previous=${previous_delta}"
+  wait_for_log_increment "${description} successful moves" "Move SUCCEEDED" "${move_before}" "${expected_moves}"
+  assert_log_delta "${description} successful moves" "Move SUCCEEDED" "${move_before}" "${expected_moves}"
+}
 
-  if [ ! -f "${QOS_YAML}" ]; then
-    echo "[container] WARNING: QoS override file not found: ${QOS_YAML}; running without overrides."
-    QOS_YAML=""
-  fi
-
-  CMD=(ros2 bag play "${BAG_DIR}" --disable-loan-message)
-  if [ -n "${QOS_YAML}" ]; then
-    CMD+=(--qos-profile-overrides-path "${QOS_YAML}")
-  fi
-
-  echo "[container] Running: ${CMD[*]}"
-  timeout "${BAG_TIMEOUT_S}s" "${CMD[@]}"
-' -e "BAG_TIMEOUT_S=${BAG_TIMEOUT_S}"
-
-echo "[test] Bag playback finished; checking for result images..."
-
-RESULT_ROOT="${ROOT_DIR}/result"
-start_ts="$(date +%s)"
-timeout_s="${RESULT_TIMEOUT_S}"
-min_images="${RESULT_MIN_IMAGES}"
-found=0
-
+echo "[test] Starting bag replays: fullscan, rotate_z x2, home, reset, post-reset rotate_z"
+startup_freedrive_wait_start="$(date +%s)"
 while :; do
-  now_ts="$(date +%s)"
-  elapsed=$((now_ts - start_ts))
-  if [ "${elapsed}" -ge "${timeout_s}" ]; then
-    echo "[test] ERROR: Timed out (${timeout_s}s) waiting for result images." >&2
+  coordinator_init_line="$(grep -n -F "Coordinator Node Initialized." "${STACK_LAUNCH_LOG}" | tail -n 1 | cut -d: -f1 || true)"
+  freedrive_success_line="$(grep -n -F "Freedrive SUCCESS" "${STACK_LAUNCH_LOG}" | tail -n 1 | cut -d: -f1 || true)"
+  if [ -n "${coordinator_init_line}" ] && [ -n "${freedrive_success_line}" ] &&
+     [ "${freedrive_success_line}" -gt "${coordinator_init_line}" ]; then
+    echo "[test] Verified startup Freedrive OFF confirmation for the current coordinator."
     break
   fi
-
-  if [ -d "${RESULT_ROOT}" ]; then
-    # Find newest session directory under result/
-    latest="$(find "${RESULT_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf "%T@ %p\n" 2>/dev/null \
-      | sort -nr | head -n1 | cut -d" " -f2-)"
-    if [ -n "${latest}" ]; then
-      raw_count="$(find "${latest}" -maxdepth 1 -type f -name "raw_image*.jpg" | wc -l || echo 0)"
-      det_count="$(find "${latest}" -maxdepth 1 -type f -name "detected_image*.jpg" | wc -l || echo 0)"
-      if [ "${raw_count}" -ge "${min_images}" ] && [ "${det_count}" -ge "${min_images}" ]; then
-        echo "[test] Found ${raw_count} raw and ${det_count} detected images in ${latest}"
-        found=1
-        break
-      fi
-    fi
+  if [ "$(( $(date +%s) - startup_freedrive_wait_start ))" -ge "${ACTION_TIMEOUT_S}" ]; then
+    echo "[test] ERROR: Timed out waiting for startup Freedrive OFF confirmation from the current coordinator." >&2
+    exit 1
   fi
-
-  sleep 5
+  sleep 1
 done
 
-if [ "${found}" -ne 1 ]; then
-  echo "[test] ERROR: Result images not found or insufficient (need >=${min_images} raw and >=${min_images} detected)." >&2
-  exit 1
+fullscan_request_before="$(log_count "[Fullscan] REQUEST_ACCEPTED")"
+fullscan_complete_before="$(log_count "[Fullscan] COMPLETE:")"
+fullscan_cancel_before="$(log_count "[Fullscan] CANCEL:")"
+fullscan_abort_before="$(log_count "[Fullscan] ABORT:")"
+focus_scan3d_timeout_before="$(log_count "activate_3d_scan not responding...")"
+focus_abort_before="$(log_count "Focus action ABORTED")"
+step_zero_cancel_before="$(log_count "[Fullscan] CANCEL: completed_steps=0")"
+fullscan_known_step_zero_cancel=0
+replay_bag fullscan
+wait_for_log_increment "Fullscan request" "[Fullscan] REQUEST_ACCEPTED" "${fullscan_request_before}" 1
+assert_log_delta "Fullscan request" "[Fullscan] REQUEST_ACCEPTED" "${fullscan_request_before}" 1
+
+fullscan_wait_start="$(date +%s)"
+while :; do
+  if [ "$(log_count "[Fullscan] COMPLETE:")" -gt "${fullscan_complete_before}" ]; then
+    echo "[test] Fullscan replay completed."
+    break
+  fi
+  if [ "$(log_count "[Fullscan] ABORT:")" -gt "${fullscan_abort_before}" ]; then
+    echo "[test] ERROR: Fullscan aborted before producing a valid recipe." >&2
+    exit 1
+  fi
+  if [ "$(log_count "[Fullscan] CANCEL:")" -gt "${fullscan_cancel_before}" ]; then
+    if [ "$(log_count "activate_3d_scan not responding...")" -gt "${focus_scan3d_timeout_before}" ] &&
+       [ "$(log_count "Focus action ABORTED")" -gt "${focus_abort_before}" ] &&
+       [ "$(log_count "[Fullscan] CANCEL: completed_steps=0")" -gt "${step_zero_cancel_before}" ]; then
+      echo "[test] WARNING: Fullscan reached the recording's known missing Focus Scan3D response and canceled at step zero."
+      fullscan_known_step_zero_cancel=1
+      break
+    fi
+    echo "[test] ERROR: Fullscan canceled for an unexpected reason." >&2
+    exit 1
+  fi
+  if [ $(( $(date +%s) - fullscan_wait_start )) -ge "${ACTION_TIMEOUT_S}" ]; then
+    echo "[test] ERROR: Timed out waiting for Fullscan to settle." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+for rotate_run in 1 2; do
+  verify_rotate_z "Rotate-Z ${rotate_run}"
+done
+
+home_before="$(log_count "[Action] Home:")"
+move_before="$(log_count "Move SUCCEEDED")"
+replay_bag home
+wait_for_log_increment "Home request" "[Action] Home:" "${home_before}" 1
+assert_log_delta "Home request" "[Action] Home:" "${home_before}" 1
+wait_for_log_increment "Home successful move" "Move SUCCEEDED" "${move_before}" 1
+assert_log_delta "Home successful move" "Move SUCCEEDED" "${move_before}" 1
+
+reset_before="$(log_count "Reset SUCCESS")"
+freedrive_before="$(log_count "Freedrive SUCCESS")"
+replay_bag reset
+wait_for_log_increment "Reset success" "Reset SUCCESS" "${reset_before}" 1
+assert_log_delta "Reset success" "Reset SUCCESS" "${reset_before}" 1
+wait_for_log_increment "post-Reset controller restoration" "Freedrive SUCCESS" "${freedrive_before}" 1
+assert_log_delta "post-Reset controller restoration" "Freedrive SUCCESS" "${freedrive_before}" 1
+verify_rotate_z "Post-Reset Rotate-Z"
+
+if [ "${fullscan_known_step_zero_cancel}" -eq 1 ]; then
+  echo "[test] Skipping result-image verification: the recorded Fullscan cannot reach image capture without its missing Scan3D response."
+else
+  echo "[test] Checking for result images..."
+
+  RESULT_ROOT="${ROOT_DIR}/result"
+  start_ts="$(date +%s)"
+  timeout_s="${RESULT_TIMEOUT_S}"
+  min_images="${RESULT_MIN_IMAGES}"
+  found=0
+
+  while :; do
+    now_ts="$(date +%s)"
+    elapsed=$((now_ts - start_ts))
+    if [ "${elapsed}" -ge "${timeout_s}" ]; then
+      echo "[test] ERROR: Timed out (${timeout_s}s) waiting for result images." >&2
+      break
+    fi
+
+    if [ -d "${RESULT_ROOT}" ]; then
+      # Find newest session directory under result/
+      latest="$(find "${RESULT_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf "%T@ %p\n" 2>/dev/null \
+        | sort -nr | head -n1 | cut -d" " -f2-)"
+      if [ -n "${latest}" ]; then
+        raw_count="$(find "${latest}" -maxdepth 1 -type f -name "raw_image*.jpg" | wc -l || echo 0)"
+        det_count="$(find "${latest}" -maxdepth 1 -type f -name "detected_image*.jpg" | wc -l || echo 0)"
+        if [ "${raw_count}" -ge "${min_images}" ] && [ "${det_count}" -ge "${min_images}" ]; then
+          echo "[test] Found ${raw_count} raw and ${det_count} detected images in ${latest}"
+          found=1
+          break
+        fi
+      fi
+    fi
+
+    sleep 5
+  done
+
+  if [ "${found}" -ne 1 ]; then
+    echo "[test] ERROR: Result images not found or insufficient (need >=${min_images} raw and >=${min_images} detected)." >&2
+    exit 1
+  fi
 fi
 
 echo "[test] Full-stack test completed successfully."

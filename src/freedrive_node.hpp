@@ -14,15 +14,17 @@
  *   freedrive controller name.
  * - keepalive_rate (double, default: 5.0 Hz): publish rate for keepalive.
  * - switch_timeout (double, default: 3.0 s): controller switch timeout.
- * - dry_run (bool, default: false): do not create controller_manager client;
- *   pretend switches succeed (useful for dev without hardware).
+ * - dry_run (bool, default: false): do not create controller_manager clients;
+ *   pretend switches succeed (useful for dev without hardware). This mode
+ *   requires a restart to change.
  *
  * @par Publishers
  * - `std_msgs::msg::Bool` on
  *   `/freedrive_mode_controller/enable_freedrive_mode` (QoS: reliable).
  *
  * @par Services
- * - Client: `controller_manager/switch_controller` (unless dry_run=true).
+ * - Clients: `controller_manager/switch_controller` and
+ *   `controller_manager/list_controllers` (unless dry_run=true).
  *
  * @par Action Server
  * - Name: `freedrive_action`; Goal: `enable` (bool).
@@ -35,11 +37,13 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <thread>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
+#include <controller_manager_msgs/srv/list_controllers.hpp>
 #include <controller_manager_msgs/srv/switch_controller.hpp>
 #include <std_msgs/msg/bool.hpp>
 
@@ -56,6 +60,7 @@ class FreedriveActionServer : public rclcpp::Node {
     using Freedrive = octa_ros::action::Freedrive;
     using GoalHandleFreedrive = rclcpp_action::ServerGoalHandle<Freedrive>;
     using SwitchSrv = controller_manager_msgs::srv::SwitchController;
+    using ListSrv = controller_manager_msgs::srv::ListControllers;
 
     /**
      * @brief Construct the node and setup interfaces.
@@ -67,12 +72,15 @@ class FreedriveActionServer : public rclcpp::Node {
     rclcpp_action::Server<Freedrive>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleFreedrive> active_goal_handle_;
     rclcpp::Client<SwitchSrv>::SharedPtr switch_client_;
+    rclcpp::Client<ListSrv>::SharedPtr list_client_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr freedrive_pub_;
+    std::mutex keepalive_mutex_;
     rclcpp::TimerBase::SharedPtr keepalive_timer_;
+    std::jthread worker_;
 
     /** @brief Action callbacks for goal lifecycle and execution. */
     rclcpp_action::GoalResponse
-    handle_goal([[maybe_unused]] rclcpp_action::GoalUUID goal_id,
+    handle_goal([[maybe_unused]] const rclcpp_action::GoalUUID &goal_id,
                 std::shared_ptr<const Freedrive::Goal> goal);
 
     rclcpp_action::CancelResponse
@@ -80,17 +88,21 @@ class FreedriveActionServer : public rclcpp::Node {
 
     void handle_accepted(std::shared_ptr<GoalHandleFreedrive> goal_handle);
 
-    void execute(std::shared_ptr<GoalHandleFreedrive> goal_handle);
+    void execute(std::shared_ptr<GoalHandleFreedrive> goal_handle,
+                 std::stop_token stop_token);
 
     /** @brief Periodic keepalive toggling while in freedrive mode. */
-    void start_keepalive();
+    void start_keepalive(double rate);
     void stop_keepalive();
 
     /** @brief Publish a boolean freedrive state. */
     void publish_bool(bool value);
 
     /** @brief Switch between freedrive and standard controllers. */
-    bool switch_to_freedrive_controller(bool to_freedrive);
+    bool switch_to_freedrive_controller(
+        bool to_freedrive,
+        const std::shared_ptr<GoalHandleFreedrive> &goal_handle,
+        std::stop_token stop_token, bool force_request = false);
 };
 
 #endif // FREEDRIVE_NODE_HPP

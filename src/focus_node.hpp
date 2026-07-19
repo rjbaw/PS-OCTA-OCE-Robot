@@ -19,6 +19,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
+#include <thread>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
@@ -31,7 +32,6 @@
 #include <octa_ros/action/focus.hpp>
 #include <octa_ros/msg/img.hpp>
 #include <octa_ros/srv/scan3d.hpp>
-#include <std_srvs/srv/trigger.hpp>
 
 #include "utils.hpp"
 
@@ -54,6 +54,9 @@
  * - tool_link (string, default: "tcp"): end-effector link name.
  * - envelope_radius_m (double, default: 0.05 m): spherical envelope radius.
  * - curve_model_path (string): override ONNX model path used by detection.
+ *
+ * @note `plan_only`, timing, image, calibration, and model parameters are read
+ * during initialization. Restart the node after changing them.
  *
  * @par Subscriptions
  * - `octa_ros::msg::Img` on `image_topic` (QoS: best-effort).
@@ -82,6 +85,7 @@ class FocusActionServer : public rclcpp::Node {
      */
     explicit FocusActionServer(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+    ~FocusActionServer() override;
 
     /**
      * @brief Create publishers/subscribers, action server and service clients.
@@ -107,6 +111,7 @@ class FocusActionServer : public rclcpp::Node {
     std::array<cv::Mat, kBufferSize> buffer_;
     std::atomic<size_t> head_ = 0;
     std::atomic<size_t> tail_ = 0;
+    rclcpp::CallbackGroup::SharedPtr image_callback_group_;
     rclcpp::Subscription<octa_ros::msg::Img>::SharedPtr img_subscriber_;
 
     std::vector<Eigen::Vector3d> pc_lines_;
@@ -147,22 +152,8 @@ class FocusActionServer : public rclcpp::Node {
     double z_height_ = 0.0;
 
     rclcpp::Time start;
-
-    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
-        param_cb_handle_;
-
-#ifdef LEGACY_IMG_PIPELINE
-    /**
-     * @brief Capture current frame as background (for classic pipeline).
-     *
-     * Saves to package share `config/bg.jpg`.
-     */
-    void capture_background_callback(
-        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-        std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_background_srv_;
-#endif
+    std::jthread worker_;
+    std::jthread cancel_worker_;
 
     /**
      * @brief Fast check if the image is near-blank.
@@ -198,7 +189,9 @@ class FocusActionServer : public rclcpp::Node {
      * @brief Toggle 3D scan acquisition via service.
      * @param activate Whether to start (true) or stop (false) scanning.
      */
-    bool call_scan3d(bool activate);
+    bool call_scan3d(bool activate,
+                     const std::shared_ptr<GoalHandleFocus> &goal_handle,
+                     std::stop_token stop_token);
 
     /**
      * @brief Check whether roll/pitch are within the requested tolerance.
@@ -215,7 +208,8 @@ class FocusActionServer : public rclcpp::Node {
     rclcpp_action::CancelResponse
     handle_cancel(std::shared_ptr<GoalHandleFocus> goal_handle);
     void handle_accepted(std::shared_ptr<GoalHandleFocus> goal_handle);
-    void execute(std::shared_ptr<GoalHandleFocus> goal_handle);
+    void execute(std::shared_ptr<GoalHandleFocus> goal_handle,
+                 std::stop_token stop_token);
 };
 
 #endif // FOCUS_NODE_HPP

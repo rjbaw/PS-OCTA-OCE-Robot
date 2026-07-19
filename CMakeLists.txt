@@ -19,9 +19,6 @@ endif()
 
 option(ENABLE_CLANG_TIDY "Run clang-tidy during the build" ON)
 option(CLANG_TIDY_WARN_AS_ERRORS "Treat clang-tidy warnings as errors" OFF)
-option(LEGACY_IMG_PIPELINE
-       "Use classic CV-based image processing pipeline instead of ONNX model"
-       OFF)
 set(_OCTA_CLANG_TIDY_CMD "")
 if(ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy)
@@ -212,7 +209,7 @@ ament_target_dependencies(
   std_msgs)
 target_link_libraries(
   reset_node "${cpp_typesupport_target}"
-  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}" octa_motion_utils)
+  "${moveit_ros_planning_interface_LIBRARIES}" "${geometry_msgs_LIBRARIES}")
 
 add_executable(freedrive_node src/freedrive_node.cpp)
 ament_target_dependencies(
@@ -271,14 +268,6 @@ target_compile_definitions(reconnect_client PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(sub_img PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(test_detect PRIVATE OCTA_COORDINATOR_NO_MAIN)
 target_compile_definitions(run_state_listener PRIVATE OCTA_COORDINATOR_NO_MAIN)
-
-if(LEGACY_IMG_PIPELINE)
-  foreach(tgt IN ITEMS focus_node test_detect)
-    if(TARGET ${tgt})
-      target_compile_definitions(${tgt} PRIVATE LEGACY_IMG_PIPELINE)
-    endif()
-  endforeach()
-endif()
 
 get_target_property(_ORT_LOCATION onnxruntime::onnxruntime IMPORTED_LOCATION)
 if(NOT _ORT_LOCATION)
@@ -341,9 +330,41 @@ if(launch_testing_ament_cmake_FOUND)
 endif()
 
 if(BUILD_TESTING)
+  find_program(OCTA_PYTHON_EXECUTABLE NAMES python3)
+  if(NOT OCTA_PYTHON_EXECUTABLE)
+    message(FATAL_ERROR "python3 is required to run the Python tests")
+  endif()
   find_package(ament_cmake_gtest REQUIRED)
+  add_test(
+    NAME support_logs_py_test
+    COMMAND ${OCTA_PYTHON_EXECUTABLE} -m unittest discover -s
+            ${CMAKE_CURRENT_SOURCE_DIR}/test -p test_support_logs.py -v)
+  add_test(
+    NAME driver_manager_py_test
+    COMMAND ${OCTA_PYTHON_EXECUTABLE} -m unittest discover -s
+            ${CMAKE_CURRENT_SOURCE_DIR}/test -p test_driver_manager.py -v)
+  set_tests_properties(support_logs_py_test driver_manager_py_test
+                       PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   ament_add_gtest(motion_utils_test test/motion_utils_test.cpp)
   if(TARGET motion_utils_test)
     target_link_libraries(motion_utils_test octa_motion_utils)
+  endif()
+  ament_add_gtest(full_scan_request_latch_test
+                  test/full_scan_request_latch_test.cpp)
+  if(TARGET full_scan_request_latch_test)
+    target_include_directories(full_scan_request_latch_test PRIVATE
+                               ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    ament_target_dependencies(
+      full_scan_request_latch_test
+      rclcpp
+      rclcpp_action
+      action_msgs
+      moveit_ros_planning
+      moveit_ros_planning_interface
+      geometry_msgs
+      tf2_ros
+      std_msgs)
+    target_link_libraries(full_scan_request_latch_test
+                          "${cpp_typesupport_target}")
   endif()
 endif()

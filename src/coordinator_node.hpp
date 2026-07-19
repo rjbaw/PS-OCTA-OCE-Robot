@@ -25,8 +25,11 @@
  *   changes.
  * - scan_trigger_timeout_sec (double, default: 10.0 s): timeout for scan
  *   triggers.
- * - scan3d_window_ms (int, default: 50 ms): duration of scan window.
- * - service_poll_interval_ms (int, default: 1 ms): poll interval for services.
+ * - scan3d_window_ms (int, default: 50 ms): post-acknowledgement delay before
+ *   Scan3D activation succeeds.
+ *
+ * @note Coordinator parameters are read during initialization. Restart the
+ * node after changing them.
  *
  * @par Publishers
  * - `octa_ros::msg::Robotdata` on `topic_robot_data` (QoS: reliable).
@@ -54,9 +57,11 @@
 
 #include <atomic>
 #include <chrono>
-#include <mutex>
+#include <cstdint>
 #include <sstream>
+#include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rclcpp/parameter_client.hpp>
@@ -73,15 +78,126 @@
 #include <octa_ros/srv/scan3d.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <std_srvs/srv/trigger.hpp>
 
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 
+namespace octa_ros {
+
+/**
+ * @brief Convert LabVIEW's Fullscan level into start and cancel events.
+ *
+ * A HIGH level starts immediately while the latch is armed. During an active
+ * run, a LOW level starts a grace period so LabVIEW's temporary OCT-A
+ * completion dropout does not stop the recipe. If LOW remains present for the
+ * complete grace period, poll() emits one PersistentLow event and ends the
+ * active run.
+ *
+ * finish() is for completion or explicit cancellation. It disarms the latch,
+ * so a held HIGH (or recovery HIGH after an OCT-A dropout) cannot start another
+ * run. A genuine HIGH-to-LOW edge after finish() rearms it.
+ */
+class FullScanRequestLatch {
+  public:
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = Clock::time_point;
+
+    enum class Event : std::uint8_t {
+        None,
+        StartRequested,
+        PersistentLow,
+    };
+
+    explicit FullScanRequestLatch(Clock::duration low_grace_duration)
+        : low_grace_duration_(low_grace_duration) {}
+
+    /**
+     * @brief Observe the latest Fullscan level from LabVIEW.
+     *
+     * @return StartRequested exactly once when an armed latch observes HIGH.
+     *         Falling and recovery edges are handled without an immediate
+     *         event; poll() emits PersistentLow if the grace period expires.
+     */
+    [[nodiscard]] Event observe(bool level, TimePoint now) noexcept {
+        const bool previous_level = input_level_;
+        input_level_ = level;
+
+        if (!active_) {
+            if (!level) {
+                if (previous_level) {
+                    armed_ = true;
+                }
+                return Event::None;
+            }
+            if (!armed_) {
+                return Event::None;
+            }
+
+            active_ = true;
+            armed_ = false;
+            low_grace_active_ = false;
+            return Event::StartRequested;
+        }
+
+        if (level) {
+            low_grace_active_ = false;
+            return Event::None;
+        }
+
+        if (!low_grace_active_) {
+            low_grace_active_ = true;
+            low_since_ = now;
+        }
+        return Event::None;
+    }
+
+    /**
+     * @brief Check the active LOW grace period from a wall timer.
+     *
+     * @return PersistentLow exactly once when LOW has remained present for the
+     *         configured grace duration. The event ends the active run and the
+     *         sustained LOW rearms the latch for a future HIGH request.
+     */
+    [[nodiscard]] Event poll(TimePoint now) noexcept {
+        if (!active_ || !low_grace_active_ || input_level_ ||
+            now - low_since_ < low_grace_duration_) {
+            return Event::None;
+        }
+
+        active_ = false;
+        low_grace_active_ = false;
+        armed_ = true;
+        return Event::PersistentLow;
+    }
+
+    /**
+     * @brief End a completed or explicitly cancelled run and disarm.
+     *
+     * A subsequent HIGH-to-LOW edge is required before another HIGH can start.
+     */
+    void finish() noexcept {
+        active_ = false;
+        low_grace_active_ = false;
+        armed_ = false;
+    }
+
+    [[nodiscard]] bool active() const noexcept { return active_; }
+
+  private:
+    Clock::duration low_grace_duration_;
+    TimePoint low_since_;
+    bool input_level_ = false;
+    bool low_grace_active_ = false;
+    bool armed_ = true;
+    bool active_ = false;
+};
+
+} // namespace octa_ros
+
 /**
  * @brief High-level user intent states handled by the coordinator.
  */
-enum class UserAction : uint8_t {
+enum class UserAction : std::uint8_t {
     None,      ///< Idle / no action selected.
     Freedrive, ///< Robot freedrive mode.
     Reset,     ///< Return to default position.
@@ -90,13 +206,20 @@ enum class UserAction : uint8_t {
     Scan,      ///< LabVIEW acquisition trigger.
 };
 
+/** @brief Last controller status reported by the Freedrive action server. */
+enum class FreedriveStatus : std::uint8_t {
+    Off,
+    On,
+    Unconfirmed,
+};
+
 /**
  * @brief System operating modes.
  */
-enum class Mode : uint8_t {
+enum class Mode : std::uint8_t {
     ROBOT, ///< LabVIEW Robot mode.
     OCT,   ///< LabVIEW OCT mode.
-    OCTA,  ///< LabVIEW OCT mode.
+    OCTA,  ///< LabVIEW OCT-A mode.
     OCE,   ///< LabVIEW OCE mode.
 };
 
@@ -153,10 +276,13 @@ class CoordinatorNode : public rclcpp::Node {
     moveit::planning_interface::PlanningSceneInterface psi;
 
     // Execution groups & timers
-    rclcpp::CallbackGroup::SharedPtr parallel_group_;
+    rclcpp::CallbackGroup::SharedPtr coordinator_group_;
+    rclcpp::CallbackGroup::SharedPtr service_response_group_;
+    rclcpp::CallbackGroup::SharedPtr scan3d_service_group_;
     rclcpp::TimerBase::SharedPtr pub_timer_;
     rclcpp::TimerBase::SharedPtr main_loop_timer_;
     rclcpp::TimerBase::SharedPtr config_timer_;
+    rclcpp::TimerBase::SharedPtr full_scan_latch_timer_;
     std::weak_ptr<rclcpp::TimerBase> config_timer_weak_;
 
     int64_t pub_period_ms_ = 5;
@@ -165,10 +291,13 @@ class CoordinatorNode : public rclcpp::Node {
     int64_t config_apply_ms_ = 60;
     double scan_trigger_timeout_sec_ = 10.0;
     int64_t scan3d_window_ms_ = 50;
-    int64_t service_poll_interval_ms_ = 1;
-    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
-        param_cb_handle_;
-    static constexpr std::chrono::milliseconds kFullScanSwitchDelay{100};
+    static constexpr std::chrono::milliseconds kFullScanOffGrace{1000};
+    static constexpr std::chrono::milliseconds kFullScanLatchPollPeriod{10};
+    static constexpr std::chrono::milliseconds kFullScanPreviewSettleDelay{350};
+    static constexpr std::chrono::seconds kActionCancelTimeout{2};
+    static constexpr std::chrono::seconds kFreedriveCancelTimeout{6};
+    static constexpr std::chrono::seconds kFreedriveRetryInterval{1};
+    static constexpr std::chrono::seconds kResetActionTimeout{40};
 
     // Pub/Sub
     rclcpp::Publisher<octa_ros::msg::Robotdata>::SharedPtr pub_handle_;
@@ -182,28 +311,31 @@ class CoordinatorNode : public rclcpp::Node {
     MoveGoalHandle::SharedPtr active_move_handle_;
     FreedriveGoalHandle::SharedPtr active_freedrive_goal_handle_;
     ResetGoalHandle::SharedPtr active_reset_goal_handle_;
+    std::atomic<UserAction> active_action_ = UserAction::None;
+    FreedriveStatus freedrive_status_ = FreedriveStatus::Unconfirmed;
 
     // Internal state
-    std::atomic<UserAction> current_action_ = UserAction::None;
-    std::atomic<UserAction> previous_action_ = UserAction::None;
     octa_ros::msg::Labviewdata old_sub_msg_;
     octa_ros::msg::Robotdata old_pub_msg_;
     std::vector<Step> full_scan_recipe_;
-    std::atomic<bool> full_scan_centre_seeded_ = false;
-    std::atomic<bool> full_scan_plan_stale_ = true;
     double yaw_ = 0.0;
     double angle_increment_ = 0.0;
-    std::mutex data_mutex_;
-    bool scan_trigger_store_ = false;
+    bool scan_trigger_before_request_ = false;
+    bool waiting_for_scan_completion_ = false;
     std::atomic<bool> success_ = false;
     std::atomic<unsigned int> pc_ = 0;
     rclcpp::Time scan_start;
-    bool full_scan_delay_timer_active_ = false;
-    std::chrono::steady_clock::time_point full_scan_delay_since_;
+    octa_ros::FullScanRequestLatch full_scan_request_{kFullScanOffGrace};
+    // Cancel stops this source so callbacks from the interrupted action cannot
+    // change coordinator state after cancellation.
+    std::stop_source action_callback_stop_;
+    std::chrono::steady_clock::time_point action_wait_started_at_;
+    std::chrono::steady_clock::time_point labview_mode_changed_at_;
+    bool action_toggle_release_required_ = false;
 
     // Service variables
-    std::atomic<bool> cancel_action_ = false;
-    std::atomic<bool> triggered_service_ = false;
+    std::atomic<bool> cancel_in_progress_ = false;
+    bool cancel_button_pressed_ = false;
 
     // Publisher fields
     std::string msg_ = "idle";
@@ -232,7 +364,7 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<double> offset_x_ = 0.0;
     std::atomic<double> offset_y_ = 0.0;
     std::atomic<bool> autofocus_ = false;
-    std::atomic<bool> freedrive_ = false;
+    bool labview_freedrive_ = false;
     std::atomic<bool> previous_ = false;
     std::atomic<bool> next_ = false;
     std::atomic<bool> home_ = false;
@@ -251,8 +383,17 @@ class CoordinatorNode : public rclcpp::Node {
     std::atomic<bool> oce_mode_read_ = false;
 
     void trigger_apply_config();
+    void
+    handle_full_scan_request_event(octa_ros::FullScanRequestLatch::Event event);
+    void request_cancel(bool disarm_full_scan_latch);
+    void continue_cancel();
+    void finish_full_scan_request(bool disarm_latch = true);
+    [[nodiscard]] bool action_in_flight(UserAction action) const noexcept;
+    [[nodiscard]] bool any_action_in_flight() const noexcept;
+    [[nodiscard]] bool freedrive_safely_off() const noexcept;
+    [[nodiscard]] bool block_action_request(std::string_view action_name);
 
-    template <typename GH> bool goal_still_active(const GH &handle) {
+    template <typename GH> bool goal_can_be_canceled(const GH &handle) {
         if (!handle) {
             return false;
         }
@@ -278,8 +419,8 @@ class CoordinatorNode : public rclcpp::Node {
     /** @brief Core state machine tick; sends goals based on current state. */
     void main_loop();
 
-    /** @brief Send a focus action goal if not already active. */
-    void send_focus_goal();
+    /** @brief Send a focus action goal if its server is ready. */
+    [[nodiscard]] bool send_focus_goal();
     /** @brief Send a Move goal.
      *
      * @param yaw Target yaw increment [deg].
@@ -287,12 +428,12 @@ class CoordinatorNode : public rclcpp::Node {
      * @param offset_y Translation in Y [mm].
      * @param apply_offset If true, use XY translation.
      */
-    void send_move_goal(double yaw, double offset_x, double offset_y,
-                        bool apply_offset, bool centre_set);
+    [[nodiscard]] bool send_move_goal(double yaw, double offset_x,
+                                      double offset_y, bool apply_offset);
     /** @brief Send a Freedrive goal to enable/disable manual guidance. */
     void send_freedrive_goal(bool enable);
     /** @brief Send a Reset goal to return to a safe posture. */
-    void send_reset_goal();
+    [[nodiscard]] bool send_reset_goal();
     /** @brief Scan3d service handler. */
     void scan3d_callback(std::shared_ptr<Scan3d::Request> request,
                          std::shared_ptr<Scan3d::Response> response);
@@ -305,14 +446,6 @@ class CoordinatorNode : public rclcpp::Node {
      */
     void apply_speed_scale_to_node(const std::string &node_name,
                                    double vel_scale, double acc_scale);
-
-#ifdef LEGACY_IMG_PIPELINE
-    rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr
-        capture_background_client_;
-
-    /** @brief Call OCT background capture service; returns true if success. */
-    bool call_capture_background();
-#endif
 };
 
 #endif // COORDINATOR_NODE_HPP

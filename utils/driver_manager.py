@@ -51,6 +51,7 @@ class DriverManager(Node):
         host_ip: str,
         ur_type: str,
         headless: bool,
+        launch_rviz: bool,
         ping_timeout: float,
         run_state_stale_sec: float,
         ur_health_startup_grace_sec: float,
@@ -64,6 +65,7 @@ class DriverManager(Node):
         self.host_ip = host_ip or _detect_host_ip(robot_ip)
         self.ur_type = ur_type
         self.headless = headless
+        self.launch_rviz = launch_rviz
         self.ping_timeout = ping_timeout
         self.run_state_stale_sec = run_state_stale_sec
         self.ur_health_startup_grace_sec = ur_health_startup_grace_sec
@@ -93,13 +95,30 @@ class DriverManager(Node):
         self._last_stop_reason: str | None = None
 
         self.get_logger().info(
-            f"DriverManager: robot_ip={self.robot_ip} host_ip={self.host_ip} ur_type={self.ur_type} headless={self.headless}"
+            f"DriverManager: robot_ip={self.robot_ip} host_ip={self.host_ip} "
+            f"ur_type={self.ur_type} headless={self.headless} "
+            f"launch_rviz={self.launch_rviz}"
         )
 
     def _ensure_started(self):
         with self._lock:
-            if self._proc is not None and self._proc.poll() is None:
-                return
+            if self._proc is not None:
+                return_code = self._proc.poll()
+                if return_code is None:
+                    return
+                now = time.monotonic()
+                runtime_sec = (
+                    max(0.0, now - self._proc_start_time)
+                    if self._proc_start_time > 0.0
+                    else 0.0
+                )
+                self.get_logger().error(
+                    "ros2 launch exited unexpectedly: "
+                    f"pid={self._proc.pid} return_code={return_code} "
+                    f"runtime_sec={runtime_sec:.3f}"
+                )
+                self._proc = None
+                self._proc_start_time = 0.0
             # Build ros2 launch command
             args = [
                 "ros2",
@@ -109,6 +128,7 @@ class DriverManager(Node):
                 f"ur_type:={self.ur_type}",
                 f"robot_ip:={self.robot_ip}",
                 f"headless_mode:={'true' if self.headless else 'false'}",
+                f"launch_rviz:={'true' if self.launch_rviz else 'false'}",
                 f"reverse_ip:={self.host_ip}",
             ]
             env = os.environ.copy()
@@ -133,7 +153,9 @@ class DriverManager(Node):
                 self.driver_healthy = None
                 self.health_last_msg_time = 0.0
                 self.health_false_since = None
-                self.get_logger().info("ros2 launch started (subprocess)")
+                self.get_logger().info(
+                    f"ros2 launch started (subprocess): pid={self._proc.pid}"
+                )
             except Exception as e:
                 self.get_logger().error(f"Failed to start ros2 launch: {e}")
 
@@ -242,6 +264,12 @@ def main():
     parser.add_argument("--ur-type", default=os.environ.get("UR_TYPE", "ur3e"))
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument(
+        "--launch-rviz",
+        action="store_true",
+        default=os.environ.get("LAUNCH_RVIZ", "false").lower()
+        in {"1", "true", "yes", "on"},
+    )
+    parser.add_argument(
         "--ping-timeout", type=float, default=float(os.environ.get("PING_TIMEOUT", 3))
     )
     parser.add_argument(
@@ -288,6 +316,7 @@ def main():
         args.host_ip,
         args.ur_type,
         args.headless,
+        args.launch_rviz,
         args.ping_timeout,
         args.run_state_stale_sec,
         args.ur_health_startup_grace_sec,

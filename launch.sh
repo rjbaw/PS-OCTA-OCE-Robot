@@ -20,6 +20,7 @@ Environment variables:
   LOG_DIR            Logs directory (default ./logs)
   PRUNE_LOGS_DAYS    Days before log pruning (default 7)
   PING_TIMEOUT       Ping timeout seconds for reachability (default 3)
+  LAUNCH_RVIZ        Launch RViz with the managed or debug stack (default false)
 
 Behavior:
   - Starts the driver manager which launches/stops the ROS driver based on:
@@ -53,8 +54,24 @@ done
 
 LOG_DIR="${LOG_DIR:-$PWD/logs}"
 PRUNE_LOGS_DAYS="${PRUNE_LOGS_DAYS:-7}"
+if [[ ! "$PRUNE_LOGS_DAYS" =~ ^[0-9]+$ ]]; then
+	echo "PRUNE_LOGS_DAYS must be a non-negative integer" >&2
+	exit 2
+fi
+LOG_DIR="$(realpath -m -- "$LOG_DIR")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+LOG_DIR_FROM_ROOT="${LOG_DIR#/}"
+if [[ "$LOG_DIR_FROM_ROOT" != */*/* || "$REPO_ROOT" == "$LOG_DIR" ||
+	"$REPO_ROOT" == "$LOG_DIR"/* ]]; then
+	echo "Refusing unsafe LOG_DIR: $LOG_DIR" >&2
+	exit 2
+fi
 mkdir -p "$LOG_DIR"
-find "$LOG_DIR" -mindepth 1 -mtime +"$PRUNE_LOGS_DAYS" -exec rm -rf {} + 2>/dev/null || true
+if ! find "$LOG_DIR" -mindepth 1 \( -type f -o -type l \) \
+	-mtime +"$PRUNE_LOGS_DAYS" -delete ||
+	! find "$LOG_DIR" -depth -mindepth 1 -type d -empty -delete; then
+	echo "[WARN] Some old logs could not be pruned; continuing startup" >&2
+fi
 
 if [[ -z "${ROBOT_IP:-}" ]]; then
   if $sim; then
@@ -83,7 +100,12 @@ if $debug; then
 	export RCL_LOG_LEVEL=DEBUG
 	export ROS_LOG_LEVEL=DEBUG
 	cd /workspace/app 2>/dev/null || true
-	exec ros2 launch octa_ros launch.py ur_type:=$UR_TYPE robot_ip:=$ROBOT_IP headless_mode:=true reverse_ip:=$HOST_IP
+	exec ros2 launch octa_ros launch.py \
+		ur_type:="$UR_TYPE" \
+		robot_ip:="$ROBOT_IP" \
+		headless_mode:=true \
+		launch_rviz:="${LAUNCH_RVIZ:-false}" \
+		reverse_ip:="$HOST_IP"
 else
   echo "[INFO] Manager starting (ROBOT_IP=$ROBOT_IP HOST_IP=$HOST_IP)"
   exec ros2 run octa_ros driver_manager.py \

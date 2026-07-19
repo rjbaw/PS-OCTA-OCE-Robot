@@ -3,16 +3,15 @@
  * @author rjbaw
  * @brief Action server to move the robot to a known reset posture.
  *
- * Plans and executes a safe trajectory to return the robot to a known state,
- * with optional plan-only/offline modes. Publishes a URScript stop command when
- * canceling or on error.
+ * Sends a bounded URScript reset motion and confirms completion from the robot
+ * joint state. Cancel and timeout both publish a URScript stop command.
  *
  * @par Parameters
- * - plan_only (bool, default: false): skip execution (plan-only/CI mode).
- * - urscript_robot_vel (double, default: 0.5): URScript fallback joint
- *   velocity (m/s equivalent in UR units).
- * - urscript_robot_acc (double, default: 0.5): URScript fallback joint
- *   acceleration (m/s^2 equivalent in UR units).
+ * - plan_only (bool, default: false): skip the robot command and state
+ *   confirmation (CI mode). This mode requires a restart to change.
+ * - urscript_robot_vel (double, default: 0.5): reset joint velocity (rad/s).
+ * - urscript_robot_acc (double, default: 0.5): reset joint acceleration
+ *   (rad/s^2).
  *
  * @par Publishers
  * - `std_msgs::msg::String` on `/urscript_interface/script_command` (QoS:
@@ -27,30 +26,23 @@
 #ifndef RESET_NODE_HPP
 #define RESET_NODE_HPP
 
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <std_srvs/srv/trigger.hpp>
 
 #include <moveit/moveit_cpp/moveit_cpp.hpp>
-#include <moveit/moveit_cpp/planning_component.hpp>
 #include <octa_ros/action/reset.hpp>
-
-#include <moveit/robot_state/conversions.hpp>
-#include <moveit_msgs/msg/constraints.hpp>
-#include <moveit_msgs/msg/orientation_constraint.hpp>
-#include <moveit_msgs/msg/position_constraint.hpp>
-
-#include "motion_utils.hpp"
-#include "utils.hpp"
 
 /**
  * @brief Action server that safely returns the robot to a reset/home state.
  *
- * Publishes a stop command as needed and plans a safe trajectory back to a
- * known configuration using MoveIt.
+ * Publishes a stop command as needed and confirms the reset posture using
+ * MoveIt's monitored robot state.
  */
 class ResetActionServer : public rclcpp::Node {
   public:
@@ -72,13 +64,12 @@ class ResetActionServer : public rclcpp::Node {
     rclcpp_action::Server<ResetAction>::SharedPtr action_server_;
     std::shared_ptr<GoalHandleResetAction> active_goal_handle_;
     moveit_cpp::MoveItCppPtr moveit_cpp_;
-    std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
-    std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
-        tem_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
 
-    bool failed_ = false;
+    std::atomic<bool> cancel_requested_ = false;
+    std::mutex reset_mutex_;
+    std::jthread worker_;
 
     /** @brief Action callbacks for goal lifecycle and execution. */
     rclcpp_action::GoalResponse
@@ -94,7 +85,8 @@ class ResetActionServer : public rclcpp::Node {
      */
     void publish_stop(double decel = 2.0);
 
-    void execute(std::shared_ptr<GoalHandleResetAction> goal_handle);
+    void execute(std::shared_ptr<GoalHandleResetAction> goal_handle,
+                 std::stop_token stop_token);
 };
 
 #endif // RESET_NODE_HPP

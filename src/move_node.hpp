@@ -1,21 +1,21 @@
 /**
  * @file move_node.hpp
  * @author rjbaw
- * @brief Action server to move along Z and correct yaw angle.
+ * @brief Action server to translate in XY and rotate about Z.
  *
  * Provides a motion primitive to adjust yaw and translate in XY at a given
  * radius, while respecting constraints via MoveIt.
  *
  * @par Parameters
- * - plan_only (bool, default: false): skip execution (plan-only/CI mode).
+ * - plan_only (bool, default: false): skip planning and execution (CI mode).
+ *   This mode is selected at initialization and requires a restart to change.
  *
  * @par Action Server
  * - Name: `move_action`; Goal: `offset_x` (mm), `offset_y` (mm),
- *   `target_angle` (deg), `apply_offset` (bool), `angle` (deg path angle),
- *   `radius` (mm).
+ *   `target_angle` (deg), `apply_offset` (bool), and `radius` (mm).
  *
  * @note Units: angles are degrees in the action goal; internally converted to
- * radians. Distances are meters.
+ * radians. Goal distances are millimeters and are converted to meters.
  *
  * @ingroup actions
  */
@@ -23,10 +23,10 @@
 #ifndef MOVE_NODE_HPP
 #define MOVE_NODE_HPP
 
-#include <Eigen/Geometry>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <thread>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
@@ -49,15 +49,10 @@
 #include "utils.hpp"
 
 /**
- * @brief Action server that moves the tool along Z and adjusts yaw.
+ * @brief Action server that translates the tool in XY and adjusts yaw.
  *
  * Uses MoveIt to plan and execute a constrained motion, typically to reposition
  * the end-effector at a given radius and yaw angle while respecting limits.
- *
- * When `apply_offset` is false, the node captures the current TCP position as
- * the circle centre whenever `angle == 0` (degrees) and computes XY targets as
- * an absolute offset from that stored centre using the specified `radius` and
- * the cumulative path angle.
  */
 class MoveActionServer : public rclcpp::Node {
     using Move = octa_ros::action::Move;
@@ -69,6 +64,7 @@ class MoveActionServer : public rclcpp::Node {
      */
     explicit MoveActionServer(
         const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+    ~MoveActionServer() override;
 
     /**
      * @brief Initialize action server and MoveIt components.
@@ -83,13 +79,8 @@ class MoveActionServer : public rclcpp::Node {
     std::shared_ptr<moveit_cpp::PlanningComponent> planning_component_;
     std::shared_ptr<trajectory_execution_manager::TrajectoryExecutionManager>
         tem_;
-
-    double radius_ = 0.0;
-    double angle_ = 0.0;
-
-    Eigen::Vector3d centre_xyz_{0.0, 0.0, 0.0};
-    Eigen::Matrix3d centre_basis_{Eigen::Matrix3d::Identity()};
-    bool centre_set_ = false;
+    std::jthread worker_;
+    std::jthread cancel_worker_;
 
     /** @brief Action callbacks for goal lifecycle and execution. */
     rclcpp_action::GoalResponse
@@ -101,7 +92,8 @@ class MoveActionServer : public rclcpp::Node {
 
     void handle_accepted(std::shared_ptr<GoalHandleMove> goal_handle);
 
-    void execute(std::shared_ptr<GoalHandleMove> goal_handle);
+    void execute(std::shared_ptr<GoalHandleMove> goal_handle,
+                 std::stop_token stop_token);
 };
 
 #endif // MOVE_NODE_HPP

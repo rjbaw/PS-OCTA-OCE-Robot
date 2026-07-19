@@ -65,10 +65,17 @@ ROBOT_IP=192.168.0.10 make run
 # Show status (container, session, robot reachability)
 make status
 
-# Show logs
-# - if a crash log exists: print last 300 lines
-# - otherwise: tail RCUTILS logs
+# Summarize the newest incident and create a shareable .tar.gz support bundle.
+# Incident selection ignores later clean-shutdown noise.
 make logs
+
+# Focus on the newest fullscan or failure session
+make logs INCIDENT=fullscan
+make logs INCIDENT=error
+
+# Select the previous matching session (0 is newest), or use a custom regex
+make logs INCIDENT=fullscan SESSION=1
+make logs MATCH='trajectory.*failed'
 
 # Open a shell in the container
 make shell
@@ -76,7 +83,8 @@ make shell
 # Restart the container
 make restart
 
-# Prune logs older than 7 days (override with PRUNE_LOGS_DAYS=14)
+# Prune raw logs and support bundles older than 7 days
+# (override with PRUNE_LOGS_DAYS=14)
 make prune-logs
 ```
 
@@ -96,6 +104,7 @@ Environment knobs
 - `PING_TIMEOUT` — manager reachability timeout (seconds, default `3`)
 - `LOG_DIR` — logs directory (default `./logs`)
 - `PRUNE_LOGS_DAYS` — days before deletion (default `7`)
+- `LAUNCH_RVIZ` — launch RViz with the managed or debug stack (default `false`)
 - `RCUTILS_LOGGING_DIRECTORY` — when set, forces ROS logs under `LOG_DIR`
 
 #### Using URSim
@@ -128,6 +137,7 @@ Environment variables:
   LOG_DIR            Logs directory (default ./logs)
   PRUNE_LOGS_DAYS    Days before log pruning (default 7)
   PING_TIMEOUT       Ping timeout seconds for reachability (default 3)
+  LAUNCH_RVIZ        Launch RViz with the managed or debug stack (default false)
 
 Behavior:
   - Starts the driver manager which launches/stops the ROS driver based on:
@@ -193,7 +203,7 @@ Options:
 
 - `coordinator_node`: handles DDS messages and action server jobs
 - `focus_node`: handles image capture and auto-focusing of end effector to desired position.
-- `reset_node`: moves robot to default position and captures preview background
+- `reset_node`: moves the robot to its default position
 - `move_node`: adjusts yaw and/or translates the robot end effector around the TCP at a given radius
 - `freedrive_node`: switch robot controller to `freedrive_mode_controller` and back to `scaled_joint_trajectory_controller`
 - `reconnect_client`: resets the robot status to ready mode 

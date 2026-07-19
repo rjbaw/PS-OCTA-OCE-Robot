@@ -33,7 +33,6 @@ GCC_MULTIARCH ?= $(shell g++ -print-multiarch 2>/dev/null)
 help:
 	@echo "Make targets:"
 	@echo "  build  - Build $(PKG) (BUILD_TYPE=$(BUILD_TYPE))"
-	@echo "  build-legacy - Build $(PKG) with LEGACY_IMG_PIPELINE=ON"
 	@echo "  test   - Run full-stack test (URSim + container + bag)"
 	@echo "  test-ci - Run CI test suite"
 	@echo "  format - clang-format tracked C/C++ files; ruff on Python"
@@ -44,7 +43,7 @@ help:
 	@echo "  dev    - Start dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
-	@echo "  logs   - Prune old logs, then show last 300 lines"
+	@echo "  logs   - Summarize the latest incident and create a support bundle"
 	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
@@ -66,24 +65,6 @@ build:
       fi; \
     fi; \
 	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) -DENABLE_CLANG_TIDY=ON; \
-	if [ -f build/$(PKG)/compile_commands.json ]; then \
-	  ln -sf build/$(PKG)/compile_commands.json ./compile_commands.json; \
-	elif [ -f build/compile_commands.json ]; then \
-	  ln -sf build/compile_commands.json ./compile_commands.json; \
-	fi
-
-build-legacy:
-	@set -eo pipefail; \
-    if [ ! -f "$(ROS_SETUP)" ]; then \
-      if [ -n "$$ROS_DISTRO" ] && [ -f "/opt/ros/$$ROS_DISTRO/setup.bash" ]; then \
-        ROS_SETUP="/opt/ros/$$ROS_DISTRO/setup.bash"; \
-        echo "Using ROS setup at $$ROS_SETUP (ROS_DISTRO=$$ROS_DISTRO)"; \
-      else \
-        echo "ROS setup not found at $(ROS_SETUP). Set ROS_SETUP or export ROS_DISTRO."; \
-        exit 1; \
-      fi; \
-    fi; \
-	$(COLCON) build --base-paths . --packages-select $(PKG) --cmake-args $(CMAKE_ARGS) -DENABLE_CLANG_TIDY=ON -DLEGACY_IMG_PIPELINE=ON; \
 	if [ -f build/$(PKG)/compile_commands.json ]; then \
 	  ln -sf build/$(PKG)/compile_commands.json ./compile_commands.json; \
 	elif [ -f build/compile_commands.json ]; then \
@@ -218,38 +199,30 @@ down:
 	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true; \
 	if [ -f docker/docker-compose-cuda.yaml ]; then docker compose -f docker/docker-compose-cuda.yaml down --remove-orphans || true; fi
 
+INCIDENT ?= auto
+MATCH ?=
+SESSION ?= 0
+VIEW ?= summary
+LOG_DIR ?= logs
+SUPPORT_DIR ?= $(LOG_DIR)/support-bundles
+LOG_RAW_LINES ?= 2000
+LOG_MAX_FILE_BYTES ?= 26214400
+LOG_MAX_BUNDLE_BYTES ?= 104857600
+
 logs:
 	@set -euo pipefail; \
-	PRUNE_LOGS_DAYS=$(PRUNE_LOGS_DAYS) $(MAKE) -s prune-logs; \
-	CRASH=$$(ls -1t logs/ros_crash_*.log 2>/dev/null | head -n1 || true); \
-	if [ -n "$$CRASH" ]; then \
-	  echo "Last crash log (tail -300): $$CRASH"; \
-	  tail -n 300 "$$CRASH" | sed -e 's/^/[ROS] /'; \
-	  exit 0; \
-	fi; \
-	LATEST_DIR=$$(find logs -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-); \
-	if [ -n "$$LATEST_DIR" ]; then \
-	  echo "RCUTILS logs in: $$LATEST_DIR"; \
-	  find "$$LATEST_DIR" -type f -name '*.log' -print0 | xargs -0 -r -I{} sh -c 'echo "===== {} (WARN/ERROR last 300, or tail -100) ====="; if grep -qE "\\[(WARN|ERROR|FATAL)\\]" "{}"; then grep -E "\\[(WARN|ERROR|FATAL)\\]" "{}" | tail -n 300; else tail -n 100 "{}"; fi'; \
-	fi; \
-	COORD=$$(ls -1t logs/coordinator_node_*.log 2>/dev/null | head -n1 || true); \
-	if [ -n "$$COORD" ]; then \
-	  echo "===== $$COORD (tail -200 coordinator_node) ====="; \
-	  tail -n 200 "$$COORD"; \
-	fi; \
-	for pat in ros2_control_node_ urscript_interface_ controller_stopper_node_ dashboard_client_; do \
-	  F=$$(ls -1t logs/$$pat*.log 2>/dev/null | head -n1 || true); \
-	  if [ -n "$$F" ]; then \
-	    echo "===== $$F (tail -200 $$pat) ====="; \
-	    tail -n 200 "$$F"; \
-	  fi; \
-	done; \
-	if command -v docker >/dev/null 2>&1; then \
-	  echo "Checking in-container logs..."; \
-	  docker exec ps-oce-robot bash -lc 'LOGDIR=$${RCUTILS_LOGGING_DIRECTORY:-$$HOME/.ros/log}; echo "Container log dir: $$LOGDIR"; if [ -d "$$LOGDIR" ]; then find "$$LOGDIR" -type f -name "*.log" -print0 | xargs -0 -r -I{} sh -c "echo \"===== {} (WARN/ERROR last 300, or tail -100) =====\"; if grep -qE \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\"; then grep -E \"\\[(WARN|ERROR|FATAL)\\]\" \"{}\" | tail -n 300; else tail -n 100 \"{}\"; fi\"; else echo \"No container logs available.\"; fi'; \
-	else \
-	  echo "Docker not available; skipping container logs."; \
-	fi
+	args=( \
+	  --log-dir "$(LOG_DIR)" \
+	  --output-dir "$(SUPPORT_DIR)" \
+	  --incident "$(INCIDENT)" \
+	  --session "$(SESSION)" \
+	  --view "$(VIEW)" \
+	  --raw-lines "$(LOG_RAW_LINES)" \
+	  --max-file-bytes "$(LOG_MAX_FILE_BYTES)" \
+	  --max-bundle-bytes "$(LOG_MAX_BUNDLE_BYTES)" \
+	); \
+	if [ -n "$(strip $(MATCH))" ]; then args+=(--match "$(MATCH)"); fi; \
+	python3 utils/support_logs.py "$${args[@]}"
 
 status:
 	@set -e; \
@@ -283,7 +256,21 @@ restart:
 
 PRUNE_LOGS_DAYS ?= 7
 prune-logs:
-	@set -e; \
-	mkdir -p logs; \
-	find logs -mindepth 1 -mtime +$(PRUNE_LOGS_DAYS) -exec rm -rf {} + 2>/dev/null || true; \
-	echo "Pruned logs older than $(PRUNE_LOGS_DAYS) days from ./logs"
+	@set -euo pipefail; \
+	log_dir='$(LOG_DIR)'; \
+	days='$(PRUNE_LOGS_DAYS)'; \
+	if [[ ! "$$days" =~ ^[0-9]+$$ ]]; then \
+	  echo "PRUNE_LOGS_DAYS must be a non-negative integer" >&2; exit 2; \
+	fi; \
+	resolved=$$(realpath -m -- "$$log_dir"); \
+	repo_root=$$(pwd -P); \
+	from_root="$${resolved#/}"; \
+	if [[ -z "$$log_dir" || "$$log_dir" == . || "$$from_root" != */*/* || \
+	      "$$repo_root" == "$$resolved" || "$$repo_root" == "$$resolved"/* ]]; then \
+	  echo "Refusing unsafe LOG_DIR: $$log_dir" >&2; exit 2; \
+	fi; \
+	mkdir -p -- "$$resolved"; \
+	find "$$resolved" -mindepth 1 \( -type f -o -type l \) \
+	  -mtime "+$$days" -delete; \
+	find "$$resolved" -depth -mindepth 1 -type d -empty -delete; \
+	echo "Pruned logs older than $$days days from $$resolved"

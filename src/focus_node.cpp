@@ -7,6 +7,7 @@
 #include "focus_node.hpp"
 #include "motion_utils.hpp"
 #include "process_img.hpp"
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <open3d/Open3D.h>
@@ -20,6 +21,33 @@ FocusActionServer::FocusActionServer(const rclcpp::NodeOptions &options)
     : Node("focus_action_server",
            rclcpp::NodeOptions(options)
                .automatically_declare_parameters_from_overrides(true)) {}
+
+FocusActionServer::~FocusActionServer() {
+    action_server_.reset();
+    if (cancel_worker_.joinable()) {
+        cancel_worker_.request_stop();
+        cancel_worker_.join();
+    }
+    if (worker_.joinable()) {
+        worker_.request_stop();
+        try {
+            if (tem_ && active_goal_handle_ &&
+                active_goal_handle_->is_active()) {
+                tem_->stopExecution(true);
+            }
+        } catch (const std::exception &exception) {
+            RCLCPP_ERROR(get_logger(),
+                         "Could not stop Focus during shutdown: %s",
+                         exception.what());
+        } catch (...) {
+            RCLCPP_ERROR(get_logger(),
+                         "Could not stop Focus during shutdown: unknown "
+                         "exception");
+        }
+        worker_.join();
+    }
+    active_goal_handle_.reset();
+}
 
 void FocusActionServer::init() {
     action_server_ = rclcpp_action::create_server<Focus>(
@@ -69,63 +97,7 @@ void FocusActionServer::init() {
                                              std::string(""));
     }
 
-    param_cb_handle_ = this->add_on_set_parameters_callback(
-        [this](const std::vector<rclcpp::Parameter> &params) {
-            rcl_interfaces::msg::SetParametersResult result;
-            result.successful = true;
-            result.reason = "";
-            for (const auto &param : params) {
-                const auto &name = param.get_name();
-                if (name == "focus_step_timeout_sec") {
-                    if (param.as_double() <= 0.0) {
-                        result.successful = false;
-                        result.reason = "focus_step_timeout_sec must be > 0";
-                        return result;
-                    }
-                } else if (name == "scan3d_service_wait_ms" ||
-                           name == "scan3d_response_timeout_ms") {
-                    if (param.as_int() <= 0) {
-                        result.successful = false;
-                        result.reason = "integer parameter must be > 0";
-                        return result;
-                    }
-                } else if (name == "px_per_mm") {
-                    if (param.as_double() <= 0.0) {
-                        result.successful = false;
-                        result.reason = "px_per_mm must be > 0";
-                        return result;
-                    }
-                } else if (name == "curve_model_path") {
-                    const auto &path_val = param.as_string();
-                    if (!path_val.empty() &&
-                        !std::filesystem::exists(path_val)) {
-                        result.successful = false;
-                        result.reason = "curve_model_path does not exist";
-                        return result;
-                    }
-                }
-            }
-            for (const auto &param : params) {
-                const auto &name = param.get_name();
-                if (name == "focus_step_timeout_sec") {
-                    focus_step_timeout_sec_ = param.as_double();
-                } else if (name == "scan3d_service_wait_ms") {
-                    scan3d_service_wait_ms_ = param.as_int();
-                } else if (name == "scan3d_response_timeout_ms") {
-                    scan3d_response_timeout_ms_ = param.as_int();
-                } else if (name == "px_per_mm") {
-                    px_per_mm_ = param.as_double();
-                } else if (name == "curve_model_path") {
-                    const std::string &path_val = param.as_string();
-                    if (!path_val.empty()) {
-                        octa_ros::img::set_curve_model_path(path_val);
-                    }
-                }
-            }
-            return result;
-        });
-
-    bool plan_only = this->get_parameter("plan_only").as_bool();
+    const bool plan_only = this->get_parameter("plan_only").as_bool();
     focus_step_timeout_sec_ =
         this->get_parameter("focus_step_timeout_sec").as_double();
     scan3d_service_wait_ms_ =
@@ -138,7 +110,6 @@ void FocusActionServer::init() {
         std::filesystem::exists(curve_model_path)) {
         octa_ros::img::set_curve_model_path(curve_model_path);
     }
-#ifndef LEGACY_IMG_PIPELINE
     octa_ros::img::preload_curve_model(static_cast<std::size_t>(interval_));
     if (!plan_only) {
         cv::Mat warmup_img(static_cast<int>(image_height_),
@@ -147,7 +118,6 @@ void FocusActionServer::init() {
         octa_ros::img::warmup_curve_model(warmup_img,
                                           static_cast<std::size_t>(interval_));
     }
-#endif
 
     if (!plan_only) {
         moveit_cpp_ =
@@ -160,10 +130,10 @@ void FocusActionServer::init() {
                     "Plan-only/Offline mode: skipping MoveIt initialization");
     }
 
-    auto parallel_group_ =
-        this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    image_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
     rclcpp::SubscriptionOptions img_options;
-    img_options.callback_group = parallel_group_;
+    img_options.callback_group = image_callback_group_;
     last_store_time_ = now() - rclcpp::Duration::from_seconds(gating_interval_);
     buffer_.fill(cv::Mat());
     image_topic_ = this->get_parameter("image_topic").as_string();
@@ -175,14 +145,6 @@ void FocusActionServer::init() {
         img_options);
 
     service_scan_3d_ = create_client<Scan3d>("scan_3d");
-#ifdef LEGACY_IMG_PIPELINE
-    capture_background_srv_ = create_service<std_srvs::srv::Trigger>(
-        "capture_background",
-        [this](const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-               std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-            this->capture_background_callback(request, response);
-        });
-#endif
 }
 
 int main(int argc, char **argv) {
@@ -199,13 +161,14 @@ int main(int argc, char **argv) {
 rclcpp_action::GoalResponse FocusActionServer::handle_goal(
     [[maybe_unused]] const rclcpp_action::GoalUUID &uuid,
     std::shared_ptr<const Focus::Goal> goal) {
-    angle_tolerance_ = goal->angle_tolerance;
-    z_tolerance_ = goal->z_tolerance;
-    z_height_ = goal->z_height;
+    if (active_goal_handle_ && active_goal_handle_->is_active()) {
+        RCLCPP_WARN(get_logger(), "Focus goal still processing");
+        return rclcpp_action::GoalResponse::REJECT;
+    }
     RCLCPP_INFO(get_logger(),
                 "Focus goal: angle_tolerance=%.2f deg, "
                 "z_height_tolerance=%.2f mm",
-                angle_tolerance_, z_tolerance_);
+                goal->angle_tolerance, goal->z_tolerance);
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
@@ -215,27 +178,87 @@ rclcpp_action::CancelResponse FocusActionServer::handle_cancel(
         RCLCPP_INFO(get_logger(), "Focus goal no longer active");
         return rclcpp_action::CancelResponse::REJECT;
     }
-    auto result = std::make_shared<Focus::Result>();
-    result->status = "Focus action canceled by user request\n";
-    call_scan3d(false);
-    head_.notify_all();
-    tem_->stopExecution(true);
-    planning_component_->setStartStateToCurrentState();
-    RCLCPP_INFO(get_logger(), "Focus action canceled");
+    try {
+        if (service_scan_3d_->service_is_ready()) {
+            auto request = std::make_shared<Scan3d::Request>();
+            request->activate = false;
+            service_scan_3d_->async_send_request(request);
+        }
+    } catch (const std::exception &exception) {
+        RCLCPP_WARN(get_logger(), "Could not request Scan3D OFF: %s",
+                    exception.what());
+    } catch (...) {
+        RCLCPP_WARN(get_logger(),
+                    "Could not request Scan3D OFF: unknown exception");
+    }
+    if (!cancel_worker_.joinable()) {
+        cancel_worker_ = std::jthread([this, goal_handle](
+                                          std::stop_token stop_token) {
+            try {
+                while (!stop_token.stop_requested() &&
+                       goal_handle->is_active() &&
+                       !goal_handle->is_canceling()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                if (!stop_token.stop_requested() &&
+                    goal_handle->is_canceling() && tem_) {
+                    tem_->stopExecution(true);
+                }
+            } catch (const std::exception &exception) {
+                RCLCPP_ERROR(get_logger(),
+                             "Could not stop Focus trajectory: %s",
+                             exception.what());
+            } catch (...) {
+                RCLCPP_ERROR(get_logger(),
+                             "Could not stop Focus trajectory: unknown "
+                             "exception");
+            }
+        });
+    }
+    RCLCPP_INFO(get_logger(), "Focus cancel request accepted");
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
 void FocusActionServer::handle_accepted(
     const std::shared_ptr<GoalHandleFocus> goal_handle) {
-    auto result = std::make_shared<Focus::Result>();
-    result->status = "Pre-empted by new goal\n";
-    RCLCPP_INFO(get_logger(), "Preempting old goal...");
-
-    if (active_goal_handle_ && active_goal_handle_->is_active()) {
-        active_goal_handle_->abort(result);
+    if (cancel_worker_.joinable()) {
+        cancel_worker_.join();
+    }
+    if (worker_.joinable()) {
+        worker_.join();
     }
     active_goal_handle_ = goal_handle;
-    std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
+    worker_ = std::jthread([this, goal_handle](std::stop_token stop_token) {
+        const auto terminate_goal = [this, goal_handle,
+                                     stop_token](const char *status) {
+            if (stop_token.stop_requested()) {
+                return;
+            }
+            try {
+                auto result = std::make_shared<Focus::Result>();
+                result->status = status;
+                if (goal_handle->is_canceling()) {
+                    goal_handle->canceled(result);
+                } else if (goal_handle->is_active()) {
+                    goal_handle->abort(result);
+                }
+            } catch (...) {
+                RCLCPP_ERROR(get_logger(),
+                             "Could not terminate failed Focus goal");
+            }
+        };
+        try {
+            execute(goal_handle, stop_token);
+        } catch (const std::exception &exception) {
+            RCLCPP_ERROR(get_logger(), "Unhandled Focus exception: %s",
+                         exception.what());
+            terminate_goal("Focus failed due to an internal exception\n");
+        } catch (...) {
+            RCLCPP_ERROR(get_logger(),
+                         "Unhandled non-standard Focus exception");
+            terminate_goal("Focus failed due to an internal exception\n");
+        }
+    });
 }
 
 bool FocusActionServer::is_black(const cv::Mat &img, uint8_t pixel_thres,
@@ -260,7 +283,6 @@ void FocusActionServer::push_frame(const cv::Mat &frame) {
     if (next == tail_.load()) {
         tail_ = (tail_ + 1) & (kBufferSize - 1);
     }
-    head_.notify_all();
 }
 
 bool FocusActionServer::pop_new(cv::Mat &frame) {
@@ -280,25 +302,6 @@ cv::Mat FocusActionServer::get_img() {
     pop_new(frame);
     return frame;
 }
-
-#ifdef LEGACY_IMG_PIPELINE
-void FocusActionServer::capture_background_callback(
-    [[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request>
-        request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-    cv::Mat frame = get_img();
-    if (!frame.empty()) {
-        std::string pkg_share =
-            ament_index_cpp::get_package_share_directory("octa_ros");
-        std::string bg_path = pkg_share + "/config/bg.jpg";
-        cv::imwrite(bg_path, frame);
-        response->success = true;
-    } else {
-        RCLCPP_INFO(get_logger(), "No image captured – background not saved");
-        response->success = false;
-    }
-}
-#endif
 
 void FocusActionServer::image_callback(
     const octa_ros::msg::Img::SharedPtr msg) {
@@ -324,17 +327,44 @@ void FocusActionServer::image_callback(
     push_frame(new_img);
 }
 
-bool FocusActionServer::call_scan3d(bool activate) {
-    if (!service_scan_3d_->wait_for_service(
-            std::chrono::milliseconds(scan3d_service_wait_ms_))) {
+bool FocusActionServer::call_scan3d(
+    bool activate, const std::shared_ptr<GoalHandleFocus> &goal_handle,
+    std::stop_token stop_token) {
+    constexpr auto kInterruptPollPeriod = 20ms;
+    const auto interrupted = [&]() {
+        return stop_token.stop_requested() || goal_handle->is_canceling();
+    };
+    const auto service_deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(scan3d_service_wait_ms_);
+    while (!service_scan_3d_->service_is_ready()) {
+        if (interrupted() ||
+            std::chrono::steady_clock::now() >= service_deadline) {
+            return false;
+        }
+        (void)service_scan_3d_->wait_for_service(kInterruptPollPeriod);
+    }
+    if (interrupted()) {
         return false;
     }
+
     auto req = std::make_shared<Scan3d::Request>();
     req->activate = activate;
     auto fut = service_scan_3d_->async_send_request(req);
-    return fut.wait_for(std::chrono::milliseconds(
-               scan3d_response_timeout_ms_)) == std::future_status::ready &&
-           fut.get()->success;
+    const auto response_deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(scan3d_response_timeout_ms_);
+    while (std::chrono::steady_clock::now() < response_deadline) {
+        if (interrupted()) {
+            service_scan_3d_->remove_pending_request(fut);
+            return false;
+        }
+        if (fut.wait_for(kInterruptPollPeriod) == std::future_status::ready) {
+            return fut.get()->success;
+        }
+    }
+    service_scan_3d_->remove_pending_request(fut);
+    return false;
 }
 
 bool FocusActionServer::tol_measure(const double &roll, const double &pitch,
@@ -344,26 +374,47 @@ bool FocusActionServer::tol_measure(const double &roll, const double &pitch,
 }
 
 void FocusActionServer::execute(
-    const std::shared_ptr<GoalHandleFocus> goal_handle) {
-    if (!goal_handle->is_active()) {
+    const std::shared_ptr<GoalHandleFocus> goal_handle,
+    std::stop_token stop_token) {
+    if (stop_token.stop_requested() || !goal_handle->is_active()) {
         return;
     }
     auto feedback = std::make_shared<Focus::Feedback>();
     auto result = std::make_shared<Focus::Result>();
+    const auto handle_interruption = [&]() {
+        if (stop_token.stop_requested()) {
+            return true;
+        }
+        if (!goal_handle->is_canceling()) {
+            return false;
+        }
+        result->status = "Cancel requested!\n";
+        goal_handle->canceled(result);
+        RCLCPP_INFO(get_logger(), "Cancel requested!");
+        if (planning_component_) {
+            planning_component_->setStartStateToCurrentState();
+        }
+        return true;
+    };
+    const auto goal = goal_handle->get_goal();
+    angle_tolerance_ = goal->angle_tolerance;
+    z_tolerance_ = goal->z_tolerance;
+    z_height_ = goal->z_height;
 
-    goal_handle->publish_feedback(feedback);
-    bool plan_only_fb = this->get_parameter("plan_only").as_bool();
-    if (plan_only_fb) {
-        feedback->debug_msgs = "Plan-only mode: skipping execution.\n";
-        goal_handle->publish_feedback(feedback);
-        result->status = "Focus completed (plan-only/offline)\n";
-        goal_handle->succeed(result);
+    if (handle_interruption()) {
         return;
     }
-    bool plan_only = this->get_parameter("plan_only").as_bool();
+    goal_handle->publish_feedback(feedback);
+    const bool plan_only = !moveit_cpp_;
     if (plan_only) {
+        if (handle_interruption()) {
+            return;
+        }
         feedback->debug_msgs = "Plan-only mode: skipping execution.\n";
         goal_handle->publish_feedback(feedback);
+        if (handle_interruption()) {
+            return;
+        }
         result->status = "Focus completed (plan-only/offline)\n";
         goal_handle->succeed(result);
         return;
@@ -374,22 +425,12 @@ void FocusActionServer::execute(
     planning_ = false;
 
     while (!angle_focused_ || !z_focused_) {
-        if (goal_handle->is_canceling()) {
-            tem_->stopExecution(true);
-            result->status = "Cancel requested!\n";
-            goal_handle->canceled(result);
-            RCLCPP_INFO(get_logger(), "Cancel requested!");
-            planning_component_->setStartStateToCurrentState();
+        if (handle_interruption()) {
             return;
         }
         start = now();
-        while (!call_scan3d(true)) {
-            if (goal_handle->is_canceling()) {
-                tem_->stopExecution(true);
-                result->status = "Cancel requested!\n";
-                goal_handle->canceled(result);
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
+        while (!call_scan3d(true, goal_handle, stop_token)) {
+            if (handle_interruption()) {
                 return;
             }
             if ((now() - start).seconds() > focus_step_timeout_sec_) {
@@ -399,23 +440,17 @@ void FocusActionServer::execute(
                 return;
             }
         }
-        std::this_thread::sleep_for(400ms);
         std::vector<cv::Mat> img_array;
         for (int i = 0; i < interval_; i++) {
             start = now();
             while (true) {
+                if (handle_interruption()) {
+                    return;
+                }
                 cv::Mat frame = get_img();
                 if (!frame.empty()) {
                     img_array.push_back(frame);
                     break;
-                }
-                if (goal_handle->is_canceling()) {
-                    tem_->stopExecution(true);
-                    result->status = "Cancel requested!\n";
-                    goal_handle->canceled(result);
-                    RCLCPP_INFO(get_logger(), "Cancel requested!");
-                    planning_component_->setStartStateToCurrentState();
-                    return;
                 }
                 if ((now() - start).seconds() > focus_step_timeout_sec_) {
                     RCLCPP_WARN(get_logger(),
@@ -426,17 +461,12 @@ void FocusActionServer::execute(
                 }
             }
             msg_ = std::format("Collected image {}", i + 1);
-            RCLCPP_INFO(get_logger(), msg_.c_str());
+            RCLCPP_INFO(get_logger(), "%s", msg_.c_str());
         }
 
         start = now();
-        while (!call_scan3d(false)) {
-            if (goal_handle->is_canceling()) {
-                tem_->stopExecution(true);
-                result->status = "Cancel requested!\n";
-                goal_handle->canceled(result);
-                RCLCPP_INFO(get_logger(), "Cancel requested!");
-                planning_component_->setStartStateToCurrentState();
+        while (!call_scan3d(false, goal_handle, stop_token)) {
+            if (handle_interruption()) {
                 return;
             }
             if ((now() - start).seconds() > focus_step_timeout_sec_) {
@@ -446,14 +476,23 @@ void FocusActionServer::execute(
                 return;
             }
         }
+        if (handle_interruption()) {
+            return;
+        }
         msg_ = "Calculating Rotations";
-        RCLCPP_INFO(get_logger(), msg_.c_str());
+        RCLCPP_INFO(get_logger(), "%s", msg_.c_str());
 
         auto surface = octa_ros::img::reconstruct_surface(img_array, interval_);
+        if (handle_interruption()) {
+            return;
+        }
         pc_lines_ = surface.point_cloud;
         if (pc_lines_.empty()) {
             feedback->debug_msgs = "Background detected"
                                    "; reacquiring image stack...\n";
+            if (handle_interruption()) {
+                return;
+            }
             goal_handle->publish_feedback(feedback);
             RCLCPP_WARN(get_logger(),
                         "Background detected in the image stack; retrying...");
@@ -487,6 +526,9 @@ void FocusActionServer::execute(
         planning_component_->setStartStateToCurrentState();
         moveit::core::RobotStatePtr current_state =
             moveit_cpp_->getCurrentState();
+        if (handle_interruption()) {
+            return;
+        }
         Eigen::Isometry3d current_pose =
             current_state->getGlobalLinkTransform(tool_link);
         target_pose_.header.frame_id = moveit_cpp_->getPlanningSceneMonitor()
@@ -518,14 +560,17 @@ void FocusActionServer::execute(
                            to_degree(roll_), to_degree(pitch_), to_degree(yaw_),
                            center[0], center[1], center[2], dz_ * 1000);
         feedback->debug_msgs = msg_;
+        if (handle_interruption()) {
+            return;
+        }
         goal_handle->publish_feedback(feedback);
-        RCLCPP_INFO(get_logger(), msg_.c_str());
+        RCLCPP_INFO(get_logger(), "%s", msg_.c_str());
 
         if (tol_measure(roll_, pitch_, angle_tolerance_)) {
             angle_focused_ = true;
             msg_ = "=> Angle focused\n";
             feedback->debug_msgs = msg_;
-            RCLCPP_INFO(get_logger(), msg_.c_str());
+            RCLCPP_INFO(get_logger(), "%s", msg_.c_str());
             goal_handle->publish_feedback(feedback);
         } else {
             if (!angle_corrected_) {
@@ -541,7 +586,7 @@ void FocusActionServer::execute(
             z_focused_ = true;
             msg_ = "=> Height focused\n";
             feedback->debug_msgs = msg_;
-            RCLCPP_INFO(get_logger(), msg_.c_str());
+            RCLCPP_INFO(get_logger(), "%s", msg_.c_str());
             goal_handle->publish_feedback(feedback);
         } else {
             z_focused_ = false;
@@ -569,6 +614,9 @@ void FocusActionServer::execute(
         }
 
         if (planning_) {
+            if (handle_interruption()) {
+                return;
+            }
             planning_component_->setStartStateToCurrentState();
             moveit::core::RobotStatePtr cur_state =
                 moveit_cpp_->getCurrentState();
@@ -607,16 +655,15 @@ void FocusActionServer::execute(
                 };
             planning_interface::MotionPlanResponse plan_solution =
                 planning_component_->plan(req, choose_shortest);
+            if (handle_interruption()) {
+                return;
+            }
             if (plan_solution) {
-                if (goal_handle->is_canceling()) {
-                    result->status = "Cancel requested!\n";
-                    goal_handle->canceled(result);
-                    RCLCPP_INFO(get_logger(), "Cancel requested!");
-                    planning_component_->setStartStateToCurrentState();
-                    return;
-                }
                 bool execute_success = static_cast<bool>(
                     moveit_cpp_->execute(plan_solution.trajectory));
+                if (handle_interruption()) {
+                    return;
+                }
                 if (execute_success) {
                     planning_ = false;
                     RCLCPP_INFO(get_logger(), "Execute Success!");
@@ -641,10 +688,7 @@ void FocusActionServer::execute(
         }
     }
 
-    if (goal_handle->is_canceling()) {
-        result->status = "Focus action canceled\n";
-        goal_handle->publish_feedback(feedback);
-        goal_handle->canceled(result);
+    if (handle_interruption()) {
         return;
     }
 

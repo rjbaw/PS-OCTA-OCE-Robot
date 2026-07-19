@@ -5,14 +5,42 @@
  */
 
 #include "move_node.hpp"
-#include <Eigen/src/Core/Matrix.h>
-#include <Eigen/src/Geometry/Rotation2D.h>
-#include <Eigen/src/Geometry/Transform.h>
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+#include <exception>
 
 MoveActionServer::MoveActionServer(const rclcpp::NodeOptions &options)
     : Node("move_action_server",
            rclcpp::NodeOptions(options)
                .automatically_declare_parameters_from_overrides(true)) {}
+
+MoveActionServer::~MoveActionServer() {
+    action_server_.reset();
+    if (cancel_worker_.joinable()) {
+        cancel_worker_.request_stop();
+        cancel_worker_.join();
+    }
+    if (worker_.joinable()) {
+        worker_.request_stop();
+        try {
+            if (tem_ && active_goal_handle_ &&
+                active_goal_handle_->is_active()) {
+                tem_->stopExecution(true);
+            }
+        } catch (const std::exception &exception) {
+            RCLCPP_ERROR(get_logger(),
+                         "Could not stop Move during shutdown: %s",
+                         exception.what());
+        } catch (...) {
+            RCLCPP_ERROR(get_logger(),
+                         "Could not stop Move during shutdown: unknown "
+                         "exception");
+        }
+        worker_.join();
+    }
+    active_goal_handle_.reset();
+}
 
 void MoveActionServer::init() {
     const auto get_bool_param = [this](const std::string &name,
@@ -58,8 +86,6 @@ rclcpp_action::GoalResponse MoveActionServer::handle_goal(
     RCLCPP_INFO(this->get_logger(),
                 "Received Move goal with target_angle = %.2f",
                 goal->target_angle);
-    radius_ = goal->radius;
-    angle_ = goal->angle;
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
@@ -70,55 +96,122 @@ rclcpp_action::CancelResponse MoveActionServer::handle_cancel(
         return rclcpp_action::CancelResponse::REJECT;
     }
     RCLCPP_INFO(this->get_logger(), "Cancel request received for Move.");
-    tem_->stopExecution(true);
+    if (!cancel_worker_.joinable()) {
+        cancel_worker_ = std::jthread([this, goal_handle](
+                                          std::stop_token stop_token) {
+            try {
+                while (!stop_token.stop_requested() &&
+                       goal_handle->is_active() &&
+                       !goal_handle->is_canceling()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                if (!stop_token.stop_requested() &&
+                    goal_handle->is_canceling() && tem_) {
+                    tem_->stopExecution(true);
+                }
+            } catch (const std::exception &exception) {
+                RCLCPP_ERROR(get_logger(), "Could not stop Move trajectory: %s",
+                             exception.what());
+            } catch (...) {
+                RCLCPP_ERROR(get_logger(),
+                             "Could not stop Move trajectory: unknown "
+                             "exception");
+            }
+        });
+    }
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
 void MoveActionServer::handle_accepted(
     const std::shared_ptr<GoalHandleMove> goal_handle) {
-    if (active_goal_handle_ && active_goal_handle_->is_active()) {
-        active_goal_handle_->abort(std::make_shared<Move::Result>());
+    if (cancel_worker_.joinable()) {
+        cancel_worker_.join();
+    }
+    if (worker_.joinable()) {
+        worker_.join();
     }
     active_goal_handle_ = goal_handle;
-    std::thread([this, goal_handle]() { execute(goal_handle); }).detach();
+    worker_ = std::jthread([this, goal_handle](std::stop_token stop_token) {
+        const auto terminate_goal = [this, goal_handle,
+                                     stop_token](const char *status) {
+            if (stop_token.stop_requested()) {
+                return;
+            }
+            try {
+                auto result = std::make_shared<Move::Result>();
+                result->status = status;
+                if (goal_handle->is_canceling()) {
+                    goal_handle->canceled(result);
+                } else if (goal_handle->is_active()) {
+                    goal_handle->abort(result);
+                }
+            } catch (...) {
+                RCLCPP_ERROR(get_logger(),
+                             "Could not terminate failed Move goal");
+            }
+        };
+        try {
+            execute(goal_handle, stop_token);
+        } catch (const std::exception &exception) {
+            RCLCPP_ERROR(get_logger(), "Unhandled Move exception: %s",
+                         exception.what());
+            terminate_goal("Move failed due to an internal exception\n");
+        } catch (...) {
+            RCLCPP_ERROR(get_logger(), "Unhandled non-standard Move exception");
+            terminate_goal("Move failed due to an internal exception\n");
+        }
+    });
 }
 
 void MoveActionServer::execute(
-    const std::shared_ptr<GoalHandleMove> goal_handle) {
+    const std::shared_ptr<GoalHandleMove> goal_handle,
+    std::stop_token stop_token) {
+    if (stop_token.stop_requested() || !goal_handle->is_active()) {
+        return;
+    }
     RCLCPP_INFO(get_logger(), "Starting Move execution...");
     auto feedback = std::make_shared<Move::Feedback>();
     auto result = std::make_shared<Move::Result>();
+    const auto handle_interruption = [&]() {
+        if (stop_token.stop_requested()) {
+            return true;
+        }
+        if (!goal_handle->is_canceling()) {
+            return false;
+        }
+        feedback->debug_msgs = "Move canceled by request.\n";
+        result->status = "Move Canceled\n";
+        goal_handle->canceled(result);
+        return true;
+    };
 
     const auto goal = goal_handle->get_goal();
     const double offset_x_mm = goal->offset_x;
     const double offset_y_mm = goal->offset_y;
     const double target_angle_deg = goal->target_angle;
+    const double radius_mm = goal->radius;
     const bool apply_offset = goal->apply_offset;
     RCLCPP_INFO(get_logger(), "Offset X: %.2f mm", offset_x_mm);
     RCLCPP_INFO(get_logger(), "Offset Y: %.2f mm", offset_y_mm);
     RCLCPP_INFO(get_logger(), "Target angle: %.2f deg", target_angle_deg);
 
-    const auto get_bool_param = [this](const std::string &name,
-                                       bool default_value) -> bool {
-        return this->has_parameter(name)
-                   ? this->get_parameter(name).as_bool()
-                   : this->declare_parameter<bool>(name, default_value);
-    };
-    const bool plan_only = get_bool_param("plan_only", false);
+    const bool plan_only = !moveit_cpp_;
     if (plan_only) {
+        if (handle_interruption()) {
+            return;
+        }
         feedback->debug_msgs =
             "Plan-only mode: skipping planning and execution.\n";
         goal_handle->publish_feedback(feedback);
+        if (handle_interruption()) {
+            return;
+        }
         result->status = "Move completed (plan-only/offline)\n";
         goal_handle->succeed(result);
         return;
     }
 
-    if (goal_handle->is_canceling()) {
-        feedback->debug_msgs = "Move was canceled before starting.\n";
-        result->status = "Move Canceled\n";
-        goal_handle->publish_feedback(feedback);
-        goal_handle->canceled(result);
+    if (handle_interruption()) {
         return;
     }
 
@@ -128,6 +221,9 @@ void MoveActionServer::execute(
             ? this->get_parameter("tool_link").as_string()
             : this->declare_parameter<std::string>("tool_link", "tcp");
     moveit::core::RobotStatePtr current_state = moveit_cpp_->getCurrentState();
+    if (handle_interruption()) {
+        return;
+    }
     Eigen::Isometry3d current_pose =
         current_state->getGlobalLinkTransform(tool_link);
     geometry_msgs::msg::PoseStamped target_pose;
@@ -145,7 +241,7 @@ void MoveActionServer::execute(
         target_pose.pose.position.y += offset_world.y();
         target_pose.pose.position.z += offset_world.z();
     } else {
-        const double offset_radius_mm = 4.3 - radius_;
+        const double offset_radius_mm = 4.3 - radius_mm;
         const double offset_radius_m = offset_radius_mm * 0.001;
         const double target_angle_rad = to_radian(target_angle_deg);
         Eigen::Isometry3d T_tcp_oce = Eigen::Isometry3d::Identity();
@@ -209,6 +305,9 @@ void MoveActionServer::execute(
     {
         const std::string wrist_joint = "wrist_3_joint";
         moveit::core::RobotStatePtr seed_state = moveit_cpp_->getCurrentState();
+        if (handle_interruption()) {
+            return;
+        }
         const auto *jmg = seed_state->getJointModelGroup("ur_manipulator");
 
         const double sign = wrist_spin_sign(*seed_state, wrist_joint);
@@ -296,10 +395,16 @@ void MoveActionServer::execute(
         return fail;
     };
     planning_interface::MotionPlanResponse plan_solution;
+    if (handle_interruption()) {
+        return;
+    }
     if (std::fabs(target_rad) > 1e-6) {
         plan_solution = planning_component_->plan(req, enforce_direction);
     } else {
         plan_solution = planning_component_->plan(req);
+    }
+    if (handle_interruption()) {
+        return;
     }
     if (plan_solution.error_code.val !=
         moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
@@ -312,23 +417,20 @@ void MoveActionServer::execute(
     }
 
     feedback->debug_msgs = "Planning succeeded; starting execution.\n";
+    if (handle_interruption()) {
+        return;
+    }
     goal_handle->publish_feedback(feedback);
 
-    if (goal_handle->is_canceling()) {
-        feedback->debug_msgs = "Canceled before execution.\n";
-        result->status = "Move Canceled\n";
-        goal_handle->publish_feedback(feedback);
-        goal_handle->canceled(result);
+    if (handle_interruption()) {
         return;
     }
 
-    bool execute_success = true;
-    if (!plan_only) {
-        auto exec_status = moveit_cpp_->execute(plan_solution.trajectory);
-        execute_success = static_cast<bool>(exec_status);
-    } else {
-        RCLCPP_INFO(get_logger(), "Plan-only/Offline mode: skipping execution");
+    const auto exec_status = moveit_cpp_->execute(plan_solution.trajectory);
+    if (handle_interruption()) {
+        return;
     }
+    const bool execute_success = static_cast<bool>(exec_status);
     if (!execute_success) {
         RCLCPP_ERROR(get_logger(), "Execution failed!");
         feedback->debug_msgs = "Execution failed!\n";
@@ -338,16 +440,11 @@ void MoveActionServer::execute(
         return;
     }
 
-    if (goal_handle->is_canceling()) {
-        feedback->debug_msgs = "Canceled after execution.\n";
-        result->status = "Move Canceled\n";
-        goal_handle->publish_feedback(feedback);
-        goal_handle->canceled(result);
-        return;
-    }
-
     feedback->debug_msgs = "Move completed successfully!\n";
     result->status = "Move completed\n";
+    if (handle_interruption()) {
+        return;
+    }
     goal_handle->publish_feedback(feedback);
     goal_handle->succeed(result);
     RCLCPP_INFO(get_logger(), "Move done.");

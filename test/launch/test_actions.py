@@ -8,6 +8,7 @@ import launch_testing
 
 try:
     import rclpy
+    from action_msgs.msg import GoalStatus
     from rclpy.action import ActionClient
     from octa_ros.action import Freedrive, Reset, Move, Focus
 
@@ -82,6 +83,7 @@ class TestActionGoals(unittest.TestCase):
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
         goal_handle = future.result()
         self.assertIsNotNone(goal_handle)
+        self.assertTrue(goal_handle.accepted)
         result_future = goal_handle.get_result_async()
         rclpy.spin_until_future_complete(self.node, result_future, timeout_sec=10.0)
         result = result_future.result()
@@ -97,12 +99,12 @@ class TestActionGoals(unittest.TestCase):
         res2 = self._send_goal(
             Freedrive, "freedrive_action", Freedrive.Goal(enable=False)
         )
-        self.assertIsNotNone(res1)
-        self.assertIsNotNone(res2)
+        self.assertEqual(res1.status, GoalStatus.STATUS_SUCCEEDED)
+        self.assertEqual(res2.status, GoalStatus.STATUS_SUCCEEDED)
 
     def test_reset(self):
         res = self._send_goal(Reset, "reset_action", Reset.Goal(reset=True))
-        self.assertIsNotNone(res)
+        self.assertEqual(res.status, GoalStatus.STATUS_SUCCEEDED)
 
     def test_move(self):
         goal = Move.Goal()
@@ -111,17 +113,18 @@ class TestActionGoals(unittest.TestCase):
         goal.apply_offset = False
         goal.target_angle = 5.0
         goal.radius = 0.0
-        goal.angle = 0.0
-        res = self._send_goal(Move, "move_action", goal)
-        self.assertIsNotNone(res)
+        for _ in range(2):
+            res = self._send_goal(Move, "move_action", goal)
+            self.assertEqual(res.status, GoalStatus.STATUS_SUCCEEDED)
 
     def test_focus(self):
         goal = Focus.Goal()
         goal.angle_tolerance = 1.0
         goal.z_tolerance = 0.5
         goal.z_height = 0.0
-        res = self._send_goal(Focus, "focus_action", goal)
-        self.assertIsNotNone(res)
+        for _ in range(2):
+            res = self._send_goal(Focus, "focus_action", goal)
+            self.assertEqual(res.status, GoalStatus.STATUS_SUCCEEDED)
 
 
 @launch_testing.post_shutdown_test()

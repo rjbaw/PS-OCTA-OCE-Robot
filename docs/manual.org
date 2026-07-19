@@ -110,11 +110,10 @@ make down
 make status
 
 # Logs
-make logs         # show last 300 lines (crash tail or RCUTILS)
+make logs         # summarize the newest incident and create a support bundle
 make prune-logs   # delete logs older than 7 days (override: PRUNE_LOGS_DAYS=14)
 
 # Interact
-(manager mode) use make logs
 make shell        # open a shell in the container
 
 # Restart container
@@ -143,7 +142,7 @@ Make targets:
   dev-cpu - Start cpu dev container (mounts source, bash)
   local  - Build deployment image from local sources
   down   - Stop both dev and run containers
-  logs   - Show last 300 lines (crash tail or RCUTILS)
+  logs   - Summarize the latest incident and create a support bundle
   status - Show container, manager, and robot reachability
   shell  - Open an interactive shell in the container
   restart - Restart container (down then run)
@@ -173,10 +172,7 @@ make shell
 ./launch.sh -d    # for debugging
 #+end_src
 
-#+ATTR_LATEX: :options frame=lines, linenos
-#+begin_src bash
-(manager mode) use make logs
-#+end_src
+For manager and node diagnostics, run ~make logs~ from the project root on the host.
 
 ** Code location
 *** Project root (host)
@@ -232,17 +228,22 @@ For now there is bug where you cannot rotate more than \( (-2\pi, 2\pi)\).
 
 ** Robot is moving erratically / Image detection is failing
 If symptoms persist, try working through the following in order.
-1. Recapture the background image using the =Reset= button.
-2. Restart the robot driver by toggling =Robot ON/OFF= between the ON and OFF state.
-3. Restart LabVIEW and run =make restart=.
-4. Contact maintainer.
+1. Restart the robot driver by toggling =Robot ON/OFF= between the ON and OFF state.
+2. Restart LabVIEW and run =make restart=.
+3. Run ~make logs INCIDENT=error~ and send the generated support bundle to the maintainer.
 
 ** Log Reporting
 *** Quick view
 #+ATTR_LATEX: :options frame=lines, linenos
 #+begin_src bash
-make logs   # shows recent WARN/ERROR lines (or crash tail)
+make logs                    # newest operational incident
+make logs INCIDENT=fullscan  # newest Fullscan session
+make logs INCIDENT=error     # newest genuine crash/error
+make logs SESSION=1          # previous matching session (SESSION=0 is newest)
+make logs VIEW=raw           # contiguous original lines from that coordinator log
 #+end_src
+
+By default, ~SESSION=0~ selects the newest matching session. The output identifies the selected session and shows the oldest and newest matching sessions in chronological order. The command prints a short summary and creates a bounded =.tar.gz= support bundle under =./logs/support-bundles/=. ~LOG_MAX_BUNDLE_BYTES~ limits the final compressed archive size; if necessary, raw logs are omitted and recorded in =manifest.txt=. It does not merge event lines from different processes. ~VIEW=raw~ prints one contiguous, unfiltered clip from the selected coordinator INFO log, with its source path and physical line boundaries. Increase the clip with ~LOG_RAW_LINES=4000~ if needed. Later clean-shutdown noise and explicitly benign cancellation messages are ignored unless ~INCIDENT=latest~ is requested. A generic action =CANCELED= result remains visible because the log alone cannot reliably distinguish a user request from an action-server disconnect.
 
 *** Crash logs (saved automatically)
 #+ATTR_LATEX: :options frame=lines, linenos
@@ -261,8 +262,8 @@ docker compose logs -f
 #+end_src
 
 *** What to send to maintainer
-- The latest crash tail: =./logs/ros_crash_*.log=
-- Compose output excerpt (if relevant): =docker compose logs -f=
+- The =.tar.gz= archive printed by =make logs=.
+- Review =runtime/context.txt= and =runtime/docker.log= before sharing outside the support team; they may contain configured IP addresses, dirty-file names, or application output.
 
 
 * Environment knobs
@@ -271,6 +272,7 @@ docker compose logs -f
 - =PING_TIMEOUT=: manager reachability timeout (seconds, default =3=)
 - =LOG_DIR=: base logs directory (default =./logs=)
 - =PRUNE_LOGS_DAYS=: days before logs deletion (default 7)
+- =LAUNCH_RVIZ=: launch RViz with the managed or debug stack (default =false=; =make test= sets =true=)
 - =RCUTILS_LOGGING_DIRECTORY=: when set, forces ROS logs under =LOG_DIR=
 
 Notes:
@@ -290,8 +292,10 @@ Notes:
 - Key parameters:
   - =config_apply_ms= (int, default 60): debounce before applying mode changes to LabVIEW.
   - =scan_trigger_timeout_sec= (double, default 10.0): max time a scan trigger can stay active before it is cleared.
-  - =scan3d_window_ms= (int, default 50): duration of the 3D scan acquisition window.
-  - =service_poll_interval_ms= (int, default 1): poll interval for scan3d and legacy background services.
+  - =scan3d_window_ms= (int, default 50): post-acknowledgement settling delay before Scan3D activation succeeds.
+- Fullscan waits 350 ms after LabVIEW reports a changed Robot/OCT/OCT-A/OCE mode before dispatching the next recipe action. An already-stable mode proceeds immediately.
+
+These coordinator parameters are read during node initialization; restart the node after changing them.
 
 Once running, you can inspect these with:
 
@@ -304,7 +308,7 @@ ros2 param get  /coordinator_node scan_trigger_timeout_sec
 ** Focus (=focus_node=)
 - Role: acquires OCT frames, estimates surface normal and height, and commands small corrective motions via =focus_action=.
 - Parameters:
-  - =plan_only= (bool, default =false=): when =true=, no MoveIt execution (used for CI and simulation).
+  - =plan_only= (bool, default =false=): when =true=, no MoveIt execution (used for CI and simulation; restart required to change).
   - =focus_step_timeout_sec= (double, default =10.0=): per‑step timeout for each focus correction (scan + motion).
   - =scan3d_service_wait_ms= (int, default =200=): wait for =Scan3d= service to be available.
   - =scan3d_response_timeout_ms= (int, default =4000=): RPC timeout for =Scan3d= service calls.
@@ -313,14 +317,15 @@ ros2 param get  /coordinator_node scan_trigger_timeout_sec
   - =tool_link= (string, default ="tcp"=): MoveIt tool link used for constraints and goals.
   - =envelope_radius_m= (double, default =0.05=): radius of the spherical envelope constraint around current TCP.
 - Tips:
+  - Focus timing, image, calibration, and model parameters are read at startup; restart the node after changing them.
   - If focus actions time out too often, consider increasing =focus_step_timeout_sec= slightly.
   - If you re‑calibrate imaging, update =px_per_mm= to match the new scaling.
 
 ** Move (=move_node=)
 - Role: moves the end effector in yaw and/or around a circular path centered at the TCP.
-- Action: =move_action= with goal fields (=offset_x=, =offset_y=, =target_angle=, =radius=, =angle=, =apply_offset=).
+- Action: =move_action= with goal fields (=offset_x=, =offset_y=, =target_angle=, =radius=, =apply_offset=).
 - Parameters:
-  - =plan_only= (bool, default =false=): when =true=, only plan; do not execute.
+  - =plan_only= (bool, default =false=): when =true=, skip planning and execution (restart required to change).
   - =envelope_radius_m= (double, default =0.05=): path‑constraint envelope radius around current TCP.
 
 In CI, =plan_only=true= is set automatically; for manual dry runs:
@@ -331,12 +336,11 @@ ros2 run octa_ros move_node --ros-args -p plan_only:=true
 #+end_src
 
 ** Reset (=reset_node=)
-- Role: returns the robot to a known reset posture, using MoveIt when possible, and URScript fallback otherwise.
+- Role: returns the robot to a known reset posture with URScript and confirms completion from the monitored joint state within 30 seconds.
 - Parameters:
-  - =plan_only= (bool, default =false=): when =true=, do not execute trajectories.
-  - =urscript_robot_vel= (double, default =0.5=): velocity used for URScript fallback =movej=.
-  - =urscript_robot_acc= (double, default =0.5=): acceleration used for URScript fallback =movej=.
-  - =envelope_radius_m= (double, default =0.05=): radius of the planning envelope around current TCP for reset motion.
+  - =plan_only= (bool, default =false=): when =true=, skip the robot command and state confirmation (restart required to change).
+  - =urscript_robot_vel= (double, default =0.5=): velocity used for the reset =movej=.
+  - =urscript_robot_acc= (double, default =0.5=): acceleration used for the reset =movej=.
 
 ** Freedrive (=freedrive_node=)
 - Role: toggles gravity‑compensated freedrive mode and keeps it alive while active.
@@ -345,7 +349,7 @@ ros2 run octa_ros move_node --ros-args -p plan_only:=true
   - =freedrive_controller= (string, default ="freedrive_mode_controller"=).
   - =keepalive_rate= (double, default =5.0=): keepalive publish rate in Hz.
   - =switch_timeout= (double, default =3.0=): timeout for controller manager switches.
-  - =dry_run= (bool, default =false=): skip controller manager calls (used in CI and dev without hardware).
+  - =dry_run= (bool, default =false=): skip controller manager calls (used in CI and dev without hardware; restart required to change).
 
 In CI, the launch tests set =dry_run=true= so that controller switches are simulated.
 ** Launch helper
@@ -362,6 +366,7 @@ Environment variables:
   LOG_DIR            Logs directory (default ./logs)
   PRUNE_LOGS_DAYS    Days before log pruning (default 7)
   PING_TIMEOUT       Ping timeout seconds for reachability (default 3)
+  LAUNCH_RVIZ        Launch RViz with the managed or debug stack (default false)
 
 Behavior:
   - Starts the driver manager which launches/stops the ROS driver based on:
