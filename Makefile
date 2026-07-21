@@ -43,7 +43,7 @@ help:
 	@echo "  dev    - Start dev container (mounts source, bash)"
 	@echo "  local  - Build deployment image from local sources"
 	@echo "  down   - Stop both dev and run containers"
-	@echo "  logs   - Summarize the latest incident and create a support bundle"
+	@echo "  logs   - Summarize the latest session and create a support bundle"
 	@echo "  status - Show container, manager, and robot reachability"
 	@echo "  shell  - Open an interactive shell in the container"
 	@echo "  restart - Restart container (down then run)"
@@ -199,7 +199,7 @@ down:
 	docker compose -f docker/docker-compose-cpu.yaml down --remove-orphans || true; \
 	if [ -f docker/docker-compose-cuda.yaml ]; then docker compose -f docker/docker-compose-cuda.yaml down --remove-orphans || true; fi
 
-INCIDENT ?= auto
+INCIDENT ?= latest
 MATCH ?=
 SESSION ?= 0
 VIEW ?= summary

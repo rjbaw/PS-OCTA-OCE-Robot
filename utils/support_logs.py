@@ -71,6 +71,7 @@ IGNORED_FAILURE_PATTERNS = (
     "no 3d sensor plugin(s) defined for octomap updates",
     "resolution not specified for octomap",
     "publisher already registered for node name",
+    "unknown cancel response, ignoring",
 )
 EXPECTED_CANCELLATION_PATTERNS = (
     "goal canceled by the user",
@@ -1145,8 +1146,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--incident",
         choices=("auto", "fullscan", "error", "latest"),
-        default="auto",
-        help="auto prefers incidents over later clean-shutdown sessions",
+        default="latest",
+        help="latest selects the newest session; auto searches for incidents",
     )
     parser.add_argument(
         "--match", help="case-insensitive regular expression overriding --incident"

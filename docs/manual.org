@@ -110,7 +110,7 @@ make down
 make status
 
 # Logs
-make logs         # summarize the newest incident and create a support bundle
+make logs         # summarize the newest session and create a support bundle
 make prune-logs   # delete logs older than 7 days (override: PRUNE_LOGS_DAYS=14)
 
 # Interact
@@ -142,7 +142,7 @@ Make targets:
   dev-cpu - Start cpu dev container (mounts source, bash)
   local  - Build deployment image from local sources
   down   - Stop both dev and run containers
-  logs   - Summarize the latest incident and create a support bundle
+  logs   - Summarize the latest session and create a support bundle
   status - Show container, manager, and robot reachability
   shell  - Open an interactive shell in the container
   restart - Restart container (down then run)
@@ -236,14 +236,15 @@ If symptoms persist, try working through the following in order.
 *** Quick view
 #+ATTR_LATEX: :options frame=lines, linenos
 #+begin_src bash
-make logs                    # newest operational incident
+make logs                    # newest coordinator session
+make logs INCIDENT=auto      # newest incident, even if an operational session is newer
 make logs INCIDENT=fullscan  # newest Fullscan session
 make logs INCIDENT=error     # newest genuine crash/error
 make logs SESSION=1          # previous matching session (SESSION=0 is newest)
 make logs VIEW=raw           # contiguous original lines from that coordinator log
 #+end_src
 
-By default, ~SESSION=0~ selects the newest matching session. The output identifies the selected session and shows the oldest and newest matching sessions in chronological order. The command prints a short summary and creates a bounded =.tar.gz= support bundle under =./logs/support-bundles/=. ~LOG_MAX_BUNDLE_BYTES~ limits the final compressed archive size; if necessary, raw logs are omitted and recorded in =manifest.txt=. It does not merge event lines from different processes. ~VIEW=raw~ prints one contiguous, unfiltered clip from the selected coordinator INFO log, with its source path and physical line boundaries. Increase the clip with ~LOG_RAW_LINES=4000~ if needed. Later clean-shutdown noise and explicitly benign cancellation messages are ignored unless ~INCIDENT=latest~ is requested. A generic action =CANCELED= result remains visible because the log alone cannot reliably distinguish a user request from an action-server disconnect.
+By default, ~make logs~ selects the newest coordinator session, and ~SESSION=0~ selects the newest session matching any explicit filter. Use ~INCIDENT=auto~ to search incident-bearing sessions even when a newer clean session exists. The output identifies the selected session and shows the oldest and newest matching sessions in chronological order. The command prints a short summary and creates a bounded =.tar.gz= support bundle under =./logs/support-bundles/=. ~LOG_MAX_BUNDLE_BYTES~ limits the final compressed archive size; if necessary, raw logs are omitted and recorded in =manifest.txt=. It does not merge event lines from different processes. ~VIEW=raw~ prints one contiguous, unfiltered clip from the selected coordinator INFO log, with its source path and physical line boundaries. Increase the clip with ~LOG_RAW_LINES=4000~ if needed. Exact known-benign cancellation diagnostics are ignored for incident selection but remain present in raw logs. A generic action =CANCELED= result remains visible because the log alone cannot reliably distinguish a user request from an action-server disconnect.
 
 *** Crash logs (saved automatically)
 #+ATTR_LATEX: :options frame=lines, linenos

@@ -488,6 +488,10 @@ def launch_setup():
         condition=IfCondition(run_reconnect_node),
     )
 
+    control_exit_handler = RegisterEventHandler(
+        OnProcessExit(target_action=control_node, on_exit=[Shutdown()]),
+        condition=IfCondition(shutdown_on_exit),
+    )
     joint_publisher_exit_handler = RegisterEventHandler(
         OnProcessExit(target_action=robot_state_node, on_exit=[Shutdown()]),
         condition=IfCondition(shutdown_on_exit),
@@ -515,6 +519,7 @@ def launch_setup():
 
     nodes_to_start = (
         [
+            control_exit_handler,
             control_node,
             dashboard_client_node,
             tool_communication_node,

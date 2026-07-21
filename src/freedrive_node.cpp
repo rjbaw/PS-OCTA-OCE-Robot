@@ -29,12 +29,6 @@ FreedriveActionServer::FreedriveActionServer(const rclcpp::NodeOptions &options)
             "/controller_manager/switch_controller");
         list_client_ = this->create_client<ListSrv>(
             "/controller_manager/list_controllers");
-        if (!switch_client_->wait_for_service(std::chrono::seconds(10))) {
-            RCLCPP_FATAL(get_logger(),
-                         "controller_manager service not available – is "
-                         "ros2_control running?");
-            throw std::runtime_error("no /controller_manager service");
-        }
     } else {
         RCLCPP_INFO(get_logger(),
                     "Dry-run mode: skipping controller_manager client setup");

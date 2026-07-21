@@ -189,7 +189,7 @@ class SupportLogsTest(unittest.TestCase):
                 clean_shutdown=True,
             )
 
-            completed = self._run(log_dir, output_dir)
+            completed = self._run(log_dir, output_dir, "--incident", "auto")
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(
@@ -279,7 +279,7 @@ class SupportLogsTest(unittest.TestCase):
             self.assertIn("PS-OCTA/OCE incident summary", report)
             self.assertNotIn("BEGIN ORIGINAL LOG", report)
 
-    def test_latest_can_intentionally_select_clean_shutdown_session(self):
+    def test_default_selects_newest_clean_session(self):
         with tempfile.TemporaryDirectory() as temp_name:
             temp = Path(temp_name)
             log_dir = temp / "logs"
@@ -301,7 +301,7 @@ class SupportLogsTest(unittest.TestCase):
                 clean_shutdown=True,
             )
 
-            completed = self._run(log_dir, output_dir, "--incident", "latest")
+            completed = self._run(log_dir, output_dir)
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("Reason: latest coordinator activity", completed.stdout)
@@ -395,7 +395,7 @@ class SupportLogsTest(unittest.TestCase):
                 required_crash="freedrive_node-15",
             )
 
-            completed = self._run(log_dir, output_dir)
+            completed = self._run(log_dir, output_dir, "--incident", "auto")
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(
@@ -597,11 +597,25 @@ class SupportLogsTest(unittest.TestCase):
                     "Goal canceled by the user\n"
                     f"[INFO] [{start + 4:.9f}] [coordinator_node]: "
                     "Action cancelled normally\n"
+                    f"[ERROR] [{start + 4.25:.9f}] "
+                    "[coordinator_node.rclcpp_action]: "
+                    "unknown cancel response, ignoring...\n"
                 )
 
             expected_cancel = self._run(log_dir, output_dir, "--incident", "error")
             self.assertEqual(expected_cancel.returncode, 2)
             self.assertIn("no coordinator session matched", expected_cancel.stderr)
+
+            raw_cancel = self._run(
+                log_dir,
+                output_dir,
+                "--incident",
+                "latest",
+                "--view",
+                "raw",
+            )
+            self.assertEqual(raw_cancel.returncode, 0, raw_cancel.stderr)
+            self.assertIn("unknown cancel response, ignoring...", raw_cancel.stdout)
 
             with coordinator.open("a", encoding="utf-8") as handle:
                 handle.write(

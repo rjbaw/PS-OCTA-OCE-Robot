@@ -65,11 +65,11 @@ ROBOT_IP=192.168.0.10 make run
 # Show status (container, session, robot reachability)
 make status
 
-# Summarize the newest incident and create a shareable .tar.gz support bundle.
-# Incident selection ignores later clean-shutdown noise.
+# Summarize the newest session and create a shareable .tar.gz support bundle.
 make logs
 
-# Focus on the newest fullscan or failure session
+# Search for the newest incident, Fullscan, or failure session
+make logs INCIDENT=auto
 make logs INCIDENT=fullscan
 make logs INCIDENT=error
 
